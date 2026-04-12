@@ -10,6 +10,9 @@ dist
 
 # Vercel CLI — local project link (not source)
 .vercel
+
+# Supabase CLI — local link/cache (not source)
+supabase/.temp
 .env
 .env.*
 !.env.example

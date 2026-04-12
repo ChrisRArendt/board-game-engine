@@ -1,4 +1,5 @@
 import { error, redirect } from '@sveltejs/kit';
+import { ensureLobbyMembership } from '$lib/lobby';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals: { supabase, safeGetSession } }) => {
@@ -25,7 +26,18 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		.maybeSingle();
 
 	if (!membership) {
-		throw error(403, 'Not a member of this lobby');
+		try {
+			await ensureLobbyMembership(supabase, lobby, session.user.id);
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : '';
+			if (msg === 'LOBBY_JOIN:not_waiting') {
+				throw error(403, 'This lobby is not accepting new players');
+			}
+			if (msg === 'LOBBY_JOIN:full') {
+				throw error(403, 'Lobby is full');
+			}
+			throw error(403, 'Could not join this lobby');
+		}
 	}
 
 	const { data: profile } = await supabase

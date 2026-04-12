@@ -6,10 +6,13 @@
 		sendFriendRequest,
 		acceptRequest,
 		declineRequest,
+		removeFriend,
 		getFriends,
 		getPendingIncoming,
+		getPendingOutgoing,
 		type FriendWithProfile,
-		type PendingRequest
+		type PendingRequest,
+		type PendingOutgoing
 	} from '$lib/friends';
 	import {
 		createLobby,
@@ -19,15 +22,26 @@
 	} from '$lib/lobby';
 	import type { Database } from '$lib/supabase/database.types';
 	import { goto } from '$app/navigation';
+	import { onlineUserIds } from '$lib/stores/onlinePresence';
 	import type { RealtimeChannel } from '@supabase/supabase-js';
+	import UserIdentity from '$lib/components/UserIdentity.svelte';
+	import CopyInviteCode from '$lib/components/CopyInviteCode.svelte';
+	import type { PageData } from './$types';
 
-	export let data: { session: { user: { id: string; email?: string } } };
+	export let data: PageData;
+
+	function currentUserId(): string {
+		const s = data.session;
+		if (!s?.user?.id) throw new Error('Not signed in');
+		return s.user.id;
+	}
 
 	const supabase = createSupabaseBrowserClient();
 
 	let profile: Database['public']['Tables']['profiles']['Row'] | null = null;
 	let friends: FriendWithProfile[] = [];
 	let pending: PendingRequest[] = [];
+	let outgoing: PendingOutgoing[] = [];
 	let lobbies: Database['public']['Tables']['lobbies']['Row'][] = [];
 	let searchQ = '';
 	let searchResults: Database['public']['Tables']['profiles']['Row'][] = [];
@@ -39,17 +53,54 @@
 	let newLobbyMax = 6;
 	let joinCode = '';
 
-	let onlineIds = new Set<string>();
-	let presenceCh: RealtimeChannel | null = null;
+	let friendshipsCh: RealtimeChannel | null = null;
+	let friendPingCh: RealtimeChannel | null = null;
+
+	const FRIEND_LIST_BROADCAST = 'friend_lists_refresh';
+
+	/** Notify the other participant after a DELETE — postgres_changes filters skip DELETEs; broadcast is reliable. */
+	async function notifyPeerFriendshipRefresh(peerId: string) {
+		const ch = supabase.channel(`friendship_ping:${peerId}`, {
+			config: { broadcast: { ack: true } }
+		});
+		await new Promise<void>((resolve, reject) => {
+			const t = setTimeout(() => reject(new Error('subscribe timeout')), 8000);
+			ch.subscribe(async (status) => {
+				if (status !== 'SUBSCRIBED') return;
+				clearTimeout(t);
+				try {
+					await ch.send({
+						type: 'broadcast',
+						event: FRIEND_LIST_BROADCAST,
+						payload: {}
+					});
+				} finally {
+					await supabase.removeChannel(ch);
+				}
+				resolve();
+			});
+		});
+	}
+
+	/** Friends / pending only — no full-page loading (used by Realtime). */
+	async function refreshFriendLists() {
+		try {
+			const id = currentUserId();
+			friends = await getFriends(supabase, id);
+			pending = await getPendingIncoming(supabase, id);
+			outgoing = await getPendingOutgoing(supabase, id);
+		} catch (e) {
+			errMsg = e instanceof Error ? e.message : 'Error';
+		}
+	}
 
 	async function refresh() {
 		loading = true;
 		errMsg = '';
 		try {
-			const { data: p } = await supabase.from('profiles').select('*').eq('id', data.session.user.id).single();
+			const { data: p } = await supabase.from('profiles').select('*').eq('id', currentUserId()).single();
 			profile = p;
-			friends = await getFriends(supabase, data.session.user.id);
-			pending = await getPendingIncoming(supabase, data.session.user.id);
+			await refreshFriendLists();
 			lobbies = await listOpenLobbies(supabase);
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Error';
@@ -58,11 +109,11 @@
 	}
 
 	async function doSearch() {
-		searchResults = await searchUsers(supabase, searchQ, data.session.user.id);
+		searchResults = await searchUsers(supabase, searchQ, currentUserId());
 	}
 
 	async function addFriend(uid: string) {
-		await sendFriendRequest(supabase, uid, data.session.user.id);
+		await sendFriendRequest(supabase, uid, currentUserId());
 		searchResults = [];
 		searchQ = '';
 		await refresh();
@@ -74,7 +125,28 @@
 	}
 
 	async function decline(id: string) {
+		const row = pending.find((p) => p.id === id);
 		await declineRequest(supabase, id);
+		if (row?.requester.id) {
+			try {
+				await notifyPeerFriendshipRefresh(row.requester.id);
+			} catch {
+				/* peer may refresh via unfiltered postgres_changes */
+			}
+		}
+		await refresh();
+	}
+
+	async function cancelOutgoing(friendshipId: string) {
+		const row = outgoing.find((o) => o.id === friendshipId);
+		await removeFriend(supabase, friendshipId);
+		if (row?.addressee.id) {
+			try {
+				await notifyPeerFriendshipRefresh(row.addressee.id);
+			} catch {
+				/* peer may refresh via unfiltered postgres_changes */
+			}
+		}
 		await refresh();
 	}
 
@@ -83,7 +155,7 @@
 		loading = true;
 		try {
 			const lobby: LobbyRow = await createLobby(supabase, {
-				hostId: data.session.user.id,
+				hostId: currentUserId(),
 				name: newLobbyName,
 				gameKey: newLobbyGame,
 				maxPlayers: newLobbyMax
@@ -98,7 +170,7 @@
 	async function join() {
 		loading = true;
 		try {
-			const lobby: LobbyRow = await joinLobbyByCode(supabase, joinCode, data.session.user.id);
+			const lobby: LobbyRow = await joinLobbyByCode(supabase, joinCode, currentUserId());
 			await goto(`/lobby/${lobby.id}`);
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Could not join';
@@ -106,41 +178,84 @@
 		loading = false;
 	}
 
-	function friendOnline(fid: string) {
-		return onlineIds.has(fid);
-	}
-
 	onMount(async () => {
 		await refresh();
 
-		presenceCh = supabase.channel('online:global', {
-			config: { presence: { key: data.session.user.id } }
+		const myId = currentUserId();
+		// Supabase: column filters do NOT apply to DELETE events — filtered listeners never
+		// see declines/cancels. One unfiltered subscription; RLS still scopes which rows you get.
+		friendshipsCh = supabase
+			.channel(`friendships:${myId}`)
+			.on(
+				'postgres_changes',
+				{
+					event: '*',
+					schema: 'public',
+					table: 'friendships'
+				},
+				(payload) => {
+					// #region agent log
+					const p = payload as { eventType?: string; old?: Record<string, unknown> };
+					fetch('http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'X-Debug-Session-Id': '1762ed'
+						},
+						body: JSON.stringify({
+							sessionId: '1762ed',
+							location: 'lobby/+page.svelte:friendships',
+							message: 'friendships postgres_changes',
+							data: {
+								eventType: p.eventType,
+								oldKeys: p.old ? Object.keys(p.old) : []
+							},
+							timestamp: Date.now(),
+							hypothesisId: 'H1',
+							runId: 'post-fix'
+						})
+					}).catch(() => {});
+					// #endregion
+					void refreshFriendLists();
+				}
+			);
+		void friendshipsCh.subscribe();
+
+		friendPingCh = supabase.channel(`friendship_ping:${myId}`, {
+			config: { broadcast: { self: false } }
 		});
-		presenceCh.on('presence', { event: 'sync' }, () => {
-			if (!presenceCh) return;
-			const state = presenceCh.presenceState();
-			const next = new Set<string>();
-			for (const k of Object.keys(state)) {
-				const arr = state[k] as { user_id?: string }[];
-				const uid = arr?.[0]?.user_id;
-				if (uid) next.add(uid);
-			}
-			onlineIds = next;
+		friendPingCh.on('broadcast', { event: FRIEND_LIST_BROADCAST }, () => {
+			// #region agent log
+			fetch('http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-Debug-Session-Id': '1762ed'
+				},
+				body: JSON.stringify({
+					sessionId: '1762ed',
+					location: 'lobby/+page.svelte:friendPing',
+					message: 'friendship broadcast refresh',
+					data: {},
+					timestamp: Date.now(),
+					hypothesisId: 'H2',
+					runId: 'post-fix'
+				})
+			}).catch(() => {});
+			// #endregion
+			void refreshFriendLists();
 		});
-		presenceCh.subscribe(async (status) => {
-			if (status === 'SUBSCRIBED' && presenceCh && profile) {
-				await presenceCh.track({
-					user_id: data.session.user.id,
-					name: profile.display_name
-				});
-			}
-		});
+		void friendPingCh.subscribe();
 	});
 
 	onDestroy(() => {
-		if (presenceCh) {
-			void supabase.removeChannel(presenceCh);
-			presenceCh = null;
+		if (friendshipsCh) {
+			void supabase.removeChannel(friendshipsCh);
+			friendshipsCh = null;
+		}
+		if (friendPingCh) {
+			void supabase.removeChannel(friendPingCh);
+			friendPingCh = null;
 		}
 	});
 </script>
@@ -166,36 +281,72 @@
 			{#if searchResults.length}
 				<ul class="results">
 					{#each searchResults as u}
-						<li>
-							<span>{u.display_name} (@{u.username})</span>
+						<li class="friend-row">
+							<UserIdentity
+								variant="row"
+								displayName={u.display_name}
+								avatarUrl={u.avatar_url}
+								subtitle={`@${u.username}`}
+							/>
 							<button type="button" class="btn small" on:click={() => addFriend(u.id)}>Add</button>
 						</li>
 					{/each}
 				</ul>
 			{/if}
 
-			{#if pending.length}
-				<h3>Requests</h3>
+			{#if outgoing.length}
+				<h3>Outgoing requests</h3>
+				<p class="hint">Waiting for them to accept before they appear under “Friends”.</p>
 				<ul>
-					{#each pending as r}
-						<li>
-							{r.requester.display_name}
-							<button type="button" class="btn small" on:click={() => accept(r.id)}>Accept</button>
-							<button type="button" class="btn small" on:click={() => decline(r.id)}>Decline</button>
+					{#each outgoing as o}
+						<li class="friend-row">
+							<UserIdentity
+								variant="row"
+								displayName={o.addressee.display_name}
+								avatarUrl={o.addressee.avatar_url}
+								subtitle="Pending"
+							/>
+							<button type="button" class="btn small" on:click={() => cancelOutgoing(o.id)}>Cancel</button>
 						</li>
 					{/each}
 				</ul>
 			{/if}
 
-			<h3>Your friends</h3>
+			{#if pending.length}
+				<h3>Incoming requests</h3>
+				<ul>
+					{#each pending as r}
+						<li class="friend-row">
+							<UserIdentity
+								variant="row"
+								displayName={r.requester.display_name}
+								avatarUrl={r.requester.avatar_url}
+								subtitle="Wants to be friends"
+							/>
+							<div class="row-actions">
+								<button type="button" class="btn small" on:click={() => accept(r.id)}>Accept</button>
+								<button type="button" class="btn small" on:click={() => decline(r.id)}>Decline</button>
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+
+			<h3>Friends</h3>
+			<p class="hint">Only people who accepted a request (or you accepted theirs).</p>
 			<ul class="friends">
 				{#each friends as f}
-					<li>
-						<span class="dot" class:online={friendOnline(f.profile.id)} title="Online"></span>
-						{f.profile.display_name}
+					<li class="friend-row">
+						<span class="dot" class:online={$onlineUserIds.has(f.profile.id)} title="Online"></span>
+						<UserIdentity
+							variant="compact"
+							displayName={f.profile.display_name}
+							avatarUrl={f.profile.avatar_url}
+							subtitle={`@${f.profile.username}`}
+						/>
 					</li>
 				{:else}
-					<li class="muted">No friends yet — search above.</li>
+					<li class="muted">No accepted friends yet — add someone above, then they must accept.</li>
 				{/each}
 			</ul>
 		</section>
@@ -223,7 +374,7 @@
 				{#each lobbies as L}
 					<li>
 						<a href="/lobby/{L.id}">{L.name}</a>
-						<span class="muted">{L.invite_code}</span>
+						<span class="code-wrap"><CopyInviteCode code={L.invite_code} /></span>
 					</li>
 				{:else}
 					<li class="muted">No open lobbies — create one.</li>
@@ -311,17 +462,43 @@
 	.err {
 		color: #b91c1c;
 	}
+	.hint {
+		font-size: 0.82rem;
+		color: #64748b;
+		margin: 0 0 0.5rem;
+		line-height: 1.35;
+	}
 	.muted {
 		color: #64748b;
 		font-size: 0.9rem;
 	}
-	.results li,
-	.friends li,
+	.friend-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		margin: 0.45rem 0;
+		flex-wrap: wrap;
+	}
+	.friend-row :global(.identity) {
+		flex: 1;
+		min-width: 0;
+	}
+	.row-actions {
+		display: flex;
+		gap: 0.35rem;
+		flex-shrink: 0;
+	}
 	.lobbies li {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
 		margin: 0.35rem 0;
+		flex-wrap: wrap;
+	}
+	.code-wrap {
+		display: inline-flex;
+		align-items: center;
 	}
 	.dot {
 		width: 10px;

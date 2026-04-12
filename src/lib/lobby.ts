@@ -44,6 +44,48 @@ export async function createLobby(
 	throw new Error('Could not generate invite code');
 }
 
+/**
+ * Add user to lobby_members if the lobby is open and has space (same rules as join by code).
+ * No-op if they are already a member.
+ */
+export async function ensureLobbyMembership(
+	supabase: SupabaseClient<Database>,
+	lobby: LobbyRow,
+	userId: string
+): Promise<void> {
+	const { data: existing } = await supabase
+		.from('lobby_members')
+		.select('user_id')
+		.eq('lobby_id', lobby.id)
+		.eq('user_id', userId)
+		.maybeSingle();
+
+	if (existing) return;
+
+	if (lobby.status !== 'waiting') {
+		throw new Error('LOBBY_JOIN:not_waiting');
+	}
+
+	const { count } = await supabase
+		.from('lobby_members')
+		.select('*', { count: 'exact', head: true })
+		.eq('lobby_id', lobby.id);
+
+	if ((count ?? 0) >= lobby.max_players) {
+		throw new Error('LOBBY_JOIN:full');
+	}
+
+	const { error: insErr } = await supabase.from('lobby_members').insert({
+		lobby_id: lobby.id,
+		user_id: userId
+	});
+
+	if (insErr) {
+		if (insErr.code === '23505') return;
+		throw insErr;
+	}
+}
+
 export async function joinLobbyByCode(
 	supabase: SupabaseClient<Database>,
 	inviteCode: string,
@@ -60,23 +102,13 @@ export async function joinLobbyByCode(
 	if (error) throw error;
 	if (!lobby) throw new Error('Lobby not found or already started');
 
-	const { count } = await supabase
-		.from('lobby_members')
-		.select('*', { count: 'exact', head: true })
-		.eq('lobby_id', lobby.id);
-
-	if ((count ?? 0) >= lobby.max_players) {
-		throw new Error('Lobby is full');
-	}
-
-	const { error: insErr } = await supabase.from('lobby_members').insert({
-		lobby_id: lobby.id,
-		user_id: userId
-	});
-
-	if (insErr) {
-		if (insErr.code === '23505') return lobby;
-		throw insErr;
+	try {
+		await ensureLobbyMembership(supabase, lobby, userId);
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : '';
+		if (msg === 'LOBBY_JOIN:full') throw new Error('Lobby is full');
+		if (msg === 'LOBBY_JOIN:not_waiting') throw new Error('Lobby not found or already started');
+		throw e;
 	}
 	return lobby;
 }

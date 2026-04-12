@@ -108,7 +108,8 @@
 		if (data.profile) {
 			void connectGameChannel(data.lobby.id, {
 				userId: data.session.user.id,
-				displayName: data.profile.display_name
+				displayName: data.profile.display_name,
+				avatarUrl: data.profile.avatar_url
 			}).catch((e) => console.error('[bge] realtime', e));
 		}
 
@@ -164,7 +165,10 @@
 
 <Board zoomWithScroll={$settings.zoomWithScroll} panScreenEdge={$settings.panScreenEdge} />
 
-<UserList />
+<UserList
+	selfDisplayName={data.profile?.display_name ?? 'You'}
+	selfAvatarUrl={data.profile?.avatar_url}
+/>
 
 <ContextMenu bind:open={ctxOpen} x={ctxX} y={ctxY} />
 

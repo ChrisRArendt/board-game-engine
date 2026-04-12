@@ -1,5 +1,5 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '$lib/supabase/database.types';
+import type { Database, ProfileRow } from '$lib/supabase/database.types';
 
 declare global {
 	namespace App {
@@ -10,6 +10,7 @@ declare global {
 		}
 		interface PageData {
 			session: Session | null;
+			profile: ProfileRow | null;
 		}
 		interface PageState {}
 		interface Platform {}

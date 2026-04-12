@@ -11,15 +11,30 @@ export async function searchUsers(
 	const q = query.trim();
 	if (q.length < 2) return [];
 
+	/** Anyone you already have a friendship row with (pending or accepted). */
+	const { data: relRows, error: relErr } = await supabase
+		.from('friendships')
+		.select('requester_id, addressee_id')
+		.or(`requester_id.eq.${selfId},addressee_id.eq.${selfId}`);
+
+	if (relErr) throw relErr;
+
+	const excludedIds = new Set<string>();
+	for (const r of relRows ?? []) {
+		const other = r.requester_id === selfId ? r.addressee_id : r.requester_id;
+		excludedIds.add(other);
+	}
+
 	const { data, error } = await supabase
 		.from('profiles')
 		.select('*')
 		.or(`username.ilike.%${q}%,display_name.ilike.%${q}%`)
 		.neq('id', selfId)
-		.limit(20);
+		.limit(50);
 
 	if (error) throw error;
-	return data ?? [];
+	const filtered = (data ?? []).filter((p) => !excludedIds.has(p.id));
+	return filtered.slice(0, 20);
 }
 
 export async function sendFriendRequest(
@@ -100,6 +115,43 @@ export type PendingRequest = {
 	id: string;
 	requester: ProfileRow;
 };
+
+/** Friend requests you sent; still pending until the other person accepts. */
+export type PendingOutgoing = {
+	id: string;
+	addressee: ProfileRow;
+};
+
+export async function getPendingOutgoing(
+	supabase: SupabaseClient<Database>,
+	selfId: string
+): Promise<PendingOutgoing[]> {
+	const { data: rows, error } = await supabase
+		.from('friendships')
+		.select('id, addressee_id')
+		.eq('requester_id', selfId)
+		.eq('status', 'pending');
+
+	if (error) throw error;
+	if (!rows?.length) return [];
+
+	const ids = rows.map((r) => r.addressee_id);
+	const { data: profiles, error: pErr } = await supabase
+		.from('profiles')
+		.select('*')
+		.in('id', ids);
+
+	if (pErr) throw pErr;
+	const byId = new Map((profiles ?? []).map((p) => [p.id, p]));
+
+	return rows
+		.map((r) => {
+			const addressee = byId.get(r.addressee_id);
+			if (!addressee) return null;
+			return { id: r.id, addressee };
+		})
+		.filter((x): x is PendingOutgoing => x !== null);
+}
 
 export async function getPendingIncoming(
 	supabase: SupabaseClient<Database>,

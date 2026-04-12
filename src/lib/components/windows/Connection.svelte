@@ -4,7 +4,7 @@
 
 <div class="conn">
 	<p class="status" class:ok={$connected}>
-		{$connected ? 'Connected to Supabase Realtime' : 'Not connected — open from a game (/play/…)'}
+		{$connected ? 'Connected to game session' : 'Not connected — join a game from the lobby'}
 	</p>
 	<div class="log">
 		{#each $connectionLog as line}

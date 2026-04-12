@@ -5,6 +5,18 @@ import { users } from './users';
 import { createSupabaseBrowserClient } from '$lib/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
+export type LobbyChatMessage = {
+	id: string;
+	userId: string;
+	name: string;
+	avatarUrl?: string | null;
+	text: string;
+	ts: number;
+};
+
+/** Waiting-room chat (Realtime broadcast; cleared when leaving lobby). */
+export const lobbyChatMessages = writable<LobbyChatMessage[]>([]);
+
 export const connected = writable(false);
 export const connectionLog = writable<string[]>([]);
 /** Supabase auth user id while connected */
@@ -55,6 +67,35 @@ export function emitLobby(type: string, data: Record<string, unknown>) {
 	return true;
 }
 
+/** In-lobby text chat (`broadcast: { self: false }` so we append locally for the sender). */
+export function sendLobbyChat(
+	text: string,
+	meta: { userId: string; name: string; avatarUrl?: string | null }
+): boolean {
+	if (!browser || !lobbyChannel) return false;
+	const t = text.trim();
+	if (!t) return false;
+	const ts = Date.now();
+	const id = crypto.randomUUID();
+	const payload = {
+		userId: meta.userId,
+		name: meta.name,
+		avatarUrl: meta.avatarUrl ?? null,
+		text: t.slice(0, 2000),
+		ts
+	};
+	void lobbyChannel.send({
+		type: 'broadcast',
+		event: 'lobby_chat',
+		payload: { ...payload, id }
+	});
+	lobbyChatMessages.update((m) => {
+		if (m.some((x) => x.id === id)) return m;
+		return [...m.slice(-199), { id, ...payload }];
+	});
+	return true;
+}
+
 export function disconnectGame() {
 	if (gameChannel) {
 		void supabase.removeChannel(gameChannel);
@@ -70,6 +111,8 @@ export function disconnectLobby() {
 		void supabase.removeChannel(lobbyChannel);
 		lobbyChannel = null;
 	}
+	lobbyChatMessages.set([]);
+	users.set([]);
 }
 
 export function disconnect() {
@@ -85,6 +128,7 @@ function applyPresenceToUsers(ch: RealtimeChannel, selfId: string) {
 			user_id?: string;
 			name?: string;
 			color?: string;
+			avatar_url?: string | null;
 		}[];
 		const meta = presences?.[0];
 		if (!meta?.user_id || meta.user_id === selfId) continue;
@@ -92,7 +136,8 @@ function applyPresenceToUsers(ch: RealtimeChannel, selfId: string) {
 			id: meta.user_id,
 			name: meta.name ?? 'Player',
 			color: meta.color ?? hueFromUserId(meta.user_id),
-			connected: true
+			connected: true,
+			avatarUrl: meta.avatar_url ?? null
 		});
 	}
 	users.set(list);
@@ -103,7 +148,7 @@ function applyPresenceToUsers(ch: RealtimeChannel, selfId: string) {
  */
 export async function connectLobbyChannel(
 	lobbyId: string,
-	presence: { userId: string; displayName: string }
+	presence: { userId: string; displayName: string; avatarUrl?: string | null }
 ): Promise<void> {
 	if (!browser) return;
 	disconnectLobby();
@@ -123,6 +168,31 @@ export async function connectLobbyChannel(
 		}
 	});
 
+	ch.on('broadcast', { event: 'lobby_chat' }, ({ payload }) => {
+		const p = payload as {
+			id?: string;
+			userId?: string;
+			name?: string;
+			avatarUrl?: string | null;
+			text?: string;
+			ts?: number;
+		};
+		if (!p?.text || typeof p.text !== 'string') return;
+		const msgId = typeof p.id === 'string' && p.id.length > 0 ? p.id : crypto.randomUUID();
+		const msg: LobbyChatMessage = {
+			id: msgId,
+			userId: p.userId ?? 'unknown',
+			name: p.name ?? 'Player',
+			avatarUrl: p.avatarUrl ?? null,
+			text: p.text.slice(0, 2000),
+			ts: typeof p.ts === 'number' ? p.ts : Date.now()
+		};
+		lobbyChatMessages.update((m) => {
+			if (m.some((x) => x.id === msgId)) return m;
+			return [...m.slice(-199), msg];
+		});
+	});
+
 	ch.on('presence', { event: 'sync' }, () => applyPresenceToUsers(ch, presence.userId));
 
 	await new Promise<void>((resolve, reject) => {
@@ -132,9 +202,10 @@ export async function connectLobbyChannel(
 					user_id: presence.userId,
 					name: presence.displayName,
 					color: hueFromUserId(presence.userId),
+					avatar_url: presence.avatarUrl ?? null,
 					ready: false
 				});
-				log(`Lobby channel ${topic}`);
+				log('Connected to lobby');
 				lobbyChannel = ch;
 				resolve();
 			} else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -149,7 +220,7 @@ export async function connectLobbyChannel(
  */
 export async function connectGameChannel(
 	lobbyId: string,
-	presence: { userId: string; displayName: string }
+	presence: { userId: string; displayName: string; avatarUrl?: string | null }
 ): Promise<void> {
 	if (!browser) return;
 	disconnectGame();
@@ -223,11 +294,12 @@ export async function connectGameChannel(
 		ch.subscribe(async (status) => {
 			if (status === 'SUBSCRIBED') {
 				connected.set(true);
-				log(`Game channel ${topic}`);
+				log('Connected to game');
 				await ch.track({
 					user_id: presence.userId,
 					name: presence.displayName,
 					color: hueFromUserId(presence.userId),
+					avatar_url: presence.avatarUrl ?? null,
 					online: true
 				});
 				gameChannel = ch;

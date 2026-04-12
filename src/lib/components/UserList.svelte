@@ -1,29 +1,31 @@
 <script lang="ts">
 	import { users } from '$lib/stores/users';
+	import UserIdentity from '$lib/components/UserIdentity.svelte';
 
-	function avatarFor(name: string, connected: boolean): string {
-		if (!connected) return 'avatar_disconnected.jpg';
-		const n = name.toLowerCase();
-		if (['dano', 'ruluzz', 'slyfive', 'eggzavier'].includes(n)) return `avatar_${n}.jpg`;
-		return 'avatar_default.jpg';
-	}
+	/** Current player (shown first as “You”). */
+	export let selfDisplayName = 'You';
+	export let selfAvatarUrl: string | null | undefined = undefined;
 </script>
 
 <ul class="users">
 	<li>
-		<div class="avatar default"></div>
-		<p>You</p>
+		<UserIdentity
+			variant="board"
+			displayName={selfDisplayName}
+			avatarUrl={selfAvatarUrl}
+			showRing={true}
+			ringColor="#ef4444"
+		/>
 	</li>
 	{#each $users as user (user.id)}
 		<li>
-			<div
-				class="avatar"
-				style:background-image="url(/images/userimages/{avatarFor(user.name, user.connected)})"
-				style:box-shadow={user.connected
-					? `0px 0px 0px 1px #000, 0px 0px 0px 4px ${user.color}, 0px 1px 2px 4px #000`
-					: '0px 0px 0px 1px #000, 0px 0px 0px 4px #BBB, 0px 1px 2px 4px #000'}
-			></div>
-			<p>{user.name}</p>
+			<UserIdentity
+				variant="board"
+				displayName={user.name}
+				avatarUrl={user.avatarUrl}
+				showRing={true}
+				ringColor={user.color}
+			/>
 		</li>
 	{/each}
 </ul>
@@ -38,33 +40,6 @@
 	}
 	.users li {
 		position: relative;
-	}
-	.avatar {
-		margin: 0 25px 40px 0;
-		width: 40px;
-		height: 40px;
-		border-radius: 100px;
-		background-size: 100% 100%;
-		background-image: url(/images/userimages/avatar_default.jpg);
-	}
-	.avatar.default {
-		box-shadow:
-			0px 0px 0px 1px #000,
-			0px 0px 0px 4px #f00,
-			0px 1px 2px 4px #000;
-	}
-	.users li p {
-		position: absolute;
-		bottom: -20px;
-		right: 0;
-		width: 90px;
-		font-size: 11px;
-		text-align: center;
-		text-shadow:
-			-1px -1px 1px #000,
-			1px -1px 1px #000,
-			-1px 1px 1px #000,
-			1px 1px 1px #000;
-		color: #fff;
+		margin-bottom: 8px;
 	}
 </style>

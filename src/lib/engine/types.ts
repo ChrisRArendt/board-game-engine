@@ -47,4 +47,6 @@ export interface UserEntry {
 	color: string;
 	name: string;
 	connected: boolean;
+	/** From Realtime presence when available. */
+	avatarUrl?: string | null;
 }

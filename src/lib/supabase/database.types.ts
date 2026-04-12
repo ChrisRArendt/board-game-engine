@@ -111,3 +111,5 @@ export interface Database {
 		CompositeTypes: Record<string, never>;
 	};
 }
+
+export type ProfileRow = Database['public']['Tables']['profiles']['Row'];

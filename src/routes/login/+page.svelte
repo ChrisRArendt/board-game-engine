@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
-	import type { Provider } from '@supabase/supabase-js';
 
 	export let data: { redirectTo: string };
 
@@ -18,11 +17,11 @@
 		return `${$page.url.origin}/auth/callback?next=${next}`;
 	}
 
-	async function oauth(provider: Provider) {
+	async function oauthGoogle() {
 		loading = true;
 		message = '';
 		const { error } = await supabase.auth.signInWithOAuth({
-			provider,
+			provider: 'google',
 			options: { redirectTo: callbackUrl() }
 		});
 		loading = false;
@@ -51,14 +50,8 @@
 	<p class="sub">Board Game Engine — multiplayer tabletop</p>
 
 	<div class="oauth">
-		<button type="button" class="btn primary" disabled={loading} on:click={() => oauth('google')}>
+		<button type="button" class="btn primary" disabled={loading} on:click={oauthGoogle}>
 			Continue with Google
-		</button>
-		<button type="button" class="btn" disabled={loading} on:click={() => oauth('github')}>
-			Continue with GitHub
-		</button>
-		<button type="button" class="btn" disabled={loading} on:click={() => oauth('discord')}>
-			Continue with Discord
 		</button>
 	</div>
 
