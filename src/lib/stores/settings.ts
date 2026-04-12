@@ -5,8 +5,7 @@ const KEYS = {
 	zoomWithScroll: 'bge_settings_interface_zoomWithScroll',
 	panScreenEdge: 'bge_settings_interface_panScreenEdge',
 	address: 'bge_settings_connection_address',
-	username: 'bge_settings_connection_username',
-	socketId: 'bge_user_socketId'
+	username: 'bge_settings_connection_username'
 } as const;
 
 function loadBool(key: string, defaultVal: boolean): boolean {
@@ -46,13 +45,4 @@ export function persistSettings(s: {
 		}
 		return next;
 	});
-}
-
-export function getStoredSocketId(): string | null {
-	if (!browser) return null;
-	return localStorage.getItem(KEYS.socketId);
-}
-
-export function setStoredSocketId(id: string) {
-	if (browser) localStorage.setItem(KEYS.socketId, id);
 }

@@ -7,8 +7,12 @@ node_modules
 build
 dist
 .output
+
+# Vercel CLI — local project link (not source)
+.vercel
 .env
 .env.*
+!.env.example
 
 # Logs & caches
 *.log

@@ -14,7 +14,7 @@
 		<div class="avatar default"></div>
 		<p>You</p>
 	</li>
-	{#each $users as user (user.socketId)}
+	{#each $users as user (user.id)}
 		<li>
 			<div
 				class="avatar"

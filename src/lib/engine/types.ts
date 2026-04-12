@@ -42,7 +42,8 @@ export interface PieceInstance {
 }
 
 export interface UserEntry {
-	socketId: string;
+	/** Supabase user id (stable across sessions). */
+	id: string;
 	color: string;
 	name: string;
 	connected: boolean;

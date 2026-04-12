@@ -8,7 +8,7 @@
 	import { game } from '$lib/stores/game';
 	import { zoomLevelToMult } from '$lib/engine/geometry';
 	import { users } from '$lib/stores/users';
-	import { activeSocketId } from '$lib/stores/network';
+	import { activeUserId } from '$lib/stores/network';
 	import { emit } from '$lib/stores/network';
 	import type { PieceInstance } from '$lib/engine/types';
 
@@ -151,10 +151,10 @@
 		}
 	}
 
-	function stashCover(user: { socketId: string }) {
-		const id = get(activeSocketId);
+	function stashCover(user: { id: string }) {
+		const id = get(activeUserId);
 		if (!id) return false;
-		return user.socketId !== id;
+		return user.id !== id;
 	}
 
 	$: zm = zoomLevelToMult($game.zoomLevel);
@@ -180,7 +180,7 @@
 			></div>
 
 			<div class="user-stashes">
-				{#each $users as user, i (user.socketId + '-' + i)}
+				{#each $users as user, i (user.id + '-' + i)}
 					{@const pos = stashPos(i)}
 					<div
 						class="stash footprint"

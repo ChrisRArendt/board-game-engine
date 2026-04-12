@@ -21,10 +21,11 @@
 	$: showFan = sel.length > 1;
 	$: showStack = sel.length > 1;
 
-	export let onRoller: () => void;
-	export let onViewer: () => void;
-	export let onSettings: () => void;
-	export let onConnection: () => void;
+	/** Not named onRoller — Svelte 5 treats `on` + PascalCase as event syntax, not props. */
+	export let roller: () => void;
+	export let viewer: () => void;
+	export let openSettings: () => void;
+	export let openConnection: () => void;
 </script>
 
 <ul class="controls">
@@ -43,8 +44,8 @@
 		</p>
 	</li>
 	<li class="spacer double"></li>
-	<li class="textbox"><p on:pointerdown={onRoller}>Roller</p></li>
-	<li class="textbox"><p on:pointerdown={onViewer}>Viewer</p></li>
+	<li class="textbox"><p on:pointerdown={roller}>Roller</p></li>
+	<li class="textbox"><p on:pointerdown={viewer}>Viewer</p></li>
 	{#if showDup}
 		<li class="dup"><p on:pointerdown={() => sel.forEach((p) => g.duplicatePiece(p.id))}>Duplicate</p></li>
 	{/if}
@@ -73,8 +74,8 @@
 	{/if}
 	<li class="right">
 		<ul>
-			<li class="settings"><p on:pointerdown={onSettings}>Settings</p></li>
-			<li class="connection"><p on:pointerdown={onConnection}>Connection</p></li>
+			<li class="settings"><p on:pointerdown={openSettings}>Settings</p></li>
+			<li class="connection"><p on:pointerdown={openConnection}>Connection</p></li>
 			<li class="spacer"></li>
 		</ul>
 	</li>
