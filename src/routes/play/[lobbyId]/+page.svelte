@@ -8,6 +8,7 @@
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
 	import UserList from '$lib/components/UserList.svelte';
 	import WindowFrame from '$lib/components/windows/WindowFrame.svelte';
+	import BottomSheet from '$lib/components/windows/BottomSheet.svelte';
 	import DiceRoller from '$lib/components/windows/DiceRoller.svelte';
 	import Connection from '$lib/components/windows/Connection.svelte';
 	import Settings from '$lib/components/windows/Settings.svelte';
@@ -33,7 +34,8 @@
 		scrubToIndexRemote,
 		remoteRestoreFromHistoryId,
 		exitReplay,
-		isHistoryReplayActive
+		isHistoryReplayActive,
+		toggleHistoryReplay
 	} from '$lib/stores/history';
 	import {
 		computeGrandTotalFromDice,
@@ -88,6 +90,9 @@
 	let winConn = false;
 	let winSettings = false;
 	let winViewer = false;
+	let winMenuSheet = false;
+	let useMobileSheets = false;
+	let removeMobileMq: (() => void) | undefined;
 	let viewerPieceId: number | null = null;
 	/** When true, board clicks do not change the viewer preview (locked to `viewerPieceId`). */
 	let viewerLocked = false;
@@ -125,7 +130,17 @@
 
 	function focalCenter() {
 		const vp = getViewportSize();
-		return { left: vp.w / 2 + window.scrollX, top: vp.h / 2 + window.scrollY };
+		return { x: vp.w / 2, y: vp.h / 2 };
+	}
+
+	async function onToolbarToggleHistory() {
+		await toggleHistoryReplay(supabase, data.lobby.id, emit);
+	}
+
+	function openContextFromLongPress(clientX: number, clientY: number) {
+		ctxX = clientX;
+		ctxY = clientY;
+		ctxOpen = true;
 	}
 
 	async function persistSnapshot() {
@@ -175,10 +190,10 @@
 		}
 		if (isZoomMinusKey(e)) {
 			e.preventDefault();
-			g.adjustZoom(-1, focalCenter());
+			g.adjustZoomByStep(-1, focalCenter());
 		} else if (isZoomPlusKey(e)) {
 			e.preventDefault();
-			g.adjustZoom(1, focalCenter());
+			g.adjustZoomByStep(1, focalCenter());
 		} else if (e.key === 'ArrowLeft') {
 			e.preventDefault();
 			g.applyPanDelta(100, 0);
@@ -238,6 +253,16 @@
 	}
 
 	onMount(() => {
+		if (browser) {
+			const mq = window.matchMedia('(max-width: 639px)');
+			useMobileSheets = mq.matches;
+			const fn = () => {
+				useMobileSheets = mq.matches;
+			};
+			mq.addEventListener('change', fn);
+			removeMobileMq = () => mq.removeEventListener('change', fn);
+		}
+
 		registerGameEmit((type, payload) => {
 			if (type === 'piece_select') {
 				emit(type, { ...payload, color: getLocalPlayerColor() });
@@ -385,6 +410,7 @@
 		})();
 
 		return () => {
+			removeMobileMq?.();
 			window.removeEventListener('click', onDocClick);
 			window.removeEventListener('bge:roller_roll', onRollerRoll);
 			window.removeEventListener('bge:window_open', onWindowOpen);
@@ -405,17 +431,29 @@
 
 <svelte:window onkeydown={onKeyDown} onkeyup={onKeyUp} oncontextmenu={onContextMenu} />
 
-<Toolbar
-	curGame={$game.curGame}
-	onOpenRoller={openRollerWindow}
-	onOpenViewer={openLocalViewerFromSelection}
-	onOpenSettings={() => (winSettings = true)}
-	onOpenConnection={() => (winConn = true)}
-	voiceLobbyId={data.lobby.id}
-	voiceUserId={data.session.user.id}
-	voiceDisplayName={data.profile?.display_name ?? 'You'}
-	onEndGame={data.isHost ? hostEndGame : null}
-/>
+<div class="play-topbar">
+	<Toolbar
+		curGame={$game.curGame}
+		onOpenRoller={openRollerWindow}
+		onOpenViewer={openLocalViewerFromSelection}
+		onOpenSettings={() => {
+			if (useMobileSheets) winMenuSheet = false;
+			winSettings = true;
+		}}
+		onOpenConnection={() => {
+			if (useMobileSheets) winMenuSheet = false;
+			winConn = true;
+		}}
+		voiceLobbyId={data.lobby.id}
+		voiceUserId={data.session.user.id}
+		voiceDisplayName={data.profile?.display_name ?? 'You'}
+		onEndGame={data.isHost ? hostEndGame : null}
+		onToggleHistory={onToolbarToggleHistory}
+		historyReplayActive={$isHistoryReplayActive}
+		onOpenMenu={() => (winMenuSheet = true)}
+	/>
+	<HistorySlider lobbyId={data.lobby.id} {supabase} onPersistSnapshot={persistSnapshot} />
+</div>
 
 <Board
 	selfUserId={data.session.user.id}
@@ -425,9 +463,8 @@
 	replayMode={$isHistoryReplayActive}
 	onOpenViewer={openLocalViewerForPiece}
 	onViewerFollowPiece={followViewerToPiece}
+	onOpenContextMenu={openContextFromLongPress}
 />
-
-<HistorySlider lobbyId={data.lobby.id} {supabase} onPersistSnapshot={persistSnapshot} />
 
 <UserList
 	selfUserId={data.session.user.id}
@@ -437,39 +474,174 @@
 
 <ContextMenu bind:open={ctxOpen} x={ctxX} y={ctxY} />
 
-<!-- Fixed layer above the board; pointer-events none so table still receives drags except on .window (auto). -->
+<!-- Fixed layer above the board; pointer-events none so table still receives drags except on windows/sheets. -->
 <div class="play-overlay-root">
-	<WindowFrame title="Dice Roller" visible={winRoller} requestClose={() => (winRoller = false)}>
-		<DiceRoller rollerName={data.profile?.display_name ?? 'Player'} />
-	</WindowFrame>
+	{#if useMobileSheets}
+		<BottomSheet title="Menu" visible={winMenuSheet} requestClose={() => (winMenuSheet = false)}>
+			<ul class="play-menu">
+				<li>
+					<button
+						type="button"
+						class="play-menu-btn"
+						onclick={() => {
+							winMenuSheet = false;
+							window.open(`/data/${$game.curGame}/rules.pdf`, '_blank', 'noopener,noreferrer');
+						}}>Rules</button
+					>
+				</li>
+				<li>
+					<button
+						type="button"
+						class="play-menu-btn"
+						onclick={() => {
+							winMenuSheet = false;
+							openRollerWindow();
+						}}>Roller</button
+					>
+				</li>
+				<li>
+					<button
+						type="button"
+						class="play-menu-btn"
+						onclick={() => {
+							winMenuSheet = false;
+							openLocalViewerFromSelection();
+						}}>Viewer</button
+					>
+				</li>
+				<li>
+					<button
+						type="button"
+						class="play-menu-btn"
+						onclick={() => {
+							winMenuSheet = false;
+							winSettings = true;
+						}}>Settings</button
+					>
+				</li>
+				<li>
+					<button
+						type="button"
+						class="play-menu-btn"
+						onclick={() => {
+							winMenuSheet = false;
+							winConn = true;
+						}}>Connection</button
+					>
+				</li>
+				{#if data.isHost}
+					<li>
+						<button
+							type="button"
+							class="play-menu-btn danger"
+							onclick={() => {
+								winMenuSheet = false;
+								hostEndGame();
+							}}>End game</button
+						>
+					</li>
+				{/if}
+			</ul>
+		</BottomSheet>
 
-	<WindowFrame title="Connection" visible={winConn} requestClose={() => (winConn = false)}>
-		<Connection />
-	</WindowFrame>
+		<BottomSheet title="Dice Roller" visible={winRoller} requestClose={() => (winRoller = false)}>
+			<DiceRoller rollerName={data.profile?.display_name ?? 'Player'} />
+		</BottomSheet>
 
-	<WindowFrame title="Settings" visible={winSettings} requestClose={() => (winSettings = false)}>
-		<Settings />
-	</WindowFrame>
+		<BottomSheet title="Connection" visible={winConn} requestClose={() => (winConn = false)}>
+			<Connection />
+		</BottomSheet>
 
-	<WindowFrame
-		title="Viewer (local)"
-		visible={winViewer}
-		requestClose={() => {
-			winViewer = false;
-			viewerPieceId = null;
-			viewerLocked = false;
-		}}
-	>
-		<CardViewer bind:targetPieceId={viewerPieceId} bind:viewerLocked />
-	</WindowFrame>
+		<BottomSheet title="Settings" visible={winSettings} requestClose={() => (winSettings = false)}>
+			<Settings />
+		</BottomSheet>
+
+		<BottomSheet
+			title="Viewer (local)"
+			visible={winViewer}
+			requestClose={() => {
+				winViewer = false;
+				viewerPieceId = null;
+				viewerLocked = false;
+			}}
+		>
+			<CardViewer bind:targetPieceId={viewerPieceId} bind:viewerLocked />
+		</BottomSheet>
+	{:else}
+		<WindowFrame title="Dice Roller" visible={winRoller} requestClose={() => (winRoller = false)}>
+			<DiceRoller rollerName={data.profile?.display_name ?? 'Player'} />
+		</WindowFrame>
+
+		<WindowFrame title="Connection" visible={winConn} requestClose={() => (winConn = false)}>
+			<Connection />
+		</WindowFrame>
+
+		<WindowFrame title="Settings" visible={winSettings} requestClose={() => (winSettings = false)}>
+			<Settings />
+		</WindowFrame>
+
+		<WindowFrame
+			title="Viewer (local)"
+			visible={winViewer}
+			requestClose={() => {
+				winViewer = false;
+				viewerPieceId = null;
+				viewerLocked = false;
+			}}
+		>
+			<CardViewer bind:targetPieceId={viewerPieceId} bind:viewerLocked />
+		</WindowFrame>
+	{/if}
 </div>
 
 <style>
-	/* Above toolbar (2000000001) / board; below context menu (2000000003) so right-click menu still wins */
+	.play-topbar {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 2000000001;
+		display: flex;
+		flex-direction: column;
+		pointer-events: none;
+	}
+	.play-topbar :global(.toolbar-wrap) {
+		pointer-events: auto;
+	}
+	.play-topbar :global(.history-inline) {
+		pointer-events: auto;
+	}
 	.play-overlay-root {
 		position: fixed;
 		inset: 0;
 		z-index: 2000000002;
 		pointer-events: none;
+	}
+	.play-overlay-root :global(.window),
+	.play-overlay-root :global(.bottom-sheet-root) {
+		pointer-events: auto;
+	}
+	.play-menu {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.play-menu-btn {
+		width: 100%;
+		min-height: 48px;
+		padding: 12px 16px;
+		font-size: 16px;
+		text-align: left;
+		border: 1px solid #ccc;
+		border-radius: 8px;
+		background: linear-gradient(to bottom, #fafafa, #eaeaea);
+		cursor: pointer;
+	}
+	.play-menu-btn.danger {
+		color: #b45309;
+		font-weight: 600;
 	}
 </style>

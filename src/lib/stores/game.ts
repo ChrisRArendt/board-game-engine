@@ -16,7 +16,13 @@ import {
 	pieceFromData,
 	shuffleSelectedPieces
 } from '$lib/engine/pieces';
-import { getViewportSize, type Rect, zoomLevelToMult } from '$lib/engine/geometry';
+import {
+	clampZoom,
+	getViewportSize,
+	legacyZoomLevelToZoom,
+	type Rect,
+	ZOOM_DEFAULT
+} from '$lib/engine/geometry';
 
 export interface GameState {
 	curGame: string;
@@ -25,7 +31,8 @@ export interface GameState {
 	selectedIds: Set<number>;
 	/** other users' selection highlights */
 	remoteSelection: Record<number, string>;
-	zoomLevel: number;
+	/** Continuous zoom scale (world units per CSS px in the scaled layer). */
+	zoom: number;
 	panX: number;
 	panY: number;
 	cameraX: number;
@@ -64,7 +71,7 @@ function initialState(): GameState {
 		pieces: [],
 		selectedIds: new Set(),
 		remoteSelection: {},
-		zoomLevel: 0,
+		zoom: ZOOM_DEFAULT,
 		panX: 0,
 		panY: 0,
 		cameraX: vp.w / 2,
@@ -131,7 +138,7 @@ export function loadGameData(json: GameDataJson) {
 			cameraY: vp.h / 2,
 			panX: 0,
 			panY: 0,
-			zoomLevel: 0,
+			zoom: ZOOM_DEFAULT,
 			loaded: true,
 			spacePanHeld: false,
 			panPointerStart: null,
@@ -140,32 +147,178 @@ export function loadGameData(json: GameDataJson) {
 	});
 }
 
+let zoomAnimRaf: number | null = null;
+let panInertiaRaf: number | null = null;
+
+const EASE_OUT_CUBIC = (t: number) => 1 - Math.pow(1 - t, 3);
+const ZOOM_ANIM_MS = 200;
+const INERTIA_FRICTION = 0.92;
+const INERTIA_MIN_V = 0.5;
+
+function cancelZoomAnimation() {
+	if (zoomAnimRaf !== null && typeof cancelAnimationFrame !== 'undefined') {
+		cancelAnimationFrame(zoomAnimRaf);
+		zoomAnimRaf = null;
+	}
+}
+
+export function cancelPanInertia() {
+	if (panInertiaRaf !== null && typeof cancelAnimationFrame !== 'undefined') {
+		cancelAnimationFrame(panInertiaRaf);
+		panInertiaRaf = null;
+	}
+}
+
 export function setPan(x: number, y: number) {
+	cancelPanInertia();
 	game.update((s) => ({ ...s, panX: x, panY: y }));
 }
 
+/** @deprecated legacy -1/0/1 discrete levels — prefer setZoom / setZoomAtFocal */
 export function setZoomLevel(level: number) {
-	game.update((s) => {
-		const z = Math.max(-1, Math.min(1, level));
-		return { ...s, zoomLevel: z };
-	});
+	setZoom(legacyZoomLevelToZoom(level));
 }
 
-/** Focal point in document coordinates (same as jQuery `offset()`). */
-export function adjustZoom(delta: number, focalDoc: { left: number; top: number }) {
+export function setZoom(z: number) {
+	cancelZoomAnimation();
+	game.update((s) => ({ ...s, zoom: clampZoom(z) }));
+	centerCamToVP();
+}
+
+/** Focal point in viewport client coordinates (clientX / clientY). */
+export function setZoomAtFocal(newZoom: number, focalClientX: number, focalClientY: number) {
+	cancelZoomAnimation();
+	cancelPanInertia();
 	game.update((s) => {
-		const newLevel = Math.max(-1, Math.min(1, s.zoomLevel + delta));
-		const vp = getViewportSize();
-		const target = {
-			x: s.panX - focalDoc.left + vp.w / 2,
-			y: s.panY - focalDoc.top + vp.h / 2
+		const z0 = s.zoom;
+		const z1 = clampZoom(newZoom);
+		const wx = (focalClientX - s.panX) / z0;
+		const wy = (focalClientY - s.panY) / z0;
+		return {
+			...s,
+			zoom: z1,
+			panX: focalClientX - wx * z1,
+			panY: focalClientY - wy * z1
 		};
-		return { ...s, zoomLevel: newLevel, panX: target.x, panY: target.y };
 	});
 	centerCamToVP();
 }
 
+/**
+ * Pinch zoom: keep the world point that was under the pinch-start midpoint aligned with the current midpoint.
+ */
+export function setPinchZoomAtMid(
+	newZoom: number,
+	midClientX: number,
+	midClientY: number,
+	pinchStart: { zoom: number; panX: number; panY: number; midX: number; midY: number }
+) {
+	cancelZoomAnimation();
+	cancelPanInertia();
+	const z1 = clampZoom(newZoom);
+	game.update((s) => {
+		const z0 = pinchStart.zoom;
+		const wx = (pinchStart.midX - pinchStart.panX) / z0;
+		const wy = (pinchStart.midY - pinchStart.panY) / z0;
+		return {
+			...s,
+			zoom: z1,
+			panX: midClientX - wx * z1,
+			panY: midClientY - wy * z1
+		};
+	});
+	centerCamToVP();
+}
+
+export function animateZoomTo(
+	targetZoom: number,
+	focalClient: { x: number; y: number },
+	durationMs: number
+) {
+	cancelZoomAnimation();
+	const start = get(game);
+	const z0 = start.zoom;
+	const panX0 = start.panX;
+	const panY0 = start.panY;
+	const fx = focalClient.x;
+	const fy = focalClient.y;
+	const wx = (fx - panX0) / z0;
+	const wy = (fy - panY0) / z0;
+	const z1 = clampZoom(targetZoom);
+	const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+
+	function frame(now: number) {
+		const t = Math.min(1, (now - t0) / durationMs);
+		const eased = EASE_OUT_CUBIC(t);
+		const z = z0 + (z1 - z0) * eased;
+		const panX = fx - wx * z;
+		const panY = fy - wy * z;
+		game.update((s) => ({ ...s, zoom: z, panX, panY }));
+		centerCamToVP();
+		if (t < 1) {
+			zoomAnimRaf = requestAnimationFrame(frame);
+		} else {
+			zoomAnimRaf = null;
+			game.update((s) => ({ ...s, zoom: z1, panX: fx - wx * z1, panY: fy - wy * z1 }));
+			centerCamToVP();
+		}
+	}
+	zoomAnimRaf = requestAnimationFrame(frame);
+}
+
+/** Toolbar / keyboard: step zoom with animation. */
+export function adjustZoomByStep(
+	direction: -1 | 1,
+	focalClient: { x: number; y: number },
+	opts?: { animate?: boolean }
+) {
+	const s = get(game);
+	const factor = direction < 0 ? 0.8 : 1.25;
+	const target = clampZoom(s.zoom * factor);
+	if (opts?.animate === false) {
+		setZoomAtFocal(target, focalClient.x, focalClient.y);
+		return;
+	}
+	animateZoomTo(target, focalClient, ZOOM_ANIM_MS);
+}
+
+/** Legacy API: focalDoc was document offset; map to viewport center for compatibility. */
+export function adjustZoom(delta: number, focalDoc: { left: number; top: number }) {
+	const vp = getViewportSize();
+	adjustZoomByStep(delta < 0 ? -1 : 1, { x: vp.w / 2, y: vp.h / 2 });
+}
+
+/** Scroll wheel: smooth multiplicative zoom toward cursor. */
+export function adjustZoomWheel(deltaY: number, focalClient: { x: number; y: number }) {
+	const s = get(game);
+	const factor = deltaY > 0 ? 0.94 : 1.06;
+	setZoomAtFocal(clampZoom(s.zoom * factor), focalClient.x, focalClient.y);
+}
+
+export function resetZoomAtFocal(focalClient: { x: number; y: number }) {
+	animateZoomTo(ZOOM_DEFAULT, focalClient, ZOOM_ANIM_MS);
+}
+
+export function startPanInertia(vx: number, vy: number) {
+	if (typeof window === 'undefined') return;
+	cancelPanInertia();
+	let vxr = vx;
+	let vyr = vy;
+	function frame() {
+		applyPanDeltaRaw(vxr * 16, vyr * 16);
+		vxr *= INERTIA_FRICTION;
+		vyr *= INERTIA_FRICTION;
+		if (Math.abs(vxr) < INERTIA_MIN_V && Math.abs(vyr) < INERTIA_MIN_V) {
+			panInertiaRaf = null;
+			return;
+		}
+		panInertiaRaf = requestAnimationFrame(frame);
+	}
+	panInertiaRaf = requestAnimationFrame(frame);
+}
+
 export function resetPan() {
+	cancelPanInertia();
 	game.update((s) => ({ ...s, panX: 0, panY: 0 }));
 	centerCamToVP();
 }
@@ -177,7 +330,7 @@ export function setShiftDown(v: boolean) {
 export function centerCamToVP() {
 	game.update((s) => {
 		const vp = getViewportSize();
-		const z = zoomLevelToMult(s.zoomLevel);
+		const z = s.zoom;
 		const target = {
 			x: (vp.w / 2 - s.panX) * (1 / z),
 			y: (vp.h / 2 - s.panY) * (1 / z)
@@ -186,9 +339,14 @@ export function centerCamToVP() {
 	});
 }
 
-export function applyPanDelta(dx: number, dy: number) {
+function applyPanDeltaRaw(dx: number, dy: number) {
 	game.update((s) => ({ ...s, panX: s.panX + dx, panY: s.panY + dy }));
 	centerCamToVP();
+}
+
+export function applyPanDelta(dx: number, dy: number) {
+	cancelPanInertia();
+	applyPanDeltaRaw(dx, dy);
 }
 
 export function selectPiece(id: number) {
@@ -454,7 +612,7 @@ export function moveDragTo(clientX: number, clientY: number) {
 	const zUpdatesRef: { map: Map<number, number> | null } = { map: null };
 	game.update((s) => {
 		if (!s.moveDrag) return s;
-		const z = zoomLevelToMult(s.zoomLevel);
+		const z = s.zoom;
 		const md = s.moveDrag;
 		const dragging = s.pieces.filter((p) => s.selectedIds.has(p.id) && hasAttr(p, 'move'));
 		let pieces = s.pieces.map((p) => {
@@ -492,6 +650,19 @@ export function endMoveDrag() {
 	game.update((s) => ({ ...s, moveDrag: null, zSorted: false }));
 }
 
+export function cancelMoveDrag() {
+	game.update((s) => {
+		if (!s.moveDrag) return s;
+		const md = s.moveDrag;
+		const pieces = s.pieces.map((p) => {
+			const start = md.elStarts.get(p.id);
+			if (!start || !s.selectedIds.has(p.id)) return p;
+			return { ...p, x: start.x, y: start.y };
+		});
+		return { ...s, pieces, moveDrag: null, zSorted: false };
+	});
+}
+
 export function startSelectionBox(x: number, y: number) {
 	game.update((s) => ({
 		...s,
@@ -512,7 +683,6 @@ export function updateSelectionBox(x: number, y: number, pieceRects: Map<number,
 			h: Math.abs(start.y - y)
 		};
 
-		const zm = zoomLevelToMult(s.zoomLevel);
 		const selectedIds = new Set(s.selectedIds);
 
 		for (const p of s.pieces) {
@@ -560,6 +730,7 @@ export function setSpacePanHeld(v: boolean) {
 }
 
 export function startPanPointer(x: number, y: number) {
+	cancelPanInertia();
 	game.update((s) => ({ ...s, panPointerStart: { x, y, panX: s.panX, panY: s.panY }, handscroll: true }));
 }
 
@@ -664,10 +835,18 @@ export type StoredGameSnapshot = {
 	textRegions: Record<string, string>;
 	table: { w: number; h: number };
 	curGame: string;
-	zoomLevel: number;
+	/** Continuous zoom (preferred). */
+	zoom?: number;
+	/** @deprecated old discrete levels; migrated on load */
+	zoomLevel?: number;
 	panX: number;
 	panY: number;
 };
+
+function zoomFromSnapshot(snapshot: StoredGameSnapshot): number {
+	if (typeof snapshot.zoom === 'number') return clampZoom(snapshot.zoom);
+	return legacyZoomLevelToZoom(snapshot.zoomLevel ?? 0);
+}
 
 export function isStoredGameSnapshot(x: unknown): x is StoredGameSnapshot {
 	if (typeof x !== 'object' || x === null) return false;
@@ -691,7 +870,7 @@ export function serializeGameState(): StoredGameSnapshot {
 		textRegions: { ...s.textRegions },
 		table: { ...s.table },
 		curGame: s.curGame,
-		zoomLevel: s.zoomLevel,
+		zoom: s.zoom,
 		panX: s.panX,
 		panY: s.panY
 	};
@@ -708,7 +887,7 @@ export function applyStoredGameSnapshot(
 		textRegions: { ...snapshot.textRegions },
 		table: { ...snapshot.table },
 		curGame: snapshot.curGame,
-		zoomLevel: snapshot.zoomLevel,
+		zoom: zoomFromSnapshot(snapshot),
 		panX: snapshot.panX,
 		panY: snapshot.panY,
 		selectedIds: new Set(),

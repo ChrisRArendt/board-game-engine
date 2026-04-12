@@ -5,6 +5,28 @@ export interface Rect {
 	h: number;
 }
 
+export const ZOOM_MIN = 0.15;
+export const ZOOM_MAX = 3.0;
+/** Default scale (matches former middle discrete level 0.6). */
+export const ZOOM_DEFAULT = 0.6;
+
+export function clampZoom(z: number): number {
+	return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+}
+
+/** Map legacy snapshot zoomLevel (-1, 0, 1) to continuous zoom. */
+export function legacyZoomLevelToZoom(zoomLevel: number): number {
+	switch (zoomLevel) {
+		case -1:
+			return 0.35;
+		case 1:
+			return 1.4;
+		case 0:
+		default:
+			return ZOOM_DEFAULT;
+	}
+}
+
 export function rectanglesIntersect(a: Rect, b: Rect): boolean {
 	return !(
 		a.x + a.w < b.x ||
@@ -34,17 +56,4 @@ export function pad(num: number, size: number): string {
 	let s = `${num}`;
 	while (s.length < size) s = `0${s}`;
 	return s;
-}
-
-export function zoomLevelToMult(zoomLevel: number): number {
-	switch (zoomLevel) {
-		case -1:
-			return 0.35;
-		case 0:
-			return 0.6;
-		case 1:
-			return 1.4;
-		default:
-			return 0.6;
-	}
 }

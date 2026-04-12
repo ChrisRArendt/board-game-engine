@@ -2,8 +2,6 @@
 	import { onDestroy } from 'svelte';
 	import type { SupabaseClient } from '@supabase/supabase-js';
 	import {
-		openReplay,
-		exitReplay,
 		scrubToIndex,
 		restoreFromHistoryEntry,
 		gameHistoryEntries,
@@ -29,19 +27,6 @@
 			scrubDebounce = null;
 			emit('history_scrub', { index });
 		}, 100);
-	}
-
-	async function toggleHistory() {
-		if (getStore(isHistoryReplayActive)) {
-			exitReplay();
-			emit('history_close', {});
-			stopPlay();
-			return;
-		}
-		const idx = await openReplay(supabase, lobbyId);
-		if (idx >= 0) {
-			emit('history_open', { index: idx });
-		}
 	}
 
 	function onRangeInput(e: Event) {
@@ -120,12 +105,10 @@
 			: '';
 </script>
 
-<div class="history-strip" data-history-strip>
-	<div class="row">
-		<button type="button" class="hist-btn" onclick={toggleHistory}>
-			{$isHistoryReplayActive ? 'Exit history' : 'History'}
-		</button>
-		{#if $isHistoryReplayActive}
+{#if $isHistoryReplayActive}
+	<div class="history-inline" data-history-strip>
+		<div class="replay-badge" aria-hidden="true">REPLAY</div>
+		<div class="row">
 			{#if $gameHistoryLoadState === 'loading'}
 				<span class="hint">Loading timeline…</span>
 			{:else if $gameHistoryLoadError}
@@ -137,6 +120,7 @@
 					<span class="time" title={labelTime}>{labelTime}</span>
 					<input
 						type="range"
+						class="hist-range"
 						min="0"
 						max={maxIdx}
 						value={sliderVal}
@@ -148,22 +132,31 @@
 				</button>
 				<button type="button" class="hist-btn danger" onclick={onRestore}>Restore this state</button>
 			{/if}
-		{/if}
+		</div>
 	</div>
-</div>
+{/if}
 
 <style>
-	.history-strip {
-		position: fixed;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		z-index: 2000000000;
-		background: linear-gradient(to top, rgba(255, 255, 255, 0.95), rgba(230, 230, 230, 0.92));
-		box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.25);
+	.history-inline {
+		width: 100%;
+		background: linear-gradient(to bottom, rgba(255, 255, 255, 0.97), rgba(235, 235, 235, 0.95));
+		backdrop-filter: blur(8px);
+		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
 		padding: 6px 12px 8px;
 		font-size: 14px;
 		pointer-events: auto;
+		border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+	}
+	.replay-badge {
+		display: inline-block;
+		margin-bottom: 6px;
+		background: rgba(180, 30, 30, 0.9);
+		color: #fff;
+		padding: 4px 12px;
+		border-radius: 4px;
+		font-size: 12px;
+		font-weight: 700;
+		letter-spacing: 0.12em;
 	}
 	.row {
 		display: flex;
@@ -175,7 +168,9 @@
 	.hist-btn {
 		all: unset;
 		display: inline-block;
-		padding: 4px 12px;
+		padding: 6px 14px;
+		min-height: 44px;
+		box-sizing: border-box;
 		line-height: 1.4;
 		background: linear-gradient(to bottom, #5a9, #386);
 		color: #fff;
@@ -206,9 +201,43 @@
 	.slider-label input[type='range'] {
 		width: 100%;
 	}
+	.hist-range {
+		-webkit-appearance: none;
+		appearance: none;
+		height: 8px;
+		border-radius: 4px;
+		background: linear-gradient(to right, #cbd5e1, #94a3b8);
+		outline: none;
+	}
+	.hist-range::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		appearance: none;
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		background: linear-gradient(to bottom, #5a9, #386);
+		cursor: pointer;
+		border: 2px solid #fff;
+		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+	}
+	.hist-range::-moz-range-thumb {
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		background: linear-gradient(to bottom, #5a9, #386);
+		cursor: pointer;
+		border: 2px solid #fff;
+		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+	}
 	.time {
 		font-variant-numeric: tabular-nums;
 		color: #222;
 		font-size: 12px;
+	}
+	@media (min-width: 640px) {
+		.hist-btn {
+			min-height: 36px;
+			padding: 4px 12px;
+		}
 	}
 </style>

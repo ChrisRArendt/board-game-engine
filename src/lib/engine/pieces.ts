@@ -1,5 +1,5 @@
 import type { PieceData, PieceInstance } from './types';
-import { shuffle, zoomLevelToMult } from './geometry';
+import { shuffle } from './geometry';
 
 export function pieceFromData(data: PieceData, id: number, curGame: string, offset: { x: number; y: number }): PieceInstance {
 	const coords = data.placement?.coords ?? { x: 0, y: 0 };
@@ -142,4 +142,3 @@ export function arrangeStacked(pieces: PieceInstance[], selectedIds: Set<number>
 	return updates;
 }
 
-export { zoomLevelToMult };

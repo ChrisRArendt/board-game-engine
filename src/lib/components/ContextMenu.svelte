@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
 	import { hasAttr } from '$lib/engine/pieces';
@@ -6,6 +7,20 @@
 	export let open = false;
 	export let x = 0;
 	export let y = 0;
+
+	const MENU_W = 200;
+	const MENU_H = 220;
+
+	$: clip = (() => {
+		if (!browser) return { left: x, top: y };
+		const pad = 8;
+		const maxL = Math.max(pad, window.innerWidth - MENU_W - pad);
+		const maxT = Math.max(pad, window.innerHeight - MENU_H - pad);
+		return {
+			left: Math.min(Math.max(pad, x), maxL),
+			top: Math.min(Math.max(pad, y), maxT)
+		};
+	})();
 
 	$: sel = $game.pieces.filter((p) => $game.selectedIds.has(p.id));
 	$: showFlip = sel.some((p) => hasAttr(p, 'flip'));
@@ -17,7 +32,7 @@
 
 {#if open && (showFlip || showShuf || showFan || showStack)}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<ul class="ctx" style:top="{y}px" style:left="{x}px">
+	<ul class="ctx" style:top="{clip.top}px" style:left="{clip.left}px">
 		{#if showFlip}
 			<li
 				on:pointerdown={() => {
@@ -79,7 +94,11 @@
 		min-width: 120px;
 	}
 	.ctx li {
-		padding: 4px 20px;
+		padding: 12px 20px;
+		min-height: 44px;
+		box-sizing: border-box;
+		display: flex;
+		align-items: center;
 		font-size: 14px;
 		color: #333;
 		cursor: pointer;

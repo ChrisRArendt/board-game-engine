@@ -169,6 +169,23 @@ export function exitReplay() {
 	}
 }
 
+/** Toolbar / hotkey: enter or exit replay; emits realtime events for peers. */
+export async function toggleHistoryReplay(
+	supabase: SupabaseClient,
+	lobbyId: string,
+	emit: (type: string, payload: Record<string, unknown>) => void
+): Promise<void> {
+	if (get(liveSnapshotCaptured)) {
+		exitReplay();
+		emit('history_close', {});
+		return;
+	}
+	const idx = await openReplay(supabase, lobbyId);
+	if (idx >= 0) {
+		emit('history_open', { index: idx });
+	}
+}
+
 /** Local scrub — caller should `emit('history_scrub', { index })` (debounced). */
 export function scrubToIndex(index: number) {
 	applyScrubIndex(index);

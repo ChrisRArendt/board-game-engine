@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
+
 	export let title = '';
 	/** Avoid naming this `open` — in Svelte 5 it can conflict with the HTML `open` attribute / boolean prop handling. */
 	export let visible = false;
@@ -23,8 +25,16 @@
 
 	function onMove(e: PointerEvent) {
 		if (!drag) return;
-		x = ox + (e.clientX - sx);
-		y = oy + (e.clientY - sy);
+		let nx = ox + (e.clientX - sx);
+		let ny = oy + (e.clientY - sy);
+		if (browser) {
+			const maxW = 520;
+			const maxH = Math.min(window.innerHeight - 40, 720);
+			nx = Math.max(8, Math.min(window.innerWidth - maxW, nx));
+			ny = Math.max(8, Math.min(window.innerHeight - maxH, ny));
+		}
+		x = nx;
+		y = ny;
 	}
 
 	function onUp() {

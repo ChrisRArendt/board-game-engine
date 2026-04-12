@@ -32,3 +32,13 @@ body.app-tabletop {
 	user-select: none;
 	cursor: default;
 }
+
+:root {
+	--motion-ok: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	:root {
+		--motion-ok: 0;
+	}
+}
