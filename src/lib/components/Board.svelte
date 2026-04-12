@@ -16,6 +16,8 @@
 	export let panScreenEdge = false;
 	/** Open local card viewer for a piece (not broadcast) */
 	export let onOpenViewer: ((pieceId: number) => void) | undefined = undefined;
+	/** While viewer is open and unlocked, called on piece pointerdown to switch preview (not broadcast) */
+	export let onViewerFollowPiece: ((pieceId: number) => void) | undefined = undefined;
 
 	let viewportEl: HTMLDivElement | undefined;
 	let cameraEl: HTMLDivElement | undefined;
@@ -159,6 +161,7 @@
 		if (piece.attributes.includes('move')) {
 			g.startMoveDrag(piece.id, e.clientX, e.clientY, st2.panX, st2.panY);
 		}
+		onViewerFollowPiece?.(piece.id);
 	}
 
 	function stashCover(user: { id: string }) {

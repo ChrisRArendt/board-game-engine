@@ -11,6 +11,8 @@ export interface Database {
 					username: string;
 					display_name: string;
 					avatar_url: string | null;
+					/** Hex `#rrggbb` or null = automatic hue from user id */
+					player_color: string | null;
 					created_at: string;
 				};
 				Insert: {
@@ -18,6 +20,7 @@ export interface Database {
 					username: string;
 					display_name: string;
 					avatar_url?: string | null;
+					player_color?: string | null;
 					created_at?: string;
 				};
 				Update: {
@@ -25,6 +28,7 @@ export interface Database {
 					username?: string;
 					display_name?: string;
 					avatar_url?: string | null;
+					player_color?: string | null;
 					created_at?: string;
 				};
 				Relationships: EmptyRel;

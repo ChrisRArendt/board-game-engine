@@ -2,6 +2,8 @@
 	import { game } from '$lib/stores/game';
 
 	export let targetPieceId: number | null = null;
+	/** Two-way: when true, board clicks do not change `targetPieceId`. */
+	export let viewerLocked = false;
 
 	$: piece =
 		targetPieceId === null ? null : ($game.pieces.find((p) => p.id === targetPieceId) ?? null);
@@ -10,30 +12,82 @@
 	$: h = piece ? piece.initial_size.h * 2 : 0;
 </script>
 
-<div class="viewer" style:width="{w}px" style:min-height="{h}px">
-	{#if piece}
-		<div
-			class="img"
-			style:width="100%"
-			style:height="{h}px"
-			style:background-image="url({bg})"
-			style:background-size={piece.attributes.includes('flip') ? 'auto 100%' : '100% 100%'}
-			style:background-position={piece.attributes.includes('flip')
-				? piece.flipped
-					? '0 0'
-					: '100% 0'
-				: '0 0'}
-			style:background-repeat="no-repeat"
-		></div>
-	{:else}
-		<p class="empty">
-			Select a piece on the board, then click <strong>Viewer</strong> in the toolbar, or double‑click a piece.
-			Only you see this window.
-		</p>
-	{/if}
+<div class="card-viewer">
+	<div class="controls">
+		<label class="lock-label" title="When off, clicking a piece updates this preview. When on, the preview stays on this piece.">
+			<input type="checkbox" bind:checked={viewerLocked} />
+			<span class="lock-text">Lock preview to this piece</span>
+		</label>
+		{#if !viewerLocked && piece}
+			<p class="hint follow">Click another piece on the board to preview it here.</p>
+		{:else if viewerLocked && piece}
+			<p class="hint locked">Locked — unlock to follow clicks again.</p>
+		{/if}
+	</div>
+
+	<div class="viewer" style:width="{w}px" style:min-height="{h}px">
+		{#if piece}
+			<div
+				class="img"
+				style:width="100%"
+				style:height="{h}px"
+				style:background-image="url({bg})"
+				style:background-size={piece.attributes.includes('flip') ? 'auto 100%' : '100% 100%'}
+				style:background-position={piece.attributes.includes('flip')
+					? piece.flipped
+						? '0 0'
+						: '100% 0'
+					: '0 0'}
+				style:background-repeat="no-repeat"
+			></div>
+		{:else}
+			<p class="empty">
+				Select a piece on the board, then click <strong>Viewer</strong> in the toolbar, or double‑click a piece. With
+				the viewer open, click pieces to switch the preview unless <strong>Lock preview</strong> is on.
+				Only you see this window.
+			</p>
+		{/if}
+	</div>
 </div>
 
 <style>
+	.card-viewer {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		min-width: 150px;
+	}
+	.controls {
+		padding: 0 2px 4px;
+		border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+	}
+	.lock-label {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		cursor: pointer;
+		font-size: 13px;
+		color: #333;
+		user-select: none;
+	}
+	.lock-label input {
+		margin-top: 2px;
+		cursor: pointer;
+	}
+	.lock-text {
+		line-height: 1.3;
+	}
+	.hint {
+		margin: 6px 0 0;
+		font-size: 12px;
+		line-height: 1.35;
+	}
+	.hint.follow {
+		color: #2563eb;
+	}
+	.hint.locked {
+		color: #b45309;
+	}
 	.viewer {
 		min-width: 150px;
 	}

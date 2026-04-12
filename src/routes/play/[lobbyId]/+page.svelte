@@ -62,6 +62,8 @@
 	let winSettings = false;
 	let winViewer = false;
 	let viewerPieceId: number | null = null;
+	/** When true, board clicks do not change the viewer preview (locked to `viewerPieceId`). */
+	let viewerLocked = false;
 
 	let unsubAutosave: (() => void) | undefined;
 
@@ -69,12 +71,19 @@
 	function openLocalViewerFromSelection() {
 		const sel = get(game).pieces.filter((p) => get(game).selectedIds.has(p.id));
 		viewerPieceId = sel.length ? sel[0].id : null;
+		viewerLocked = false;
 		winViewer = true;
 	}
 
 	function openLocalViewerForPiece(id: number) {
 		viewerPieceId = id;
+		viewerLocked = false;
 		winViewer = true;
+	}
+
+	function followViewerToPiece(pieceId: number) {
+		if (!winViewer || viewerLocked) return;
+		viewerPieceId = pieceId;
 	}
 
 	function openRollerWindow() {
@@ -284,6 +293,7 @@
 	zoomWithScroll={$settings.zoomWithScroll}
 	panScreenEdge={$settings.panScreenEdge}
 	onOpenViewer={openLocalViewerForPiece}
+	onViewerFollowPiece={followViewerToPiece}
 />
 
 <UserList
@@ -314,9 +324,10 @@
 		requestClose={() => {
 			winViewer = false;
 			viewerPieceId = null;
+			viewerLocked = false;
 		}}
 	>
-		<CardViewer bind:targetPieceId={viewerPieceId} />
+		<CardViewer bind:targetPieceId={viewerPieceId} bind:viewerLocked />
 	</WindowFrame>
 </div>
 

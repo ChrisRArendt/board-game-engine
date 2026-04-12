@@ -6,6 +6,7 @@
 	import { page } from '$app/stores';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { onlineUserIds } from '$lib/stores/onlinePresence';
+	import { persistSettings } from '$lib/stores/settings';
 	import UserIdentity from '$lib/components/UserIdentity.svelte';
 	import type { RealtimeChannel, Session } from '@supabase/supabase-js';
 	import type { ProfileRow } from '$lib/supabase/database.types';
@@ -19,6 +20,8 @@
 	let lastTrackedName: string | undefined;
 	/** Only re-run global presence when session / display name actually changes (avoids reconnect storms). */
 	let presenceSyncKey = '';
+	/** Apply server-stored player color once per profile load (account source of truth). */
+	let lastAppliedProfileColorKey = '';
 
 	function teardownGlobalPresence() {
 		if (presenceCh) {
@@ -80,6 +83,17 @@
 		if (presenceSyncKey !== '') {
 			presenceSyncKey = '';
 			teardownGlobalPresence();
+		}
+	}
+
+	$: if (browser && data.session?.user?.id && data.profile) {
+		const srv = data.profile.player_color?.trim() ?? '';
+		const key = `${data.session.user.id}:${srv}`;
+		if (key !== lastAppliedProfileColorKey) {
+			lastAppliedProfileColorKey = key;
+			if (srv && /^#[0-9A-Fa-f]{6}$/.test(srv)) {
+				persistSettings({ playerColor: srv.toLowerCase() });
+			}
 		}
 	}
 

@@ -4,19 +4,26 @@
 		activeUserId,
 		emit,
 		getLocalPlayerColor,
+		playerColorOverrides,
 		playerOrder,
 		toggleTurnHighlight,
 		turnHighlightUserIds
 	} from '$lib/stores/network';
+	import { settings } from '$lib/stores/settings';
 	import UserIdentity from '$lib/components/UserIdentity.svelte';
 
 	export let selfUserId: string;
 	export let selfDisplayName = 'You';
 	export let selfAvatarUrl: string | null | undefined = undefined;
 
+	const MENU_PAD = 8;
+	const MENU_EST_W = 120;
+	const MENU_EST_H = 72;
+
 	let orderMenuOpen = false;
-	let orderMenuX = 0;
-	let orderMenuY = 0;
+	/** Left edge of the menu (fixed), chosen so the menu stays on-screen (extends left from the click). */
+	let orderMenuLeft = 0;
+	let orderMenuTop = 0;
 	let orderMenuPlayerId: string | null = null;
 
 	function closeOrderMenu() {
@@ -52,8 +59,17 @@
 		e.preventDefault();
 		e.stopPropagation();
 		orderMenuPlayerId = playerId;
-		orderMenuX = e.clientX;
-		orderMenuY = e.clientY;
+		const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
+		const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+		// Anchor menu so it grows left from the cursor (right edge near avatars on the right dock)
+		let rightEdge = e.clientX;
+		rightEdge = Math.min(rightEdge, vw - MENU_PAD);
+		rightEdge = Math.max(rightEdge, MENU_PAD + MENU_EST_W);
+		orderMenuLeft = rightEdge - MENU_EST_W;
+		let top = e.clientY;
+		top = Math.min(top, vh - MENU_EST_H - MENU_PAD);
+		top = Math.max(top, MENU_PAD);
+		orderMenuTop = top;
 		orderMenuOpen = true;
 	}
 
@@ -66,6 +82,8 @@
 
 	$: roster = (() => {
 		$activeUserId;
+		$settings;
+		$playerColorOverrides;
 		const me: RosterRow = {
 			id: selfUserId,
 			name: selfDisplayName,
@@ -76,7 +94,7 @@
 			id: u.id,
 			name: u.name,
 			avatarUrl: u.avatarUrl ?? null,
-			color: u.color
+			color: $playerColorOverrides[u.id] ?? u.color
 		}));
 		return [...others, me].sort((a, b) => a.id.localeCompare(b.id));
 	})();
@@ -153,8 +171,8 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 	<ul
 		class="order-ctx"
-		style:top="{orderMenuY}px"
-		style:left="{orderMenuX}px"
+		style:top="{orderMenuTop}px"
+		style:left="{orderMenuLeft}px"
 		onpointerdown={(e) => e.stopPropagation()}
 		onclick={(e) => e.stopPropagation()}
 	>

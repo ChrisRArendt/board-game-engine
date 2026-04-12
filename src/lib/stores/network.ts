@@ -2,6 +2,7 @@ import { browser } from '$app/environment';
 import { writable, get } from 'svelte/store';
 import * as game from './game';
 import { clearRollerLog } from './rollerLog';
+import { settings } from './settings';
 import { users } from './users';
 import { createSupabaseBrowserClient } from '$lib/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -31,9 +32,19 @@ export const turnHighlightUserIds = writable<string[]>([]);
 /** Display order of player ids in the in-game list (matches lobby_members.sort_order). */
 export const playerOrder = writable<string[]>([]);
 
+/** Hex (or computed hsl) ring colors from `player_color` broadcasts; overrides stale presence metadata. */
+export const playerColorOverrides = writable<Record<string, string>>({});
+
 let gameChannel: RealtimeChannel | null = null;
 let lobbyChannel: RealtimeChannel | null = null;
 let supabase = createSupabaseBrowserClient();
+
+/** Last `connectLobbyChannel` / `connectGameChannel` presence payload (for re-tracking color). */
+let lastPresenceForTrack: {
+	userId: string;
+	displayName: string;
+	avatarUrl?: string | null;
+} | null = null;
 
 function log(line: string) {
 	connectionLog.update((l) => [line, ...l].slice(0, 80));
@@ -47,9 +58,50 @@ function hueFromUserId(userId: string): string {
 	return `hsla(${h}, 70%, 55%, 1)`;
 }
 
+function applyPlayerColorFromBroadcast(payload: Record<string, unknown>) {
+	const p = payload as { userId?: string; color?: string | null };
+	if (!p?.userId) return;
+	const c =
+		p.color && /^#[0-9A-Fa-f]{6}$/.test(p.color) ? p.color : hueFromUserId(p.userId);
+	playerColorOverrides.update((m) => ({ ...m, [p.userId!]: c }));
+}
+
+/** Resolve ring color: custom hex wins; else hue from `userIdForFallback` (or `#888` if empty). */
+export function resolveLocalPlayerColor(userIdForFallback: string): string {
+	const custom = get(settings).playerColor?.trim();
+	if (custom && /^#[0-9A-Fa-f]{6}$/.test(custom)) return custom;
+	return userIdForFallback ? hueFromUserId(userIdForFallback) : '#888';
+}
+
 export function getLocalPlayerColor(): string {
-	const uid = get(activeUserId);
-	return uid ? hueFromUserId(uid) : '#888';
+	return resolveLocalPlayerColor(get(activeUserId));
+}
+
+/**
+ * After changing Settings player color, push to Realtime presence so others see the new ring color.
+ */
+export function syncLocalPresenceColor(): void {
+	if (!browser || !lastPresenceForTrack) return;
+	const col = resolveLocalPlayerColor(lastPresenceForTrack.userId);
+	const base = {
+		user_id: lastPresenceForTrack.userId,
+		name: lastPresenceForTrack.displayName,
+		color: col,
+		avatar_url: lastPresenceForTrack.avatarUrl ?? null
+	};
+	const customHex = get(settings).playerColor?.trim();
+	const colorPayload =
+		customHex && /^#[0-9A-Fa-f]{6}$/.test(customHex)
+			? customHex
+			: null;
+	if (gameChannel) {
+		void gameChannel.track({ ...base, online: true });
+		emit('player_color', { userId: lastPresenceForTrack.userId, color: colorPayload });
+	}
+	if (lobbyChannel) {
+		void lobbyChannel.track({ ...base, ready: false });
+		void emitLobby('player_color', { userId: lastPresenceForTrack.userId, color: colorPayload });
+	}
 }
 
 /**
@@ -129,6 +181,7 @@ export function disconnectGame() {
 	turnHighlightUserIds.set([]);
 	playerOrder.set([]);
 	users.set([]);
+	playerColorOverrides.set({});
 	clearRollerLog();
 }
 
@@ -264,15 +317,24 @@ export async function connectLobbyChannel(
 		});
 	});
 
+	ch.on('broadcast', { event: 'player_color' }, ({ payload }) => {
+		applyPlayerColorFromBroadcast(payload as Record<string, unknown>);
+	});
+
 	ch.on('presence', { event: 'sync' }, () => applyPresenceToUsers(ch, presence.userId));
 
 	await new Promise<void>((resolve, reject) => {
 		ch.subscribe(async (status) => {
 			if (status === 'SUBSCRIBED') {
+				lastPresenceForTrack = {
+					userId: presence.userId,
+					displayName: presence.displayName,
+					avatarUrl: presence.avatarUrl ?? null
+				};
 				await ch.track({
 					user_id: presence.userId,
 					name: presence.displayName,
-					color: hueFromUserId(presence.userId),
+					color: resolveLocalPlayerColor(presence.userId),
 					avatar_url: presence.avatarUrl ?? null,
 					ready: false
 				});
@@ -385,6 +447,10 @@ export async function connectGameChannel(
 		}
 	});
 
+	ch.on('broadcast', { event: 'player_color' }, ({ payload }) => {
+		applyPlayerColorFromBroadcast(payload as Record<string, unknown>);
+	});
+
 	ch.on('broadcast', { event: 'game_end' }, () => {
 		if (browser) {
 			window.dispatchEvent(new CustomEvent('bge:game_end'));
@@ -398,10 +464,15 @@ export async function connectGameChannel(
 			if (status === 'SUBSCRIBED') {
 				connected.set(true);
 				log('Connected to game');
+				lastPresenceForTrack = {
+					userId: presence.userId,
+					displayName: presence.displayName,
+					avatarUrl: presence.avatarUrl ?? null
+				};
 				await ch.track({
 					user_id: presence.userId,
 					name: presence.displayName,
-					color: hueFromUserId(presence.userId),
+					color: resolveLocalPlayerColor(presence.userId),
 					avatar_url: presence.avatarUrl ?? null,
 					online: true
 				});
