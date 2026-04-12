@@ -613,3 +613,87 @@ export function remotePieceDeselect(id: number) {
 export function getPieceById(id: number): PieceInstance | undefined {
 	return get(game).pieces.find((p) => p.id === id);
 }
+
+/** Serializable board state for `game_snapshots` (DB / resume). */
+export type StoredGameSnapshot = {
+	pieces: PieceInstance[];
+	nextPieceId: number;
+	textRegions: Record<string, string>;
+	table: { w: number; h: number };
+	curGame: string;
+	zoomLevel: number;
+	panX: number;
+	panY: number;
+};
+
+export function isStoredGameSnapshot(x: unknown): x is StoredGameSnapshot {
+	if (typeof x !== 'object' || x === null) return false;
+	const o = x as Record<string, unknown>;
+	return (
+		Array.isArray(o.pieces) &&
+		typeof o.nextPieceId === 'number' &&
+		typeof o.curGame === 'string' &&
+		o.table !== null &&
+		typeof o.table === 'object' &&
+		typeof (o.table as { w?: unknown }).w === 'number' &&
+		typeof (o.table as { h?: unknown }).h === 'number'
+	);
+}
+
+export function serializeGameState(): StoredGameSnapshot {
+	const s = get(game);
+	return {
+		pieces: s.pieces.map((p) => ({ ...p })),
+		nextPieceId: s.nextPieceId,
+		textRegions: { ...s.textRegions },
+		table: { ...s.table },
+		curGame: s.curGame,
+		zoomLevel: s.zoomLevel,
+		panX: s.panX,
+		panY: s.panY
+	};
+}
+
+export function applyStoredGameSnapshot(snapshot: StoredGameSnapshot) {
+	game.update((s) => ({
+		...s,
+		pieces: snapshot.pieces.map((p) => ({ ...p })),
+		nextPieceId: snapshot.nextPieceId,
+		textRegions: { ...snapshot.textRegions },
+		table: { ...snapshot.table },
+		curGame: snapshot.curGame,
+		zoomLevel: snapshot.zoomLevel,
+		panX: snapshot.panX,
+		panY: snapshot.panY,
+		selectedIds: new Set(),
+		remoteSelection: {},
+		loaded: true,
+		moveDrag: null,
+		selectionBox: null,
+		selectingBox: false,
+		selectBoxStartItems: new Set(),
+		edgePan: { x: 0, y: 0 },
+		zSorted: false
+	}));
+	centerCamToVP();
+}
+
+/**
+ * After `loaded` is true, schedules `onSave` 3s after the last game store update.
+ * Call `unsubscribe()` on destroy.
+ */
+export function subscribeGameSnapshotAutosave(onSave: () => void): () => void {
+	let t: ReturnType<typeof setTimeout> | null = null;
+	const unsub = game.subscribe(() => {
+		if (!get(game).loaded) return;
+		if (t) clearTimeout(t);
+		t = setTimeout(() => {
+			t = null;
+			onSave();
+		}, 3000);
+	});
+	return () => {
+		unsub();
+		if (t) clearTimeout(t);
+	};
+}

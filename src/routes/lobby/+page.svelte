@@ -18,6 +18,7 @@
 		createLobby,
 		joinLobbyByCode,
 		listOpenLobbies,
+		listMyActiveGames,
 		type LobbyRow
 	} from '$lib/lobby';
 	import type { Database } from '$lib/supabase/database.types';
@@ -43,6 +44,7 @@
 	let pending: PendingRequest[] = [];
 	let outgoing: PendingOutgoing[] = [];
 	let lobbies: Database['public']['Tables']['lobbies']['Row'][] = [];
+	let myGames: LobbyRow[] = [];
 	let searchQ = '';
 	let searchResults: Database['public']['Tables']['profiles']['Row'][] = [];
 	let loading = false;
@@ -101,6 +103,7 @@
 			const { data: p } = await supabase.from('profiles').select('*').eq('id', currentUserId()).single();
 			profile = p;
 			await refreshFriendLists();
+			myGames = await listMyActiveGames(supabase, currentUserId());
 			lobbies = await listOpenLobbies(supabase);
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Error';
@@ -307,6 +310,21 @@
 					</li>
 				{:else}
 					<li class="muted">No accepted friends yet — add someone above, then they must accept.</li>
+				{/each}
+			</ul>
+		</section>
+
+		<section class="card">
+			<h2>My games in progress</h2>
+			<p class="hint">Resume a game you left — board state is saved automatically.</p>
+			<ul class="lobbies">
+				{#each myGames as G}
+					<li>
+						<a href="/play/{G.id}">{G.name}</a>
+						<span class="muted">({G.game_key})</span>
+					</li>
+				{:else}
+					<li class="muted">None yet — start a lobby and press Start game.</li>
 				{/each}
 			</ul>
 		</section>

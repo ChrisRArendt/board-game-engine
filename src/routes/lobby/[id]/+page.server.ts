@@ -25,52 +25,14 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		.eq('user_id', session.user.id)
 		.maybeSingle();
 
-	// #region agent log
-	fetch('http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1762ed' },
-		body: JSON.stringify({
-			sessionId: '1762ed',
-			runId: 'lobby-load',
-			hypothesisId: 'B',
-			location: 'lobby/[id]/+page.server.ts:load',
-			message: 'membership check',
-			data: {
-				lobbyId: lobby.id,
-				sessionUserId: session.user.id,
-				hasMembership: !!membership
-			},
-			timestamp: Date.now()
-		})
-	}).catch(() => {});
-	// #endregion
+	if (membership && lobby.status === 'playing') {
+		throw redirect(303, `/play/${lobby.id}`);
+	}
 
 	if (!membership) {
 		try {
 			await ensureLobbyMembership(supabase, lobby, session.user.id);
 		} catch (e) {
-			// #region agent log
-			const errLike = e as { message?: string; code?: string; details?: string; hint?: string };
-			fetch('http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1762ed' },
-				body: JSON.stringify({
-					sessionId: '1762ed',
-					runId: 'lobby-load',
-					hypothesisId: 'D',
-					location: 'lobby/[id]/+page.server.ts:ensureLobbyMembership catch',
-					message: 'ensureLobbyMembership failed',
-					data: {
-						isError: e instanceof Error,
-						msg: e instanceof Error ? e.message : String(e),
-						code: errLike.code,
-						details: errLike.details,
-						hint: errLike.hint
-					},
-					timestamp: Date.now()
-				})
-			}).catch(() => {});
-			// #endregion
 			const msg = e instanceof Error ? e.message : '';
 			if (msg === 'LOBBY_JOIN:not_waiting') {
 				throw error(403, 'This lobby is not accepting new players');

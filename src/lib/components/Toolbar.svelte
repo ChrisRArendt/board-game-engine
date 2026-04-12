@@ -26,6 +26,8 @@
 	export let viewer: () => void;
 	export let openSettings: () => void;
 	export let openConnection: () => void;
+	/** Host-only: end the game for everyone (shown when set). */
+	export let onEndGame: (() => void) | null = null;
 </script>
 
 <ul class="controls">
@@ -81,6 +83,9 @@
 	{/if}
 	<li class="right">
 		<ul>
+			{#if onEndGame}
+				<li class="endgame"><p onclick={onEndGame}>End game</p></li>
+			{/if}
 			<li class="settings"><p onclick={openSettings}>Settings</p></li>
 			<li class="connection"><p onclick={openConnection}>Connection</p></li>
 			<li class="spacer"></li>
@@ -144,5 +149,9 @@
 		margin: 0;
 		padding: 0;
 		display: flex;
+	}
+	.endgame p {
+		color: #b45309;
+		font-weight: 600;
 	}
 </style>

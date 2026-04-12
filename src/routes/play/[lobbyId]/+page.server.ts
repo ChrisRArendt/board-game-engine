@@ -46,5 +46,20 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 
 	const memberOrderIds = (orderRows ?? []).map((r) => r.user_id);
 
-	return { lobby, session, profile, memberOrderIds };
+	const { data: snapRow } = await supabase
+		.from('game_snapshots')
+		.select('snapshot')
+		.eq('lobby_id', lobby.id)
+		.maybeSingle();
+
+	const isHost = lobby.host_id === session.user.id;
+
+	return {
+		lobby,
+		session,
+		profile,
+		memberOrderIds,
+		storedSnapshot: snapRow?.snapshot ?? null,
+		isHost
+	};
 };

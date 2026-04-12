@@ -4,7 +4,7 @@
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { connectLobbyChannel, disconnectLobby, emitLobby } from '$lib/stores/network';
 	import { users } from '$lib/stores/users';
-	import { startGame } from '$lib/lobby';
+	import { startGame, deleteLobby, leaveLobby } from '$lib/lobby';
 	import CopyInviteCode from '$lib/components/CopyInviteCode.svelte';
 	import LobbyRoomChat from '$lib/components/LobbyRoomChat.svelte';
 	import UserIdentity from '$lib/components/UserIdentity.svelte';
@@ -25,6 +25,8 @@
 	let errMsg = '';
 	let starting = false;
 	let reordering = false;
+	let deleting = false;
+	let leaving = false;
 
 	let membersOrdered: MemberRow[] = [...data.members];
 
@@ -105,6 +107,38 @@
 		starting = false;
 	}
 
+	async function hostDeleteLobby() {
+		if (!isHost) return;
+		if (!confirm('Delete this lobby for everyone? This cannot be undone.')) return;
+		deleting = true;
+		errMsg = '';
+		try {
+			emitLobby('lobby_deleted', {});
+			await deleteLobby(supabase, data.lobby.id, data.session.user.id);
+			disconnectLobby();
+			await goto('/lobby');
+		} catch (e) {
+			errMsg = e instanceof Error ? e.message : 'Could not delete lobby';
+		}
+		deleting = false;
+	}
+
+	async function leaveRoom() {
+		leaving = true;
+		errMsg = '';
+		try {
+			if (isHost) {
+				emitLobby('lobby_finished', {});
+			}
+			await leaveLobby(supabase, data.lobby.id, data.session.user.id);
+			disconnectLobby();
+			await goto('/lobby');
+		} catch (e) {
+			errMsg = e instanceof Error ? e.message : 'Could not leave';
+		}
+		leaving = false;
+	}
+
 	onMount(() => {
 		void (async () => {
 			if (!data.profile) return;
@@ -119,11 +153,24 @@
 			}
 		})();
 
+		function onLobbyDeleted() {
+			disconnectLobby();
+			void goto('/lobby');
+		}
+		function onLobbyFinished() {
+			disconnectLobby();
+			void goto('/lobby');
+		}
+
 		window.addEventListener('bge:game_start', onGameStart);
 		window.addEventListener('bge:lobby_order', onLobbyOrderEv);
+		window.addEventListener('bge:lobby_deleted', onLobbyDeleted);
+		window.addEventListener('bge:lobby_finished', onLobbyFinished);
 		return () => {
 			window.removeEventListener('bge:game_start', onGameStart);
 			window.removeEventListener('bge:lobby_order', onLobbyOrderEv);
+			window.removeEventListener('bge:lobby_deleted', onLobbyDeleted);
+			window.removeEventListener('bge:lobby_finished', onLobbyFinished);
 			disconnectLobby();
 		};
 	});
@@ -192,9 +239,21 @@
 			<button type="button" class="btn primary full" disabled={starting} onclick={hostStart}>
 				Start game
 			</button>
+			<button
+				type="button"
+				class="btn danger full"
+				disabled={deleting || leaving}
+				onclick={hostDeleteLobby}
+			>
+				Delete lobby
+			</button>
 		{:else}
 			<p class="muted">Waiting for host to start…</p>
 		{/if}
+
+		<button type="button" class="btn full" disabled={leaving || deleting} onclick={leaveRoom}>
+			Leave lobby
+		</button>
 
 		<p class="back"><a href="/lobby">← Back to lobby list</a></p>
 	</aside>
@@ -264,6 +323,14 @@
 	.btn.full {
 		width: 100%;
 		box-sizing: border-box;
+	}
+	.btn.danger {
+		background: #fef2f2;
+		color: #b91c1c;
+		border-color: #fecaca;
+	}
+	.btn.danger:hover:not(:disabled) {
+		background: #fee2e2;
 	}
 	.back {
 		margin-top: 1.25rem;

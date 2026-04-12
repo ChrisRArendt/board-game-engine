@@ -107,6 +107,27 @@ export interface Database {
 				};
 				Relationships: EmptyRel;
 			};
+			game_snapshots: {
+				Row: {
+					lobby_id: string;
+					snapshot: Json;
+					saved_by: string;
+					updated_at: string;
+				};
+				Insert: {
+					lobby_id: string;
+					snapshot: Json;
+					saved_by: string;
+					updated_at?: string;
+				};
+				Update: {
+					lobby_id?: string;
+					snapshot?: Json;
+					saved_by?: string;
+					updated_at?: string;
+				};
+				Relationships: EmptyRel;
+			};
 		};
 		Views: Record<string, never>;
 		Functions: {

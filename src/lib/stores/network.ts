@@ -211,6 +211,18 @@ export async function connectLobbyChannel(
 		}
 	});
 
+	ch.on('broadcast', { event: 'lobby_deleted' }, () => {
+		if (browser) {
+			window.dispatchEvent(new CustomEvent('bge:lobby_deleted'));
+		}
+	});
+
+	ch.on('broadcast', { event: 'lobby_finished' }, () => {
+		if (browser) {
+			window.dispatchEvent(new CustomEvent('bge:lobby_finished'));
+		}
+	});
+
 	ch.on('broadcast', { event: 'lobby_order' }, ({ payload }) => {
 		const p = payload as { userIds?: string[] };
 		if (browser && Array.isArray(p.userIds)) {
@@ -344,6 +356,12 @@ export async function connectGameChannel(
 		const p = payload as { userIds?: string[] };
 		if (Array.isArray(p.userIds)) {
 			turnHighlightUserIds.set([...p.userIds].sort((a, b) => a.localeCompare(b)));
+		}
+	});
+
+	ch.on('broadcast', { event: 'game_end' }, () => {
+		if (browser) {
+			window.dispatchEvent(new CustomEvent('bge:game_end'));
 		}
 	});
 

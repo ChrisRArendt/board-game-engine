@@ -38,27 +38,6 @@ export async function createLobby(
 				user_id: opts.hostId,
 				sort_order: 0
 			});
-			// #region agent log
-			fetch('http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1762ed' },
-				body: JSON.stringify({
-					sessionId: '1762ed',
-					runId: 'create-lobby',
-					hypothesisId: 'A',
-					location: 'lobby.ts:createLobby',
-					message: 'lobby_members insert after lobby create',
-					data: {
-						lobbyId: data.id,
-						hostId: opts.hostId,
-						memErr: ins.error
-							? { code: ins.error.code, message: ins.error.message, details: ins.error.details }
-							: null
-					},
-					timestamp: Date.now()
-				})
-			}).catch(() => {});
-			// #endregion
 			if (ins.error) {
 				throw new Error(ins.error.message);
 			}
@@ -87,7 +66,8 @@ export async function ensureLobbyMembership(
 
 	if (existing) return;
 
-	if (lobby.status !== 'waiting') {
+	/** Allow joining waiting lobbies or rejoining in-progress games (same capacity rules). */
+	if (lobby.status !== 'waiting' && lobby.status !== 'playing') {
 		throw new Error('LOBBY_JOIN:not_waiting');
 	}
 
@@ -163,6 +143,43 @@ export async function listOpenLobbies(supabase: SupabaseClient<Database>) {
 
 	if (error) throw error;
 	return data ?? [];
+}
+
+/** Lobbies the user is in that are currently in `playing` status (resume from hub). */
+export async function listMyActiveGames(supabase: SupabaseClient<Database>, userId: string) {
+	const { data: rows, error } = await supabase
+		.from('lobby_members')
+		.select('lobby_id')
+		.eq('user_id', userId);
+
+	if (error) throw error;
+	const ids = (rows ?? []).map((r) => r.lobby_id);
+	if (ids.length === 0) return [];
+
+	const { data: lobbies, error: lErr } = await supabase
+		.from('lobbies')
+		.select('*')
+		.in('id', ids)
+		.eq('status', 'playing')
+		.order('created_at', { ascending: false });
+
+	if (lErr) throw lErr;
+	return lobbies ?? [];
+}
+
+export async function deleteLobby(supabase: SupabaseClient<Database>, lobbyId: string, hostId: string) {
+	const { error } = await supabase.from('lobbies').delete().eq('id', lobbyId).eq('host_id', hostId);
+	if (error) throw error;
+}
+
+export async function endGame(supabase: SupabaseClient<Database>, lobbyId: string, hostId: string) {
+	const { error } = await supabase
+		.from('lobbies')
+		.update({ status: 'finished' })
+		.eq('id', lobbyId)
+		.eq('host_id', hostId);
+
+	if (error) throw error;
 }
 
 export async function getLobby(supabase: SupabaseClient<Database>, lobbyId: string) {

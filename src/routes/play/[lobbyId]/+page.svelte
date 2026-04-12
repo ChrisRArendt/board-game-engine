@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { get } from 'svelte/store';
+	import { goto } from '$app/navigation';
 	import Board from '$lib/components/Board.svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
@@ -25,9 +26,14 @@
 	import { appendRollerLine } from '$lib/stores/rollerLog';
 	import { isZoomMinusKey, isZoomPlusKey } from '$lib/engine/input';
 	import { getViewportSize } from '$lib/engine/geometry';
+	import { createSupabaseBrowserClient } from '$lib/supabase/client';
+	import { endGame } from '$lib/lobby';
+	import type { Json } from '$lib/supabase/database.types';
 	import type { PageData } from './$types';
 
 	export let data: PageData;
+
+	const supabase = createSupabaseBrowserClient();
 
 	let ctxOpen = false;
 	let ctxX = 0;
@@ -38,6 +44,8 @@
 	let winSettings = false;
 	let winViewer = false;
 	let viewerPieceId: number | null = null;
+
+	let unsubAutosave: (() => void) | undefined;
 
 	/** Local enlarged piece preview only — never broadcast (unlike Dice Roller). */
 	function openLocalViewerFromSelection() {
@@ -54,6 +62,34 @@
 	function focalCenter() {
 		const vp = getViewportSize();
 		return { left: vp.w / 2 + window.scrollX, top: vp.h / 2 + window.scrollY };
+	}
+
+	async function persistSnapshot() {
+		if (!get(game).loaded) return;
+		const payload = g.serializeGameState();
+		const { error } = await supabase.from('game_snapshots').upsert(
+			{
+				lobby_id: data.lobby.id,
+				snapshot: payload as unknown as Json,
+				saved_by: data.session.user.id,
+				updated_at: new Date().toISOString()
+			},
+			{ onConflict: 'lobby_id' }
+		);
+		if (error) console.error('[bge] snapshot save', error);
+	}
+
+	async function hostEndGame() {
+		if (!data.isHost) return;
+		if (!confirm('End this game for everyone?')) return;
+		try {
+			await endGame(supabase, data.lobby.id, data.session.user.id);
+			emit('game_end', {});
+			disconnectGame();
+			await goto('/lobby');
+		} catch (e) {
+			console.error('[bge] end game', e);
+		}
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
@@ -112,28 +148,19 @@
 	onMount(() => {
 		playerOrder.set(data.memberOrderIds);
 
-		registerGameEmit((type, data) => {
+		registerGameEmit((type, payload) => {
 			if (type === 'piece_select') {
-				emit(type, { ...data, color: getLocalPlayerColor() });
+				emit(type, { ...payload, color: getLocalPlayerColor() });
 			} else {
-				emit(type, data);
+				emit(type, payload);
 			}
 		});
 
-		if (data.profile) {
-			void connectGameChannel(data.lobby.id, {
-				userId: data.session.user.id,
-				displayName: data.profile.display_name,
-				avatarUrl: data.profile.avatar_url
-			}).catch((e) => console.error('[bge] realtime', e));
-		}
-
-		fetch(`/data/${data.lobby.game_key}/pieces.json`)
-			.then((r) => r.json())
-			.then((j: GameDataJson) => {
-				g.loadGameData(j);
-				g.centerCamToVP();
-			});
+		const onGameEndEv = () => {
+			disconnectGame();
+			void goto('/lobby');
+		};
+		window.addEventListener('bge:game_end', onGameEndEv);
 
 		const onRollerRoll = ((ev: CustomEvent) => {
 			const d = ev.detail as {
@@ -155,10 +182,42 @@
 		window.addEventListener('bge:roller_roll', onRollerRoll);
 		window.addEventListener('bge:window_open', onWindowOpen);
 		window.addEventListener('click', onDocClick);
+
+		void (async () => {
+			if (data.profile) {
+				try {
+					await connectGameChannel(data.lobby.id, {
+						userId: data.session.user.id,
+						displayName: data.profile.display_name,
+						avatarUrl: data.profile.avatar_url
+					});
+				} catch (e) {
+					console.error('[bge] realtime', e);
+				}
+			}
+
+			const snap = data.storedSnapshot;
+			if (snap && g.isStoredGameSnapshot(snap)) {
+				g.applyStoredGameSnapshot(snap);
+			} else {
+				const r = await fetch(`/data/${data.lobby.game_key}/pieces.json`);
+				const j = (await r.json()) as GameDataJson;
+				g.loadGameData(j);
+				g.centerCamToVP();
+				await persistSnapshot();
+			}
+
+			unsubAutosave = g.subscribeGameSnapshotAutosave(() => {
+				void persistSnapshot();
+			});
+		})();
+
 		return () => {
 			window.removeEventListener('click', onDocClick);
 			window.removeEventListener('bge:roller_roll', onRollerRoll);
 			window.removeEventListener('bge:window_open', onWindowOpen);
+			window.removeEventListener('bge:game_end', onGameEndEv);
+			unsubAutosave?.();
 		};
 	});
 
@@ -178,6 +237,7 @@
 	viewer={openLocalViewerFromSelection}
 	openSettings={() => (winSettings = true)}
 	openConnection={() => (winConn = true)}
+	onEndGame={data.isHost ? hostEndGame : null}
 />
 
 <Board
