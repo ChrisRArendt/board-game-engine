@@ -404,6 +404,8 @@
 />
 
 <Board
+	selfUserId={data.session.user.id}
+	selfDisplayName={data.profile?.display_name ?? 'You'}
 	zoomWithScroll={$settings.zoomWithScroll}
 	panScreenEdge={$settings.panScreenEdge}
 	replayMode={$isHistoryReplayActive}

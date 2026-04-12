@@ -8,8 +8,8 @@
 	import { game } from '$lib/stores/game';
 	import { zoomLevelToMult } from '$lib/engine/geometry';
 	import { users } from '$lib/stores/users';
-	import { activeUserId } from '$lib/stores/network';
-	import { emit } from '$lib/stores/network';
+	import { emit, getLocalPlayerColor, playerColorOverrides, playerOrder } from '$lib/stores/network';
+	import { settings } from '$lib/stores/settings';
 	import type { PieceInstance } from '$lib/engine/types';
 
 	export let zoomWithScroll = false;
@@ -20,6 +20,9 @@
 	export let onOpenViewer: ((pieceId: number) => void) | undefined = undefined;
 	/** While viewer is open and unlocked, called on piece pointerdown to switch preview (not broadcast) */
 	export let onViewerFollowPiece: ((pieceId: number) => void) | undefined = undefined;
+	/** Local user (presence list excludes self; stashes need everyone including host). */
+	export let selfUserId: string;
+	export let selfDisplayName = 'You';
 
 	let viewportEl: HTMLDivElement | undefined;
 	let cameraEl: HTMLDivElement | undefined;
@@ -182,11 +185,38 @@
 		onViewerFollowPiece?.(piece.id);
 	}
 
-	function stashCover(user: { id: string }) {
-		const id = get(activeUserId);
-		if (!id) return false;
-		return user.id !== id;
-	}
+	/** Same roster + order as UserList so stash index matches player order. */
+	$: stashRoster = (() => {
+		$users;
+		$playerOrder;
+		$playerColorOverrides;
+		$settings;
+		const me = {
+			id: selfUserId,
+			name: selfDisplayName,
+			color: getLocalPlayerColor()
+		};
+		const others = $users.map((u) => ({
+			id: u.id,
+			name: u.name,
+			color: $playerColorOverrides[u.id] ?? u.color
+		}));
+		const roster = [...others, me];
+		const order = $playerOrder;
+		if (!order.length) return roster.sort((a, b) => a.id.localeCompare(b.id));
+		const byId = new Map(roster.map((r) => [r.id, r]));
+		const present = new Set(roster.map((r) => r.id));
+		const out: typeof roster = [];
+		for (const id of order) {
+			if (!present.has(id)) continue;
+			const r = byId.get(id);
+			if (r) out.push(r);
+		}
+		for (const r of roster) {
+			if (!order.includes(r.id)) out.push(r);
+		}
+		return out;
+	})();
 
 	$: zm = zoomLevelToMult($game.zoomLevel);
 	$: bgTable = `/data/${$game.curGame}/images/table-bg.jpg`;
@@ -219,24 +249,27 @@
 			></div>
 
 			<div class="user-stashes">
-				{#each $users as user, i (user.id + '-' + i)}
+				{#each stashRoster as user, i (user.id)}
 					{@const pos = stashPos(i)}
-					<div
-						class="stash footprint"
-						style:transform="translate3d({pos.x}px, {pos.y}px, 0)"
-						style:background-color={user.color}
-					>
-						Your Stash
-					</div>
-					{#if stashCover(user)}
+					{@const isSelf = user.id === selfUserId}
+					<div class="stash-slot" style:transform="translate3d({pos.x}px, {pos.y}px, 0)">
 						<div
-							class="stash top"
-							style:transform="translate3d({pos.x}px, {pos.y}px, 0)"
+							class="stash footprint"
+							class:mine={isSelf}
+							class:theirs={!isSelf}
 							style:background-color={user.color}
 						>
-							{user.name}
+							{#if isSelf}
+								<span class="sr-only">Your private area</span>
+							{/if}
 						</div>
-					{/if}
+						{#if !isSelf}
+							<div class="stash top" style:background-color={user.color}>
+								{user.name}
+							</div>
+							<div class="stash-private-label" aria-hidden="true">PRIVATE</div>
+						{/if}
+					</div>
 				{/each}
 			</div>
 
@@ -324,25 +357,70 @@
 		inset: 0;
 		pointer-events: none;
 	}
+	.stash-slot {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 700px;
+	}
 	.stash {
 		position: absolute;
+		top: 0;
+		left: 0;
 		width: 700px;
 		height: 600px;
 		font-size: 40px;
 		line-height: 50px;
 		text-align: center;
 		pointer-events: none;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
-	.stash.footprint {
+	.stash.footprint.mine {
 		z-index: 0;
 		color: #000;
-		box-shadow: inset 0 3px 10px #000;
+		/* Inset only — feels like a recessed private well */
+		box-shadow:
+			inset 0 0 0 2px rgba(0, 0, 0, 0.2),
+			inset 0 6px 28px rgba(0, 0, 0, 0.45),
+			inset 0 2px 8px rgba(0, 0, 0, 0.35);
+	}
+	.stash.footprint.theirs {
+		z-index: 0;
+		color: #000;
+		box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.15);
 	}
 	.stash.top {
 		z-index: 10000;
 		color: #fff;
-		box-shadow: 0 3px 10px #000;
+		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
 		text-shadow: 0 1px 5px rgb(0 0 0);
+	}
+	.stash-private-label {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 100%;
+		margin-top: 10px;
+		text-align: center;
+		font-size: 22px;
+		font-weight: 700;
+		letter-spacing: 0.35em;
+		color: rgba(0, 0, 0, 0.5);
+		text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+		pointer-events: none;
+	}
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 	.textregion {
 		position: absolute;
