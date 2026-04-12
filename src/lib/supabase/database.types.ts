@@ -132,6 +132,30 @@ export interface Database {
 				};
 				Relationships: EmptyRel;
 			};
+			game_history_snapshots: {
+				Row: {
+					id: number;
+					lobby_id: string;
+					snapshot: Json;
+					saved_by: string;
+					created_at: string;
+				};
+				Insert: {
+					id?: never;
+					lobby_id: string;
+					snapshot: Json;
+					saved_by: string;
+					created_at?: string;
+				};
+				Update: {
+					id?: number;
+					lobby_id?: string;
+					snapshot?: Json;
+					saved_by?: string;
+					created_at?: string;
+				};
+				Relationships: EmptyRel;
+			};
 		};
 		Views: Record<string, never>;
 		Functions: {

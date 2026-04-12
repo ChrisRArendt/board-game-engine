@@ -14,6 +14,8 @@
 
 	export let zoomWithScroll = false;
 	export let panScreenEdge = false;
+	/** History / replay: disable all board interactions */
+	export let replayMode = false;
 	/** Open local card viewer for a piece (not broadcast) */
 	export let onOpenViewer: ((pieceId: number) => void) | undefined = undefined;
 	/** While viewer is open and unlocked, called on piece pointerdown to switch preview (not broadcast) */
@@ -45,6 +47,7 @@
 	}
 
 	function onPointerMoveGlobal(e: PointerEvent) {
+		if (replayMode) return;
 		const st = get(game);
 		const zm = zoomLevelToMult(st.zoomLevel);
 		mouseTx = Math.floor((-st.panX + e.clientX) * (1 / zm));
@@ -63,9 +66,8 @@
 			g.updateSelectionBox(e.clientX, e.clientY, rects);
 		}
 
-		const go = { x: st.panX, y: st.panY };
 		if (st.moveDrag) {
-			g.moveDragTo(e.clientX, e.clientY, go.x, go.y);
+			g.moveDragTo(e.clientX, e.clientY);
 			const st2 = get(game);
 			for (const p of st2.pieces) {
 				if (st2.selectedIds.has(p.id) && p.attributes.includes('move')) {
@@ -119,7 +121,21 @@
 		if (edgeTimer) clearInterval(edgeTimer);
 	});
 
+	/** Space+drag pan: also start when pressing the margin around the table (viewport / game), not only the table surface. */
+	function onViewportPointerDown(e: PointerEvent) {
+		if (replayMode) return;
+		const st = get(game);
+		if (!st.spacePanHeld) return;
+		const target = e.target as HTMLElement;
+		// Table handler runs first and bubbles here — avoid resetting pan start twice.
+		if (target.closest('.table')) return;
+		if (target.closest('[data-piece-id]')) return;
+		if (target.closest('.textregion')) return;
+		g.startPanPointer(e.clientX, e.clientY);
+	}
+
 	function onTablePointerDown(e: PointerEvent) {
+		if (replayMode) return;
 		if (e.target !== e.currentTarget) return;
 		const st = get(game);
 		if (st.spacePanHeld) {
@@ -135,6 +151,7 @@
 	}
 
 	function onWheel(e: WheelEvent) {
+		if (replayMode) return;
 		e.preventDefault();
 		const st = get(game);
 		if (zoomWithScroll) {
@@ -147,6 +164,7 @@
 	}
 
 	async function onPiecePointerDown(piece: PieceInstance, e: PointerEvent) {
+		if (replayMode) return;
 		e.stopPropagation();
 		const st = get(game);
 		if (st.spacePanHeld) {
@@ -174,11 +192,14 @@
 	$: bgTable = `/data/${$game.curGame}/images/table-bg.jpg`;
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="viewport"
 	class:space-pan={$game.spacePanHeld}
 	class:handscroll={$game.handscroll}
+	class:replay-mode={replayMode}
 	bind:this={viewportEl}
+	onpointerdown={onViewportPointerDown}
 >
 	<div class="game" style:transform="translate3d({$game.panX}px, {$game.panY}px, 0)">
 		<div
@@ -223,6 +244,7 @@
 				<Piece
 					{piece}
 					curGame={$game.curGame}
+					replayMode={replayMode}
 					selected={$game.selectedIds.has(piece.id)}
 					remoteColor={$game.remoteSelection[piece.id]}
 					onpointerdown={(e) => onPiecePointerDown(piece, e)}
@@ -234,8 +256,11 @@
 				<div class="textregion" id="textregion_{i}" style:left="{1260 + i * 190}px" style:top="580px">
 					<input
 						type="text"
+						readonly={replayMode}
+						tabindex={replayMode ? -1 : 0}
 						value={$game.textRegions[`textregion_${i}`] ?? '00'}
 						oninput={(e) => {
+							if (replayMode) return;
 							const v = (e.currentTarget as HTMLInputElement).value;
 							g.setTextRegion(`textregion_${i}`, v);
 							emit('textregion_change', { winid: `textregion_${i}`, val: v });
@@ -259,6 +284,10 @@
 
 	{#if $game.selectionBox && $game.selectingBox}
 		<SelectionBox rect={$game.selectionBox} />
+	{/if}
+
+	{#if replayMode}
+		<div class="replay-badge" aria-hidden="true">REPLAY</div>
 	{/if}
 </div>
 
@@ -338,6 +367,24 @@
 		position: absolute;
 		top: 0;
 		left: 0;
+		pointer-events: none;
+	}
+	.viewport.replay-mode {
+		cursor: default;
+	}
+	.replay-badge {
+		position: fixed;
+		top: 36px;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 2000000002;
+		background: rgba(0, 0, 0, 0.65);
+		color: #fff;
+		padding: 6px 14px;
+		border-radius: 6px;
+		font-size: 14px;
+		font-weight: 600;
+		letter-spacing: 0.08em;
 		pointer-events: none;
 	}
 </style>

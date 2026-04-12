@@ -457,6 +457,39 @@ export async function connectGameChannel(
 		}
 	});
 
+	ch.on('broadcast', { event: 'history_open' }, ({ payload }) => {
+		const p = payload as { index?: number };
+		if (browser) {
+			window.dispatchEvent(
+				new CustomEvent('bge:history_open', {
+					detail: { index: typeof p?.index === 'number' ? p.index : 0 }
+				})
+			);
+		}
+	});
+
+	ch.on('broadcast', { event: 'history_scrub' }, ({ payload }) => {
+		const p = payload as { index?: number };
+		if (browser && typeof p?.index === 'number') {
+			window.dispatchEvent(new CustomEvent('bge:history_scrub', { detail: { index: p.index } }));
+		}
+	});
+
+	ch.on('broadcast', { event: 'history_close' }, () => {
+		if (browser) {
+			window.dispatchEvent(new CustomEvent('bge:history_close'));
+		}
+	});
+
+	ch.on('broadcast', { event: 'history_restore' }, ({ payload }) => {
+		const p = payload as { historyId?: number };
+		if (browser && typeof p?.historyId === 'number') {
+			window.dispatchEvent(
+				new CustomEvent('bge:history_restore', { detail: { historyId: p.historyId } })
+			);
+		}
+	});
+
 	ch.on('presence', { event: 'sync' }, () => applyPresenceToUsers(ch, presence.userId));
 
 	await new Promise<void>((resolve, reject) => {

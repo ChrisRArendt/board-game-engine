@@ -43,8 +43,12 @@ export interface GameState {
 	moveDrag:
 		| null
 		| {
-				cursorStartX: number;
-				cursorStartY: number;
+				/** Pointer position in viewport coords when drag began */
+				dragStartClientX: number;
+				dragStartClientY: number;
+				/** Pan when drag began — needed so world = (client − pan) / z stays correct when panned */
+				dragStartPanX: number;
+				dragStartPanY: number;
 				elStarts: Map<number, { x: number; y: number }>;
 		  };
 	zSorted: boolean;
@@ -416,7 +420,7 @@ export function runShuffleStackToolbar() {
 	}
 }
 
-export function startMoveDrag(pieceId: number, clientX: number, clientY: number, goX: number, goY: number) {
+export function startMoveDrag(pieceId: number, clientX: number, clientY: number, panX: number, panY: number) {
 	game.update((s) => {
 		const selected = s.pieces.filter((p) => s.selectedIds.has(p.id));
 		const canMove = selected.every((p) => hasAttr(p, 'move'));
@@ -427,31 +431,42 @@ export function startMoveDrag(pieceId: number, clientX: number, clientY: number,
 			elStarts.set(p.id, { x: p.x, y: p.y });
 		}
 
-		const zm = 1 / zoomLevelToMult(s.zoomLevel);
-		const cursorStartX = clientX - goX * zm;
-		const cursorStartY = clientY - goY * zm;
-
 		return {
 			...s,
-			moveDrag: { cursorStartX, cursorStartY, elStarts },
+			moveDrag: {
+				dragStartClientX: clientX,
+				dragStartClientY: clientY,
+				dragStartPanX: panX,
+				dragStartPanY: panY,
+				elStarts
+			},
 			zSorted: false,
 			handscroll: false
 		};
 	});
 }
 
-export function moveDragTo(clientX: number, clientY: number, goX: number, goY: number) {
+/**
+ * World coords: (clientX - panX) / z where z = zoom mult. Delta from drag start uses the same pan term
+ * so dragging stays correct when the view is panned away from the origin (and if pan shifts mid-drag).
+ */
+export function moveDragTo(clientX: number, clientY: number) {
 	const zUpdatesRef: { map: Map<number, number> | null } = { map: null };
 	game.update((s) => {
 		if (!s.moveDrag) return s;
-		const zm = 1 / zoomLevelToMult(s.zoomLevel);
+		const z = zoomLevelToMult(s.zoomLevel);
+		const md = s.moveDrag;
 		const dragging = s.pieces.filter((p) => s.selectedIds.has(p.id) && hasAttr(p, 'move'));
 		let pieces = s.pieces.map((p) => {
 			if (!s.selectedIds.has(p.id) || !hasAttr(p, 'move')) return p;
-			const start = s.moveDrag!.elStarts.get(p.id);
+			const start = md.elStarts.get(p.id);
 			if (!start) return p;
-			const nx = start.x - goX * zm + (clientX - s.moveDrag!.cursorStartX) * zm;
-			const ny = start.y - goY * zm + (clientY - s.moveDrag!.cursorStartY) * zm;
+			const nx =
+				start.x +
+				(clientX - s.panX - md.dragStartClientX + md.dragStartPanX) / z;
+			const ny =
+				start.y +
+				(clientY - s.panY - md.dragStartClientY + md.dragStartPanY) / z;
 			return { ...p, x: nx, y: ny };
 		});
 
@@ -682,7 +697,10 @@ export function serializeGameState(): StoredGameSnapshot {
 	};
 }
 
-export function applyStoredGameSnapshot(snapshot: StoredGameSnapshot) {
+export function applyStoredGameSnapshot(
+	snapshot: StoredGameSnapshot,
+	opts?: { skipCenter?: boolean }
+) {
 	game.update((s) => ({
 		...s,
 		pieces: snapshot.pieces.map((p) => ({ ...p })),
@@ -706,7 +724,7 @@ export function applyStoredGameSnapshot(snapshot: StoredGameSnapshot) {
 		panPointerStart: null,
 		handscroll: false
 	}));
-	centerCamToVP();
+	if (!opts?.skipCenter) centerCamToVP();
 }
 
 /**

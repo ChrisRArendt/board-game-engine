@@ -3,6 +3,7 @@
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import Board from '$lib/components/Board.svelte';
+	import HistorySlider from '$lib/components/HistorySlider.svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
 	import UserList from '$lib/components/UserList.svelte';
@@ -16,7 +17,24 @@
 	import { game } from '$lib/stores/game';
 	import { registerGameEmit } from '$lib/stores/game';
 	import { settings } from '$lib/stores/settings';
-	import { emit, connectGameChannel, disconnectGame, getLocalPlayerColor } from '$lib/stores/network';
+	import {
+		emit,
+		connectGameChannel,
+		disconnectGame,
+		getLocalPlayerColor
+	} from '$lib/stores/network';
+	import {
+		configureHistoryRecording,
+		initRecordingBaseline,
+		tryRecordHistorySnapshot,
+		HISTORY_RECORD_INTERVAL_MS,
+		syncOpenReplayFromRemote,
+		remoteCloseReplay,
+		scrubToIndexRemote,
+		remoteRestoreFromHistoryId,
+		exitReplay,
+		isHistoryReplayActive
+	} from '$lib/stores/history';
 	import { appendRollerLine } from '$lib/stores/rollerLog';
 	import { isTypingInField, isZoomMinusKey, isZoomPlusKey } from '$lib/engine/input';
 	import { getViewportSize } from '$lib/engine/geometry';
@@ -66,6 +84,7 @@
 	let viewerLocked = false;
 
 	let unsubAutosave: (() => void) | undefined;
+	let historyRecordInterval: ReturnType<typeof setInterval> | undefined;
 
 	/** Local enlarged piece preview only — never broadcast (unlike Dice Roller). */
 	function openLocalViewerFromSelection() {
@@ -129,6 +148,15 @@
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
+		if (get(isHistoryReplayActive)) {
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				exitReplay();
+				emit('history_close', {});
+				return;
+			}
+			return;
+		}
 		if (e.key === ' ' || e.code === 'Space') {
 			if (isTypingInField(e.target)) return;
 			e.preventDefault();
@@ -181,6 +209,10 @@
 	}
 
 	function onContextMenu(e: MouseEvent) {
+		if (get(isHistoryReplayActive)) {
+			e.preventDefault();
+			return;
+		}
 		e.preventDefault();
 		ctxX = e.clientX;
 		ctxY = e.clientY;
@@ -231,6 +263,32 @@
 		window.addEventListener('bge:window_open', onWindowOpen);
 		window.addEventListener('click', onDocClick);
 
+		const onHistoryOpen = ((ev: CustomEvent) => {
+			const d = ev.detail as { index?: number };
+			const idx = typeof d?.index === 'number' ? d.index : 0;
+			void syncOpenReplayFromRemote(supabase, data.lobby.id, idx);
+		}) as EventListener;
+
+		const onHistoryScrub = ((ev: CustomEvent) => {
+			const d = ev.detail as { index?: number };
+			if (typeof d?.index === 'number') scrubToIndexRemote(d.index);
+		}) as EventListener;
+
+		const onHistoryClose = () => {
+			remoteCloseReplay();
+		};
+
+		const onHistoryRestore = ((ev: CustomEvent) => {
+			const d = ev.detail as { historyId?: number };
+			if (typeof d?.historyId !== 'number') return;
+			void remoteRestoreFromHistoryId(supabase, data.lobby.id, d.historyId, persistSnapshot);
+		}) as EventListener;
+
+		window.addEventListener('bge:history_open', onHistoryOpen);
+		window.addEventListener('bge:history_scrub', onHistoryScrub);
+		window.addEventListener('bge:history_close', onHistoryClose);
+		window.addEventListener('bge:history_restore', onHistoryRestore);
+
 		void (async () => {
 			if (data.profile) {
 				try {
@@ -262,6 +320,16 @@
 			unsubAutosave = g.subscribeGameSnapshotAutosave(() => {
 				void persistSnapshot();
 			});
+
+			configureHistoryRecording({
+				lobbyId: data.lobby.id,
+				userId: data.session.user.id,
+				supabase
+			});
+			initRecordingBaseline();
+			historyRecordInterval = setInterval(() => {
+				void tryRecordHistorySnapshot();
+			}, HISTORY_RECORD_INTERVAL_MS);
 		})();
 
 		return () => {
@@ -270,6 +338,11 @@
 			window.removeEventListener('bge:window_open', onWindowOpen);
 			window.removeEventListener('bge:game_end', onGameEndEv);
 			unsubAutosave?.();
+			if (historyRecordInterval) clearInterval(historyRecordInterval);
+			window.removeEventListener('bge:history_open', onHistoryOpen);
+			window.removeEventListener('bge:history_scrub', onHistoryScrub);
+			window.removeEventListener('bge:history_close', onHistoryClose);
+			window.removeEventListener('bge:history_restore', onHistoryRestore);
 		};
 	});
 
@@ -292,9 +365,12 @@
 <Board
 	zoomWithScroll={$settings.zoomWithScroll}
 	panScreenEdge={$settings.panScreenEdge}
+	replayMode={$isHistoryReplayActive}
 	onOpenViewer={openLocalViewerForPiece}
 	onViewerFollowPiece={followViewerToPiece}
 />
+
+<HistorySlider lobbyId={data.lobby.id} {supabase} onPersistSnapshot={persistSnapshot} />
 
 <UserList
 	selfUserId={data.session.user.id}

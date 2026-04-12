@@ -4,6 +4,7 @@
 
 	export let piece: PieceInstance;
 	export let curGame: string;
+	export let replayMode = false;
 	export let selected = false;
 	export let remoteColor: string | undefined = undefined;
 	export let onpointerdown: ((e: PointerEvent) => void) | undefined = undefined;
@@ -18,6 +19,7 @@
 <div
 	class="piece"
 	class:selected
+	class:replay={replayMode}
 	data-piece-id={piece.id}
 	style:z-index={piece.zIndex}
 	style:width="{piece.initial_size.w}px"
@@ -34,10 +36,12 @@
 	style:background-size={canFlip ? '200% 100%' : '100% 100%'}
 	style:border-radius={hasAttr(piece, 'roundcorners') ? '8px' : undefined}
 	onpointerdown={(e) => {
+		if (replayMode) return;
 		e.stopPropagation();
 		onpointerdown?.(e);
 	}}
 	ondblclick={(e) => {
+		if (replayMode) return;
 		e.stopPropagation();
 		onpiecedblclick?.(piece.id);
 	}}
@@ -53,5 +57,8 @@
 	}
 	.piece.selected {
 		outline: 3px solid #3af;
+	}
+	.piece.replay {
+		pointer-events: none;
 	}
 </style>
