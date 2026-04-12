@@ -35,7 +35,14 @@
 		exitReplay,
 		isHistoryReplayActive
 	} from '$lib/stores/history';
-	import { appendRollerLine } from '$lib/stores/rollerLog';
+	import {
+		computeGrandTotalFromDice,
+		computeRollTotal,
+		faceCountsFromDice,
+		type DieTabId,
+		type RolledDie
+	} from '$lib/engine/diceRoll';
+	import { appendPoolRoll, appendRollerLine, appendRollerRoll } from '$lib/stores/rollerLog';
 	import { isTypingInField, isZoomMinusKey, isZoomPlusKey } from '$lib/engine/input';
 	import { getViewportSize } from '$lib/engine/geometry';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
@@ -244,14 +251,48 @@
 
 		const onRollerRoll = ((ev: CustomEvent) => {
 			const d = ev.detail as {
-				rollId: string;
-				result: string | number;
+				kind?: string;
+				rollId?: string;
 				datestr: string;
 				name?: string;
+				result?: string | number;
+				results?: (string | number)[];
+				total?: number | null;
+				dice?: RolledDie[];
+				segments?: { tab: string; results: (string | number)[]; total: number | null }[];
+				grandTotal?: number | null;
+				faceCounts?: Record<string, number>;
 			};
-			if (!d?.rollId) return;
-			const label = d.name ? `${d.result} (${d.name})` : String(d.result);
-			appendRollerLine(d.rollId, label, d.datestr);
+			if (!d?.datestr) return;
+			winRoller = true;
+			if (
+				d.kind === 'pool' &&
+				Array.isArray(d.dice) &&
+				d.dice.length > 0 &&
+				Array.isArray(d.segments) &&
+				d.segments.length > 0
+			) {
+				const grandTotal =
+					d.grandTotal !== undefined && d.grandTotal !== null
+						? d.grandTotal
+						: computeGrandTotalFromDice(d.dice);
+				const faceCounts =
+					d.faceCounts && Object.keys(d.faceCounts).length > 0
+						? d.faceCounts
+						: faceCountsFromDice(d.dice);
+				appendPoolRoll(d.segments, grandTotal, faceCounts, d.datestr, d.name);
+				return;
+			}
+			if (d.rollId && Array.isArray(d.results) && d.results.length > 0) {
+				const total =
+					d.total !== undefined && d.total !== null
+						? d.total
+						: computeRollTotal(d.rollId as DieTabId, d.results);
+				appendRollerRoll(d.rollId, d.results, total, d.datestr, d.name);
+			} else if (d.rollId && d.result !== undefined) {
+				const label = d.name ? `${d.result} (${d.name})` : String(d.result);
+				appendRollerLine(d.rollId, label, d.datestr);
+			}
 		}) as EventListener;
 
 		const onWindowOpen = ((ev: CustomEvent) => {

@@ -421,7 +421,19 @@ export async function connectGameChannel(
 		'broadcast',
 		{ event: 'window_roller_roll' },
 		({ payload }) => {
-			const p = payload as { rollId: string; result: string | number; datestr: string };
+			const p = payload as {
+				kind?: string;
+				rollId?: string;
+				datestr: string;
+				name?: string;
+				result?: string | number;
+				results?: (string | number)[];
+				total?: number | null;
+				dice?: { tab: string; value: string | number }[];
+				segments?: { tab: string; results: (string | number)[]; total: number | null }[];
+				grandTotal?: number | null;
+				faceCounts?: Record<string, number>;
+			};
 			if (browser) {
 				window.dispatchEvent(new CustomEvent('bge:roller_roll', { detail: p }));
 			}
