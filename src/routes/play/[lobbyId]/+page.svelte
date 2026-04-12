@@ -18,7 +18,7 @@
 	import { settings } from '$lib/stores/settings';
 	import { emit, connectGameChannel, disconnectGame, getLocalPlayerColor } from '$lib/stores/network';
 	import { appendRollerLine } from '$lib/stores/rollerLog';
-	import { isZoomMinusKey, isZoomPlusKey } from '$lib/engine/input';
+	import { isTypingInField, isZoomMinusKey, isZoomPlusKey } from '$lib/engine/input';
 	import { getViewportSize } from '$lib/engine/geometry';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { endGame } from '$lib/lobby';
@@ -77,6 +77,15 @@
 		winViewer = true;
 	}
 
+	function openRollerWindow() {
+		winRoller = true;
+		try {
+			emit('window_open', { winid: 'window_roller' });
+		} catch (e) {
+			console.warn('[bge] window_open broadcast failed', e);
+		}
+	}
+
 	function focalCenter() {
 		const vp = getViewportSize();
 		return { left: vp.w / 2 + window.scrollX, top: vp.h / 2 + window.scrollY };
@@ -111,6 +120,12 @@
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
+		if (e.key === ' ' || e.code === 'Space') {
+			if (isTypingInField(e.target)) return;
+			e.preventDefault();
+			if (!e.repeat) g.setSpacePanHeld(true);
+			return;
+		}
 		if (isZoomMinusKey(e)) {
 			e.preventDefault();
 			g.adjustZoom(-1, focalCenter());
@@ -150,6 +165,10 @@
 
 	function onKeyUp(e: KeyboardEvent) {
 		if (e.key === 'Shift') g.setShiftDown(false);
+		else if (e.key === ' ' || e.code === 'Space') {
+			g.setSpacePanHeld(false);
+			g.endPanPointer();
+		}
 	}
 
 	function onContextMenu(e: MouseEvent) {
@@ -159,7 +178,11 @@
 		ctxOpen = true;
 	}
 
-	function onDocClick() {
+	function onDocClick(e: MouseEvent) {
+		const raw = e.target;
+		const el =
+			raw instanceof Element ? raw : raw instanceof Node ? raw.parentElement : null;
+		if (el?.closest?.('[data-toolbar]')) return;
 		ctxOpen = false;
 	}
 
@@ -246,17 +269,14 @@
 	});
 </script>
 
-<svelte:window on:keydown={onKeyDown} on:keyup={onKeyUp} on:contextmenu={onContextMenu} />
+<svelte:window onkeydown={onKeyDown} onkeyup={onKeyUp} oncontextmenu={onContextMenu} />
 
 <Toolbar
 	curGame={$game.curGame}
-	roller={() => {
-		winRoller = true;
-		emit('window_open', { winid: 'window_roller' });
-	}}
-	viewer={openLocalViewerFromSelection}
-	openSettings={() => (winSettings = true)}
-	openConnection={() => (winConn = true)}
+	onOpenRoller={openRollerWindow}
+	onOpenViewer={openLocalViewerFromSelection}
+	onOpenSettings={() => (winSettings = true)}
+	onOpenConnection={() => (winConn = true)}
 	onEndGame={data.isHost ? hostEndGame : null}
 />
 
@@ -274,25 +294,38 @@
 
 <ContextMenu bind:open={ctxOpen} x={ctxX} y={ctxY} />
 
-<WindowFrame title="Dice Roller" open={winRoller} onclose={() => (winRoller = false)}>
-	<DiceRoller rollerName={data.profile?.display_name ?? 'Player'} />
-</WindowFrame>
+<!-- Fixed layer above the board; pointer-events none so table still receives drags except on .window (auto). -->
+<div class="play-overlay-root">
+	<WindowFrame title="Dice Roller" visible={winRoller} requestClose={() => (winRoller = false)}>
+		<DiceRoller rollerName={data.profile?.display_name ?? 'Player'} />
+	</WindowFrame>
 
-<WindowFrame title="Connection" open={winConn} onclose={() => (winConn = false)}>
-	<Connection />
-</WindowFrame>
+	<WindowFrame title="Connection" visible={winConn} requestClose={() => (winConn = false)}>
+		<Connection />
+	</WindowFrame>
 
-<WindowFrame title="Settings" open={winSettings} onclose={() => (winSettings = false)}>
-	<Settings />
-</WindowFrame>
+	<WindowFrame title="Settings" visible={winSettings} requestClose={() => (winSettings = false)}>
+		<Settings />
+	</WindowFrame>
 
-<WindowFrame
-	title="Viewer (local)"
-	open={winViewer}
-	onclose={() => {
-		winViewer = false;
-		viewerPieceId = null;
-	}}
->
-	<CardViewer bind:targetPieceId={viewerPieceId} />
-</WindowFrame>
+	<WindowFrame
+		title="Viewer (local)"
+		visible={winViewer}
+		requestClose={() => {
+			winViewer = false;
+			viewerPieceId = null;
+		}}
+	>
+		<CardViewer bind:targetPieceId={viewerPieceId} />
+	</WindowFrame>
+</div>
+
+<style>
+	/* Above toolbar (2000000001) / board; below context menu (2000000003) so right-click menu still wins */
+	.play-overlay-root {
+		position: fixed;
+		inset: 0;
+		z-index: 2000000002;
+		pointer-events: none;
+	}
+</style>

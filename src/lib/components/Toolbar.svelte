@@ -21,74 +21,93 @@
 	$: showFan = sel.length > 1;
 	$: showStack = sel.length > 1;
 
-	/** Not named onRoller — Svelte 5 treats `on` + PascalCase as event syntax, not props. */
-	export let roller: () => void;
-	export let viewer: () => void;
-	export let openSettings: () => void;
-	export let openConnection: () => void;
+	/** Svelte 5: use `on*` + PascalCase for callback props; use `onclick={() => onOpenX()}` — not `onclick={onOpenX}` (see compiler `build_event_handler`). */
+	export let onOpenRoller: () => void;
+	export let onOpenViewer: () => void;
+	export let onOpenSettings: () => void;
+	export let onOpenConnection: () => void;
 	/** Host-only: end the game for everyone (shown when set). */
 	export let onEndGame: (() => void) | null = null;
 </script>
 
-<ul class="controls">
+<ul class="controls" data-toolbar>
 	<li class="spacer"></li>
-	<li class="zoomout"><p onclick={() => g.adjustZoom(-1, focalCenter())}>-</p></li>
-	<li class="zoomin"><p onclick={() => g.adjustZoom(1, focalCenter())}>+</p></li>
+	<li class="zoomout">
+		<button type="button" class="tb-btn" onclick={() => g.adjustZoom(-1, focalCenter())}>-</button>
+	</li>
+	<li class="zoomin">
+		<button type="button" class="tb-btn" onclick={() => g.adjustZoom(1, focalCenter())}>+</button>
+	</li>
 	<li class="spacer double"></li>
-	<li class="origin"><p onclick={() => g.resetPan()}>O</p></li>
+	<li class="origin"><button type="button" class="tb-btn" onclick={() => g.resetPan()}>O</button></li>
 	<li class="rulebook">
-		<p
+		<button
+			type="button"
+			class="tb-btn"
 			onclick={() => {
-				if (browser) window.open(`/data/${curGame}/rules.pdf`, '_blank');
+				window.open(`/data/${curGame}/rules.pdf`, '_blank', 'noopener,noreferrer');
 			}}
 		>
 			Rules
-		</p>
+		</button>
 	</li>
 	<li class="spacer double"></li>
-	<li class="textbox"><p onclick={roller}>Roller</p></li>
+	<li class="textbox"><button type="button" class="tb-btn" onclick={() => onOpenRoller()}>Roller</button></li>
 	<li class="textbox">
-		<p
+		<button
+			type="button"
+			class="tb-btn"
 			title="Enlarged preview of the selected piece — only visible on your screen"
-			onclick={viewer}
+			onclick={() => onOpenViewer()}
 		>
 			Viewer
-		</p>
+		</button>
 	</li>
 	{#if showDup}
-		<li class="dup"><p onclick={() => sel.forEach((p) => g.duplicatePiece(p.id))}>Duplicate</p></li>
+		<li class="dup">
+			<button type="button" class="tb-btn" onclick={() => sel.forEach((p) => g.duplicatePiece(p.id))}
+				>Duplicate</button
+			>
+		</li>
 	{/if}
 	{#if showDest}
-		<li class="dest"><p onclick={() => sel.forEach((p) => g.destroyPiece(p.id))}>Destroy</p></li>
+		<li class="dest">
+			<button type="button" class="tb-btn" onclick={() => sel.forEach((p) => g.destroyPiece(p.id))}
+				>Destroy</button
+			>
+		</li>
 	{/if}
 	{#if showFlip}
-		<li class="flip"><p onclick={() => sel.forEach((p) => g.flipPiece(p.id))}>Flip</p></li>
+		<li class="flip">
+			<button type="button" class="tb-btn" onclick={() => sel.forEach((p) => g.flipPiece(p.id))}
+				>Flip</button
+			>
+		</li>
 	{/if}
 	{#if showShuf}
-		<li class="shuf"><p onclick={() => g.runShuffleSelected()}>Shuffle</p></li>
+		<li class="shuf"><button type="button" class="tb-btn" onclick={() => g.runShuffleSelected()}>Shuffle</button></li>
 	{/if}
 	{#if showFan}
-		<li class="fan"><p onclick={() => g.runArrangeFanned()}>Fan</p></li>
+		<li class="fan"><button type="button" class="tb-btn" onclick={() => g.runArrangeFanned()}>Fan</button></li>
 	{/if}
 	{#if showStack}
 		<li class="stack">
-			<p
-				onclick={() => {
-					g.runShuffleStackToolbar();
-				}}
-			>
-				Stack
-			</p>
+			<button type="button" class="tb-btn" onclick={() => g.runShuffleStackToolbar()}>Stack</button>
 		</li>
 	{/if}
 	<li class="right">
-		<ul>
+		<ul class="right-inner">
 			{#if onEndGame}
-				<li class="endgame"><p onclick={onEndGame}>End game</p></li>
+				<li class="endgame">
+					<button type="button" class="tb-btn" onclick={() => onEndGame?.()}>End game</button>
+				</li>
 			{/if}
-			<li class="settings"><p onclick={openSettings}>Settings</p></li>
-			<li class="connection"><p onclick={openConnection}>Connection</p></li>
-			<li class="spacer"></li>
+			<li class="settings">
+				<button type="button" class="tb-btn" onclick={() => onOpenSettings()}>Settings</button>
+			</li>
+			<li class="conn-li">
+				<button type="button" class="tb-btn" onclick={() => onOpenConnection()}>Connection</button>
+			</li>
 		</ul>
 	</li>
 </ul>
@@ -117,40 +136,46 @@
 		vertical-align: top;
 		cursor: pointer;
 	}
-	.controls p {
+	.tb-btn {
+		all: unset;
+		display: inline-block;
 		padding: 0 10px;
 		line-height: 22px;
 		font-size: 15px;
 		color: #333;
 		margin: 0;
 		user-select: none;
+		cursor: pointer;
+		box-sizing: border-box;
+		pointer-events: auto;
 	}
-	/* Direct-child p only — avoid li.right matching :hover for both nested items (CSS4 ancestor :hover) */
-	.controls > li:hover > p,
-	.controls .right ul > li:hover > p {
+	.controls > li:hover > .tb-btn,
+	.controls .right .right-inner > li:hover > .tb-btn {
 		background: linear-gradient(to bottom, #aaa, #777);
 		color: #fff;
 	}
 	.spacer {
 		width: 8px;
 		cursor: default;
+		pointer-events: none;
 	}
 	.spacer.double {
 		width: 1px;
 		border-left: 1px solid rgba(0, 0, 0, 0.15);
 		border-right: 1px solid rgba(0, 0, 0, 0.15);
 		margin: 0 5px;
+		pointer-events: none;
 	}
 	.right {
 		margin-left: auto;
 	}
-	.right ul {
+	.right > .right-inner {
 		list-style: none;
 		margin: 0;
-		padding: 0;
+		padding: 0 8px 0 0;
 		display: flex;
 	}
-	.endgame p {
+	.endgame .tb-btn {
 		color: #b45309;
 		font-weight: 600;
 	}

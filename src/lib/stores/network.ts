@@ -378,6 +378,13 @@ export async function connectGameChannel(
 		}
 	});
 
+	ch.on('broadcast', { event: 'player_order' }, ({ payload }) => {
+		const p = payload as { userIds?: string[] };
+		if (Array.isArray(p.userIds) && p.userIds.length > 0) {
+			playerOrder.set(p.userIds);
+		}
+	});
+
 	ch.on('broadcast', { event: 'game_end' }, () => {
 		if (browser) {
 			window.dispatchEvent(new CustomEvent('bge:game_end'));

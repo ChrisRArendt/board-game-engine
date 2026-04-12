@@ -1,10 +1,12 @@
 <script lang="ts">
 	export let title = '';
-	export let open = true;
-	export let onclose: (() => void) | undefined = undefined;
+	/** Avoid naming this `open` — in Svelte 5 it can conflict with the HTML `open` attribute / boolean prop handling. */
+	export let visible = false;
+	/** Do not name this `onClose` — Svelte 5 treats `on` + PascalCase props as event/callback wiring and it can conflict. */
+	export let requestClose: (() => void) | undefined = undefined;
 
-	let x = 300;
-	let y = 190;
+	let x = 120;
+	let y = 36;
 	let drag = false;
 	let sx = 0;
 	let sy = 0;
@@ -30,9 +32,9 @@
 	}
 </script>
 
-<svelte:window on:pointermove={onMove} on:pointerup={onUp} />
+<svelte:window onpointermove={onMove} onpointerup={onUp} />
 
-{#if open}
+{#if visible}
 	<div class="window" style:transform="translate3d({x}px, {y}px, 0)">
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="titlebar">
@@ -41,7 +43,10 @@
 					<button
 						type="button"
 						class="close"
-						on:pointerdown|stopPropagation={() => onclose?.()}
+						onpointerdown={(e) => {
+							e.stopPropagation();
+							requestClose?.();
+						}}
 					>
 						x
 					</button>
@@ -49,7 +54,15 @@
 				<li class="inactive">_</li>
 				<li class="inactive">+</li>
 			</ul>
-			<p class="title" on:pointerdown|stopPropagation={onTitleDown}>{title}</p>
+			<p
+				class="title"
+				onpointerdown={(e) => {
+					e.stopPropagation();
+					onTitleDown(e);
+				}}
+			>
+				{title}
+			</p>
 		</div>
 		<div class="content">
 			<slot />
@@ -60,7 +73,10 @@
 <style>
 	.window {
 		position: fixed;
-		z-index: 2000000002;
+		left: 0;
+		top: 0;
+		z-index: 1;
+		pointer-events: auto;
 		box-shadow:
 			0 10px 50px 8px rgba(0, 0, 0, 0.2),
 			0 30px 50px 0px rgba(0, 0, 0, 0.35),

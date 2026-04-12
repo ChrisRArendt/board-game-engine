@@ -2,6 +2,7 @@
 	import { users } from '$lib/stores/users';
 	import {
 		activeUserId,
+		emit,
 		getLocalPlayerColor,
 		playerOrder,
 		toggleTurnHighlight,
@@ -12,6 +13,49 @@
 	export let selfUserId: string;
 	export let selfDisplayName = 'You';
 	export let selfAvatarUrl: string | null | undefined = undefined;
+
+	let orderMenuOpen = false;
+	let orderMenuX = 0;
+	let orderMenuY = 0;
+	let orderMenuPlayerId: string | null = null;
+
+	function closeOrderMenu() {
+		if (!orderMenuOpen) return;
+		orderMenuOpen = false;
+		orderMenuPlayerId = null;
+	}
+
+	/** Full id list for reorder (same rules as orderedRoster / merge). */
+	$: fullPlayerOrderIds = (() => {
+		const po = $playerOrder;
+		if (po.length > 0) return [...po];
+		const others = $users
+			.map((u) => u.id)
+			.sort((a, b) => a.localeCompare(b));
+		return [...others, selfUserId].sort((a, b) => a.localeCompare(b));
+	})();
+
+	function movePlayerOneStep(playerId: string, dir: -1 | 1) {
+		const ids = [...fullPlayerOrderIds];
+		const i = ids.indexOf(playerId);
+		if (i < 0) return;
+		const j = i + dir;
+		if (j < 0 || j >= ids.length) return;
+		const next = [...ids];
+		[next[i], next[j]] = [next[j], next[i]];
+		playerOrder.set(next);
+		emit('player_order', { userIds: next });
+		closeOrderMenu();
+	}
+
+	function onPortraitContextMenu(e: MouseEvent, playerId: string) {
+		e.preventDefault();
+		e.stopPropagation();
+		orderMenuPlayerId = playerId;
+		orderMenuX = e.clientX;
+		orderMenuY = e.clientY;
+		orderMenuOpen = true;
+	}
 
 	type RosterRow = {
 		id: string;
@@ -59,7 +103,15 @@
 	function hasTurn(id: string) {
 		return $turnHighlightUserIds.includes(id);
 	}
+
+	$: orderMenuFullIndex =
+		orderMenuPlayerId != null ? fullPlayerOrderIds.indexOf(orderMenuPlayerId) : -1;
+	$: canMoveUp = orderMenuFullIndex > 0;
+	$: canMoveDown =
+		orderMenuFullIndex >= 0 && orderMenuFullIndex < fullPlayerOrderIds.length - 1;
 </script>
+
+<svelte:window onclick={closeOrderMenu} />
 
 <ul class="users" aria-label="Players">
 	{#each orderedRoster as player (player.id)}
@@ -74,8 +126,15 @@
 					type="button"
 					class="portrait"
 					aria-pressed={hasTurn(player.id)}
-					title="Toggle “my turn” for this player"
-					on:click|stopPropagation={() => toggleTurnHighlight(player.id)}
+					title="Left click: toggle “my turn”. Right click: move up/down in list."
+					onclick={(e) => {
+						e.stopPropagation();
+						toggleTurnHighlight(player.id);
+					}}
+					oncontextmenu={(e) => {
+						e.stopPropagation();
+						onPortraitContextMenu(e, player.id);
+					}}
 				>
 					<UserIdentity
 						variant="board"
@@ -90,11 +149,38 @@
 	{/each}
 </ul>
 
+{#if orderMenuOpen && orderMenuPlayerId}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+	<ul
+		class="order-ctx"
+		style:top="{orderMenuY}px"
+		style:left="{orderMenuX}px"
+		onpointerdown={(e) => e.stopPropagation()}
+		onclick={(e) => e.stopPropagation()}
+	>
+		<li
+			class:disabled={!canMoveUp}
+			onpointerdown={() => canMoveUp && movePlayerOneStep(orderMenuPlayerId!, -1)}
+		>
+			Move up
+		</li>
+		<li
+			class:disabled={!canMoveDown}
+			onpointerdown={() => canMoveDown && movePlayerOneStep(orderMenuPlayerId!, 1)}
+		>
+			Move down
+		</li>
+	</ul>
+{/if}
+
 <style>
 	.users {
 		position: fixed;
 		right: 0;
 		top: 70px;
+		/* Block <ul> would otherwise span full viewport width and steal clicks below the toolbar */
+		width: fit-content;
+		max-width: 100%;
 		list-style: none;
 		z-index: 2000000000;
 		margin: 0;
@@ -169,5 +255,31 @@
 	}
 	.portrait :global(.identity.board) {
 		max-width: 100%;
+	}
+	.order-ctx {
+		position: fixed;
+		z-index: 2000000004;
+		list-style: none;
+		margin: 0;
+		padding: 4px 0;
+		min-width: 120px;
+		background: #fff;
+		border: 1px solid #c3c3c3;
+		border-radius: 4px;
+		box-shadow: 0 7px 16px rgba(0, 0, 0, 0.4);
+	}
+	.order-ctx li {
+		padding: 4px 20px;
+		font-size: 14px;
+		color: #333;
+		cursor: pointer;
+	}
+	.order-ctx li:hover:not(.disabled) {
+		background: linear-gradient(to bottom, #aaa, #777);
+		color: #fff;
+	}
+	.order-ctx li.disabled {
+		opacity: 0.4;
+		cursor: default;
 	}
 </style>

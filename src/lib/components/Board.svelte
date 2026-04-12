@@ -120,6 +120,10 @@
 	function onTablePointerDown(e: PointerEvent) {
 		if (e.target !== e.currentTarget) return;
 		const st = get(game);
+		if (st.spacePanHeld) {
+			g.startPanPointer(e.clientX, e.clientY);
+			return;
+		}
 		if (st.shiftDown) {
 			g.startSelectionBox(e.clientX, e.clientY);
 			return;
@@ -143,6 +147,10 @@
 	async function onPiecePointerDown(piece: PieceInstance, e: PointerEvent) {
 		e.stopPropagation();
 		const st = get(game);
+		if (st.spacePanHeld) {
+			g.startPanPointer(e.clientX, e.clientY);
+			return;
+		}
 		if (piece.attributes.includes('select')) {
 			g.clickSelect(piece.id, st.shiftDown);
 			await tick();
@@ -163,7 +171,12 @@
 	$: bgTable = `/data/${$game.curGame}/images/table-bg.jpg`;
 </script>
 
-<div class="viewport" bind:this={viewportEl}>
+<div
+	class="viewport"
+	class:space-pan={$game.spacePanHeld}
+	class:handscroll={$game.handscroll}
+	bind:this={viewportEl}
+>
 	<div class="game" style:transform="translate3d({$game.panX}px, {$game.panY}px, 0)">
 		<div
 			class="pieces-layer"
@@ -254,6 +267,12 @@
 		overflow: hidden;
 		/* 0: stay above <main> hit-testing; toolbar / user list use much higher z-index */
 		z-index: 0;
+	}
+	.viewport.space-pan {
+		cursor: grab;
+	}
+	.viewport.handscroll {
+		cursor: grabbing;
 	}
 	.game {
 		position: absolute;

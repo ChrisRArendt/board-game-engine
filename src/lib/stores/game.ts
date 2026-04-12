@@ -37,6 +37,8 @@ export interface GameState {
 	selectingBox: boolean;
 	selectBoxStartItems: Set<number>;
 	handscroll: boolean;
+	/** Space held (not typing): temporary pan mode with grab cursor */
+	spacePanHeld: boolean;
 	panPointerStart: { x: number; y: number; panX: number; panY: number } | null;
 	moveDrag:
 		| null
@@ -75,6 +77,7 @@ function initialState(): GameState {
 		selectingBox: false,
 		selectBoxStartItems: new Set(),
 		handscroll: false,
+		spacePanHeld: false,
 		panPointerStart: null,
 		moveDrag: null,
 		zSorted: false,
@@ -125,7 +128,10 @@ export function loadGameData(json: GameDataJson) {
 			panX: 0,
 			panY: 0,
 			zoomLevel: 0,
-			loaded: true
+			loaded: true,
+			spacePanHeld: false,
+			panPointerStart: null,
+			handscroll: false
 		};
 	});
 }
@@ -534,6 +540,10 @@ export function setHandscroll(v: boolean) {
 	game.update((s) => ({ ...s, handscroll: v }));
 }
 
+export function setSpacePanHeld(v: boolean) {
+	game.update((s) => ({ ...s, spacePanHeld: v }));
+}
+
 export function startPanPointer(x: number, y: number) {
 	game.update((s) => ({ ...s, panPointerStart: { x, y, panX: s.panX, panY: s.panY }, handscroll: true }));
 }
@@ -691,7 +701,10 @@ export function applyStoredGameSnapshot(snapshot: StoredGameSnapshot) {
 		selectingBox: false,
 		selectBoxStartItems: new Set(),
 		edgePan: { x: 0, y: 0 },
-		zSorted: false
+		zSorted: false,
+		spacePanHeld: false,
+		panPointerStart: null,
+		handscroll: false
 	}));
 	centerCamToVP();
 }
