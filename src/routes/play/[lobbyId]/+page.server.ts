@@ -1,4 +1,6 @@
 import { error, redirect } from '@sveltejs/kit';
+import { fetchLobbyMembersOrdered, messageFromUnknown } from '$lib/lobby/sortOrderFallback';
+import { pageTitle } from '$lib/site';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals: { supabase, safeGetSession } }) => {
@@ -38,13 +40,13 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		.eq('id', session.user.id)
 		.single();
 
-	const { data: orderRows } = await supabase
-		.from('lobby_members')
-		.select('user_id')
-		.eq('lobby_id', lobby.id)
-		.order('sort_order', { ascending: true });
-
-	const memberOrderIds = (orderRows ?? []).map((r) => r.user_id);
+	let memberOrderIds: string[];
+	try {
+		const orderRows = await fetchLobbyMembersOrdered(supabase, lobby.id);
+		memberOrderIds = orderRows.map((r) => r.user_id);
+	} catch (e) {
+		throw error(500, messageFromUnknown(e));
+	}
 
 	const { data: snapRow } = await supabase
 		.from('game_snapshots')
@@ -60,6 +62,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		profile,
 		memberOrderIds,
 		storedSnapshot: snapRow?.snapshot ?? null,
-		isHost
+		isHost,
+		title: pageTitle(lobby.name.trim() || 'Game')
 	};
 };

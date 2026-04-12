@@ -1,5 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import { ensureLobbyMembership } from '$lib/lobby';
+import { fetchLobbyMembersOrdered, messageFromUnknown } from '$lib/lobby/sortOrderFallback';
+import { pageTitle } from '$lib/site';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals: { supabase, safeGetSession } }) => {
@@ -53,13 +55,12 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		.eq('id', session.user.id)
 		.single();
 
-	const { data: memberRows } = await supabase
-		.from('lobby_members')
-		.select('user_id, sort_order')
-		.eq('lobby_id', lobby.id)
-		.order('sort_order', { ascending: true });
-
-	const rows = memberRows ?? [];
+	let rows: { user_id: string; sort_order: number }[];
+	try {
+		rows = await fetchLobbyMembersOrdered(supabase, lobby.id);
+	} catch (e) {
+		throw error(500, messageFromUnknown(e));
+	}
 	const userIds = rows.map((r) => r.user_id);
 	let members: {
 		user_id: string;
@@ -89,6 +90,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		lobby,
 		session,
 		profile,
-		members
+		members,
+		title: pageTitle(lobby.name.trim() || 'Lobby')
 	};
 };

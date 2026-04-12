@@ -19,6 +19,8 @@
 		joinLobbyByCode,
 		listOpenLobbies,
 		listMyActiveGames,
+		deleteLobby,
+		endGame,
 		type LobbyRow
 	} from '$lib/lobby';
 	import type { Database } from '$lib/supabase/database.types';
@@ -57,6 +59,8 @@
 
 	let friendshipsCh: RealtimeChannel | null = null;
 	let friendPingCh: RealtimeChannel | null = null;
+	/** Open lobbies + my active games — kept in sync via Realtime on `lobbies`. */
+	let lobbiesCh: RealtimeChannel | null = null;
 
 	const FRIEND_LIST_BROADCAST = 'friend_lists_refresh';
 
@@ -96,6 +100,17 @@
 		}
 	}
 
+	/** Refetch hub lobby lists only (no loading spinner — used by Realtime). */
+	async function refreshLobbyLists() {
+		try {
+			const id = currentUserId();
+			myGames = await listMyActiveGames(supabase, id);
+			lobbies = await listOpenLobbies(supabase);
+		} catch (e) {
+			errMsg = e instanceof Error ? e.message : 'Error';
+		}
+	}
+
 	async function refresh() {
 		loading = true;
 		errMsg = '';
@@ -103,8 +118,7 @@
 			const { data: p } = await supabase.from('profiles').select('*').eq('id', currentUserId()).single();
 			profile = p;
 			await refreshFriendLists();
-			myGames = await listMyActiveGames(supabase, currentUserId());
-			lobbies = await listOpenLobbies(supabase);
+			await refreshLobbyLists();
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Error';
 		}
@@ -181,6 +195,26 @@
 		loading = false;
 	}
 
+	async function deleteMyLobby(lobby: LobbyRow) {
+		if (!confirm(`Delete "${lobby.name}"? This cannot be undone.`)) return;
+		try {
+			await deleteLobby(supabase, lobby.id, currentUserId());
+			await refresh();
+		} catch (e) {
+			errMsg = e instanceof Error ? e.message : 'Could not delete';
+		}
+	}
+
+	async function endMyGame(lobby: LobbyRow) {
+		if (!confirm(`End "${lobby.name}"? Board state will be lost.`)) return;
+		try {
+			await endGame(supabase, lobby.id, currentUserId());
+			await refresh();
+		} catch (e) {
+			errMsg = e instanceof Error ? e.message : 'Could not end game';
+		}
+	}
+
 	onMount(async () => {
 		await refresh();
 
@@ -209,6 +243,18 @@
 			void refreshFriendLists();
 		});
 		void friendPingCh.subscribe();
+
+		/* Hub list was only loaded on mount — friends never saw new/deleted lobbies until refresh. */
+		lobbiesCh = supabase
+			.channel(`lobbies_hub:${myId}`)
+			.on(
+				'postgres_changes',
+				{ event: '*', schema: 'public', table: 'lobbies' },
+				() => {
+					void refreshLobbyLists();
+				}
+			);
+		void lobbiesCh.subscribe();
 	});
 
 	onDestroy(() => {
@@ -219,6 +265,10 @@
 		if (friendPingCh) {
 			void supabase.removeChannel(friendPingCh);
 			friendPingCh = null;
+		}
+		if (lobbiesCh) {
+			void supabase.removeChannel(lobbiesCh);
+			lobbiesCh = null;
 		}
 	});
 </script>
@@ -322,6 +372,14 @@
 					<li>
 						<a href="/play/{G.id}">{G.name}</a>
 						<span class="muted">({G.game_key})</span>
+						{#if G.host_id === currentUserId()}
+							<button
+								type="button"
+								class="trash-btn"
+								title="End this game"
+								on:click={() => endMyGame(G)}
+							>🗑</button>
+						{/if}
 					</li>
 				{:else}
 					<li class="muted">None yet — start a lobby and press Start game.</li>
@@ -353,6 +411,14 @@
 					<li>
 						<a href="/lobby/{L.id}">{L.name}</a>
 						<span class="code-wrap"><CopyInviteCode code={L.invite_code} /></span>
+						{#if L.host_id === currentUserId()}
+							<button
+								type="button"
+								class="trash-btn"
+								title="Delete this lobby"
+								on:click={() => deleteMyLobby(L)}
+							>🗑</button>
+						{/if}
 					</li>
 				{:else}
 					<li class="muted">No open lobbies — create one.</li>
@@ -491,5 +557,18 @@
 	.lobbies a {
 		color: #2563eb;
 		font-weight: 500;
+	}
+	.trash-btn {
+		background: none;
+		border: none;
+		cursor: pointer;
+		font-size: 1rem;
+		padding: 0 0.25rem;
+		opacity: 0.5;
+		transition: opacity 0.15s;
+		flex-shrink: 0;
+	}
+	.trash-btn:hover {
+		opacity: 1;
 	}
 </style>

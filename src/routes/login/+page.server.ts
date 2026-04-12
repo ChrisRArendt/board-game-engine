@@ -1,4 +1,5 @@
 import { redirect } from '@sveltejs/kit';
+import { pageTitle } from '$lib/site';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals: { safeGetSession }, url }) => {
@@ -9,6 +10,7 @@ export const load: PageServerLoad = async ({ locals: { safeGetSession }, url }) 
 		throw redirect(303, safe);
 	}
 	return {
-		redirectTo: url.searchParams.get('redirectTo') ?? '/lobby'
+		redirectTo: url.searchParams.get('redirectTo') ?? '/lobby',
+		title: pageTitle('Sign in')
 	};
 };

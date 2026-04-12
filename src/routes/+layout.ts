@@ -2,5 +2,6 @@ import type { LayoutLoad } from './$types';
 
 export const load: LayoutLoad = async ({ data, depends }) => {
 	depends('supabase:auth');
-	return { session: data.session, profile: data.profile };
+	/** Preserve page `load` fields (e.g. `title`) alongside session/profile. */
+	return { ...data };
 };

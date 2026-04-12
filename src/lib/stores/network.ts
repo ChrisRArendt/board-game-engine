@@ -79,15 +79,15 @@ export function emit(type: string, data: Record<string, unknown>) {
 	return true;
 }
 
-/** Broadcast on lobby channel (waiting room), e.g. game_start */
-export function emitLobby(type: string, data: Record<string, unknown>) {
+/** Broadcast on lobby channel (waiting room), e.g. game_start. Await so messages flush before DB deletes / navigation. */
+export async function emitLobby(type: string, data: Record<string, unknown>) {
 	if (!browser || !lobbyChannel) return false;
-	void lobbyChannel.send({
+	const status = await lobbyChannel.send({
 		type: 'broadcast',
 		event: type,
 		payload: data
 	});
-	return true;
+	return status === 'ok';
 }
 
 /** In-lobby text chat (`broadcast: { self: false }` so we append locally for the sender). */
@@ -173,16 +173,20 @@ function applyPresenceToUsers(ch: RealtimeChannel, selfId: string) {
 	}
 }
 
-/** Keep lobby order; drop disconnected ids; append new joiners at end (sorted by id). */
+/**
+ * Keep authoritative lobby order from SSR; append mid-session joiners only.
+ * Do not shrink `cur` when presence sync is partial (first tick often sees only self) — that used to
+ * replace the agreed order with UUID-sorted ids and desync every client.
+ */
 function mergePlayerOrderWithPresence(selfId: string, otherIds: string[]) {
-	const allPresent = new Set([selfId, ...otherIds]);
 	playerOrder.update((cur) => {
-		const kept = cur.filter((id) => allPresent.has(id));
-		const existing = new Set(kept);
-		const newcomers = [...new Set([selfId, ...otherIds])]
-			.filter((id) => !existing.has(id))
-			.sort((a, b) => a.localeCompare(b));
-		return [...kept, ...newcomers];
+		if (cur.length === 0) {
+			return [...new Set([selfId, ...otherIds])].sort((a, b) => a.localeCompare(b));
+		}
+		const existing = new Set(cur);
+		const newcomers = [selfId, ...otherIds].filter((id) => !existing.has(id));
+		if (newcomers.length === 0) return cur;
+		return [...cur, ...newcomers.sort((a, b) => a.localeCompare(b))];
 	});
 }
 
@@ -205,9 +209,12 @@ export async function connectLobbyChannel(
 		}
 	});
 
-	ch.on('broadcast', { event: 'game_start' }, () => {
+	ch.on('broadcast', { event: 'game_start' }, ({ payload }) => {
 		if (browser) {
-			window.dispatchEvent(new CustomEvent('bge:game_start'));
+			const p = payload as { userIds?: string[] } | null | undefined;
+			window.dispatchEvent(
+				new CustomEvent('bge:game_start', { detail: { userIds: p?.userIds } })
+			);
 		}
 	});
 
@@ -281,13 +288,20 @@ export async function connectLobbyChannel(
 
 /**
  * In-game sync: all piece/window events.
+ * @param opts.memberOrderIds — from `lobby_members` / `fetchLobbyMembersOrdered` (must be set *after*
+ *   `disconnectGame()` clears stores, or everyone’s list reverts to UUID sort).
  */
 export async function connectGameChannel(
 	lobbyId: string,
-	presence: { userId: string; displayName: string; avatarUrl?: string | null }
+	presence: { userId: string; displayName: string; avatarUrl?: string | null },
+	opts?: { memberOrderIds?: string[] }
 ): Promise<void> {
 	if (!browser) return;
 	disconnectGame();
+	const order = opts?.memberOrderIds;
+	if (order && order.length > 0) {
+		playerOrder.set(order);
+	}
 	supabase = createSupabaseBrowserClient();
 	activeUserId.set(presence.userId);
 
@@ -327,6 +341,11 @@ export async function connectGameChannel(
 	ch.on('broadcast', { event: 'piece_deselect' }, ({ payload }) => {
 		const p = payload as { id: number };
 		game.remotePieceDeselect(p.id);
+	});
+
+	ch.on('broadcast', { event: 'piece_destroy' }, ({ payload }) => {
+		const p = payload as { id: number };
+		if (typeof p.id === 'number') game.remotePieceDestroy(p.id);
 	});
 
 	ch.on('broadcast', { event: 'window_open' }, ({ payload }) => {

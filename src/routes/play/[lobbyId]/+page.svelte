@@ -16,13 +16,7 @@
 	import { game } from '$lib/stores/game';
 	import { registerGameEmit } from '$lib/stores/game';
 	import { settings } from '$lib/stores/settings';
-	import {
-		emit,
-		connectGameChannel,
-		disconnectGame,
-		getLocalPlayerColor,
-		playerOrder
-	} from '$lib/stores/network';
+	import { emit, connectGameChannel, disconnectGame, getLocalPlayerColor } from '$lib/stores/network';
 	import { appendRollerLine } from '$lib/stores/rollerLog';
 	import { isZoomMinusKey, isZoomPlusKey } from '$lib/engine/input';
 	import { getViewportSize } from '$lib/engine/geometry';
@@ -30,10 +24,34 @@
 	import { endGame } from '$lib/lobby';
 	import type { Json } from '$lib/supabase/database.types';
 	import type { PageData } from './$types';
+	import { browser } from '$app/environment';
 
 	export let data: PageData;
 
 	const supabase = createSupabaseBrowserClient();
+
+	/**
+	 * Prefer order agreed in the lobby at “Start game” (sessionStorage) over SSR `lobby_members`
+	 * when PostgREST/DB order lags behind what players saw after reordering.
+	 */
+	function memberOrderForPlay(lobbyId: string, serverOrder: string[]): string[] {
+		if (!browser) return serverOrder;
+		const key = `bge:member_order:${lobbyId}`;
+		try {
+			const raw = sessionStorage.getItem(key);
+			if (!raw) return serverOrder;
+			const parsed = JSON.parse(raw) as string[];
+			if (!Array.isArray(parsed) || parsed.length === 0) return serverOrder;
+			const fromServer = new Set(serverOrder);
+			if (parsed.length !== serverOrder.length || !parsed.every((id) => fromServer.has(id))) {
+				return serverOrder;
+			}
+			sessionStorage.removeItem(key);
+			return parsed;
+		} catch {
+			return serverOrder;
+		}
+	}
 
 	let ctxOpen = false;
 	let ctxX = 0;
@@ -146,8 +164,6 @@
 	}
 
 	onMount(() => {
-		playerOrder.set(data.memberOrderIds);
-
 		registerGameEmit((type, payload) => {
 			if (type === 'piece_select') {
 				emit(type, { ...payload, color: getLocalPlayerColor() });
@@ -186,11 +202,15 @@
 		void (async () => {
 			if (data.profile) {
 				try {
-					await connectGameChannel(data.lobby.id, {
-						userId: data.session.user.id,
-						displayName: data.profile.display_name,
-						avatarUrl: data.profile.avatar_url
-					});
+					await connectGameChannel(
+						data.lobby.id,
+						{
+							userId: data.session.user.id,
+							displayName: data.profile.display_name,
+							avatarUrl: data.profile.avatar_url
+						},
+						{ memberOrderIds: memberOrderForPlay(data.lobby.id, data.memberOrderIds) }
+					);
 				} catch (e) {
 					console.error('[bge] realtime', e);
 				}

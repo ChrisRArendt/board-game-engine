@@ -317,6 +317,7 @@ export function destroyPiece(id: number) {
 			selectedIds
 		};
 	});
+	emitGame?.('piece_destroy', { id });
 }
 
 export function runShuffleSelected() {
@@ -607,6 +608,23 @@ export function remotePieceDeselect(id: number) {
 		const rs = { ...s.remoteSelection };
 		delete rs[id];
 		return { ...s, remoteSelection: rs };
+	});
+}
+
+/** Another client destroyed a piece — remove it locally (no destroy-attribute check). */
+export function remotePieceDestroy(id: number) {
+	game.update((s) => {
+		if (!s.pieces.some((x) => x.id === id)) return s;
+		const selectedIds = new Set(s.selectedIds);
+		selectedIds.delete(id);
+		const rs = { ...s.remoteSelection };
+		delete rs[id];
+		return {
+			...s,
+			pieces: s.pieces.filter((x) => x.id !== id),
+			selectedIds,
+			remoteSelection: rs
+		};
 	});
 }
 

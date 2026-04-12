@@ -1,5 +1,6 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/supabase/database.types';
+import { isSortOrderMissingError } from '$lib/lobby/sortOrderFallback';
 
 export type LobbyRow = Database['public']['Tables']['lobbies']['Row'];
 
@@ -33,11 +34,17 @@ export async function createLobby(
 			.single();
 
 		if (!error && data) {
-			const ins = await supabase.from('lobby_members').insert({
+			let ins = await supabase.from('lobby_members').insert({
 				lobby_id: data.id,
 				user_id: opts.hostId,
 				sort_order: 0
 			});
+			if (ins.error && isSortOrderMissingError(ins.error)) {
+				ins = await supabase.from('lobby_members').insert({
+					lobby_id: data.id,
+					user_id: opts.hostId
+				});
+			}
 			if (ins.error) {
 				throw new Error(ins.error.message);
 			}
@@ -88,21 +95,35 @@ export async function ensureLobbyMembership(
 		.limit(1)
 		.maybeSingle();
 
-	if (sortErr) {
+	let nextSort: number;
+	if (sortErr && isSortOrderMissingError(sortErr)) {
+		const { count } = await supabase
+			.from('lobby_members')
+			.select('*', { count: 'exact', head: true })
+			.eq('lobby_id', lobby.id);
+		nextSort = count ?? 0;
+	} else if (sortErr) {
 		throw new Error(sortErr.message);
+	} else {
+		nextSort = (maxRow?.sort_order ?? -1) + 1;
 	}
 
-	const nextSort = (maxRow?.sort_order ?? -1) + 1;
-
-	const { error: insErr } = await supabase.from('lobby_members').insert({
+	let ins = await supabase.from('lobby_members').insert({
 		lobby_id: lobby.id,
 		user_id: userId,
 		sort_order: nextSort
 	});
 
-	if (insErr) {
-		if (insErr.code === '23505') return;
-		throw new Error(insErr.message);
+	if (ins.error && isSortOrderMissingError(ins.error)) {
+		ins = await supabase.from('lobby_members').insert({
+			lobby_id: lobby.id,
+			user_id: userId
+		});
+	}
+
+	if (ins.error) {
+		if (ins.error.code === '23505') return;
+		throw new Error(ins.error.message);
 	}
 }
 
@@ -225,6 +246,26 @@ export async function leaveLobby(supabase: SupabaseClient<Database>, lobbyId: st
 	if (lobby?.host_id === userId) {
 		await supabase.from('lobbies').update({ status: 'finished' }).eq('id', lobbyId);
 	}
+}
+
+/**
+ * Apply member order by updating `sort_order` per row (fallback when `set_lobby_member_order` RPC
+ * is missing from PostgREST cache). Requires migration `007_lobby_members_update_policy.sql`.
+ */
+export async function persistLobbyMemberOrderWithoutRpc(
+	supabase: SupabaseClient<Database>,
+	lobbyId: string,
+	userIds: string[]
+): Promise<{ error: PostgrestError | null }> {
+	for (let i = 0; i < userIds.length; i++) {
+		const { error } = await supabase
+			.from('lobby_members')
+			.update({ sort_order: i })
+			.eq('lobby_id', lobbyId)
+			.eq('user_id', userIds[i]);
+		if (error) return { error };
+	}
+	return { error: null };
 }
 
 export async function startGame(supabase: SupabaseClient<Database>, lobbyId: string, hostId: string) {

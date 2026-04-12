@@ -4,13 +4,24 @@
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { connectLobbyChannel, disconnectLobby, emitLobby } from '$lib/stores/network';
 	import { users } from '$lib/stores/users';
-	import { startGame, deleteLobby, leaveLobby } from '$lib/lobby';
+	import { startGame, deleteLobby, leaveLobby, persistLobbyMemberOrderWithoutRpc } from '$lib/lobby';
+	import {
+		fetchLobbyMembersOrdered,
+		isRpcMissingFromCacheError,
+		isSortOrderMissingError
+	} from '$lib/lobby/sortOrderFallback';
 	import CopyInviteCode from '$lib/components/CopyInviteCode.svelte';
 	import LobbyRoomChat from '$lib/components/LobbyRoomChat.svelte';
 	import UserIdentity from '$lib/components/UserIdentity.svelte';
+	import type { RealtimeChannel } from '@supabase/supabase-js';
 	import type { PageData } from './$types';
 
 	export let data: PageData;
+
+	/** DB DELETE watch — host may delete the lobby from the hub list with no broadcast; members still see this row vanish. */
+	let lobbyDeleteCh: RealtimeChannel | null = null;
+	/** DB lobby_members changes — keep player list in sync when others join/leave (SSR snapshot is stale). */
+	let lobbyMembersCh: RealtimeChannel | null = null;
 
 	type MemberRow = {
 		user_id: string;
@@ -23,6 +34,8 @@
 	const isHost = data.lobby.host_id === data.session.user.id;
 
 	let errMsg = '';
+	/** True when order was synced over the socket but DB writes failed (PostgREST schema cache). */
+	let lobbyOrderBroadcastOnly = false;
 	let starting = false;
 	let reordering = false;
 	let deleting = false;
@@ -49,6 +62,41 @@
 		if (Array.isArray(d?.userIds)) applyOrderFromIds(d.userIds);
 	}
 
+	async function refreshMembersFromDb() {
+		try {
+			const rows = await fetchLobbyMembersOrdered(supabase, data.lobby.id);
+			const userIds = rows.map((r) => r.user_id);
+			if (userIds.length === 0) {
+				membersOrdered = [];
+				profileById.clear();
+				return;
+			}
+			const { data: profs, error } = await supabase
+				.from('profiles')
+				.select('id, display_name, avatar_url')
+				.in('id', userIds);
+			if (error) {
+				errMsg = error.message;
+				return;
+			}
+			const pmap = new Map((profs ?? []).map((p) => [p.id, p]));
+			membersOrdered = rows.map((r) => {
+				const p = pmap.get(r.user_id);
+				const row: MemberRow = {
+					user_id: r.user_id,
+					sort_order: r.sort_order,
+					display_name: p?.display_name ?? 'Player',
+					avatar_url: p?.avatar_url ?? null
+				};
+				return row;
+			});
+			profileById.clear();
+			for (const m of membersOrdered) profileById.set(m.user_id, m);
+		} catch (e) {
+			errMsg = e instanceof Error ? e.message : 'Could not refresh players';
+		}
+	}
+
 	function swap(i: number, j: number) {
 		const next = [...membersOrdered];
 		[next[i], next[j]] = [next[j], next[i]];
@@ -59,18 +107,36 @@
 		if (membersOrdered.length === 0) return;
 		reordering = true;
 		errMsg = '';
+		lobbyOrderBroadcastOnly = false;
 		const userIds = membersOrdered.map((m) => m.user_id);
-		const { error } = await supabase.rpc('set_lobby_member_order', {
-			p_lobby_id: data.lobby.id,
-			p_user_ids: userIds
-		});
+		let err = (
+			await supabase.rpc('set_lobby_member_order', {
+				p_lobby_id: data.lobby.id,
+				p_user_ids: userIds
+			})
+		).error;
+
+		/* RPC can fail with "function not in cache" OR "sort_order column not in cache" — try row updates. */
+		if (err && (isRpcMissingFromCacheError(err) || isSortOrderMissingError(err))) {
+			const fb = await persistLobbyMemberOrderWithoutRpc(supabase, data.lobby.id, userIds);
+			err = fb.error;
+		}
+
+		/* UPDATE also touches sort_order in PostgREST — broadcast order so all clients match until NOTIFY pgrst. */
+		if (err && isSortOrderMissingError(err)) {
+			await emitLobby('lobby_order', { userIds });
+			reordering = false;
+			lobbyOrderBroadcastOnly = true;
+			return;
+		}
+
 		reordering = false;
-		if (error) {
-			errMsg = error.message;
+		if (err) {
+			errMsg = err.message;
 			membersOrdered = previous;
 			return;
 		}
-		emitLobby('lobby_order', { userIds });
+		await emitLobby('lobby_order', { userIds });
 	}
 
 	async function moveUp(i: number) {
@@ -87,7 +153,17 @@
 		await persistOrder(previous);
 	}
 
-	function onGameStart() {
+	const memberOrderStorageKey = `bge:member_order:${data.lobby.id}`;
+
+	function onGameStart(ev: Event) {
+		const d = (ev as CustomEvent<{ userIds?: string[] }>).detail;
+		if (Array.isArray(d?.userIds) && d.userIds.length > 0) {
+			try {
+				sessionStorage.setItem(memberOrderStorageKey, JSON.stringify(d.userIds));
+			} catch {
+				/* ignore quota / private mode */
+			}
+		}
 		disconnectLobby();
 		void goto(`/play/${data.lobby.id}`);
 	}
@@ -97,8 +173,14 @@
 		starting = true;
 		errMsg = '';
 		try {
+			const userIds = membersOrdered.map((m) => m.user_id);
 			await startGame(supabase, data.lobby.id, data.session.user.id);
-			emitLobby('game_start', {});
+			await emitLobby('game_start', { userIds });
+			try {
+				sessionStorage.setItem(memberOrderStorageKey, JSON.stringify(userIds));
+			} catch {
+				/* ignore */
+			}
 			disconnectLobby();
 			await goto(`/play/${data.lobby.id}`);
 		} catch (e) {
@@ -113,7 +195,7 @@
 		deleting = true;
 		errMsg = '';
 		try {
-			emitLobby('lobby_deleted', {});
+			await emitLobby('lobby_deleted', {});
 			await deleteLobby(supabase, data.lobby.id, data.session.user.id);
 			disconnectLobby();
 			await goto('/lobby');
@@ -128,7 +210,7 @@
 		errMsg = '';
 		try {
 			if (isHost) {
-				emitLobby('lobby_finished', {});
+				await emitLobby('lobby_finished', {});
 			}
 			await leaveLobby(supabase, data.lobby.id, data.session.user.id);
 			disconnectLobby();
@@ -140,6 +222,39 @@
 	}
 
 	onMount(() => {
+		lobbyDeleteCh = supabase
+			.channel(`lobby_delete_watch:${data.lobby.id}`)
+			.on(
+				'postgres_changes',
+				{
+					event: 'DELETE',
+					schema: 'public',
+					table: 'lobbies',
+					filter: `id=eq.${data.lobby.id}`
+				},
+				() => {
+					disconnectLobby();
+					void goto('/lobby');
+				}
+			);
+		void lobbyDeleteCh.subscribe();
+
+		lobbyMembersCh = supabase
+			.channel(`lobby_members_watch:${data.lobby.id}`)
+			.on(
+				'postgres_changes',
+				{
+					event: '*',
+					schema: 'public',
+					table: 'lobby_members',
+					filter: `lobby_id=eq.${data.lobby.id}`
+				},
+				() => {
+					void refreshMembersFromDb();
+				}
+			);
+		void lobbyMembersCh.subscribe();
+
 		void (async () => {
 			if (!data.profile) return;
 			try {
@@ -148,6 +263,7 @@
 					displayName: data.profile.display_name,
 					avatarUrl: data.profile.avatar_url
 				});
+				await refreshMembersFromDb();
 			} catch (e) {
 				errMsg = e instanceof Error ? e.message : 'Could not connect to lobby';
 			}
@@ -171,6 +287,14 @@
 			window.removeEventListener('bge:lobby_order', onLobbyOrderEv);
 			window.removeEventListener('bge:lobby_deleted', onLobbyDeleted);
 			window.removeEventListener('bge:lobby_finished', onLobbyFinished);
+			if (lobbyDeleteCh) {
+				void supabase.removeChannel(lobbyDeleteCh);
+				lobbyDeleteCh = null;
+			}
+			if (lobbyMembersCh) {
+				void supabase.removeChannel(lobbyMembersCh);
+				lobbyMembersCh = null;
+			}
 			disconnectLobby();
 		};
 	});
@@ -192,7 +316,7 @@
 		<p class="meta">
 			Game: {data.lobby.game_key} · Code:
 			<CopyInviteCode code={data.lobby.invite_code} />·
-			{data.members.length} / {data.lobby.max_players} players
+			{membersOrdered.length} / {data.lobby.max_players} players
 		</p>
 		{#if errMsg}
 			<p class="err">{errMsg}</p>
@@ -200,6 +324,16 @@
 
 		<section class="card in-room">
 			<h2>Players</h2>
+			{#if lobbyOrderBroadcastOnly}
+				<p class="hint">Player order is updated for everyone in this room.</p>
+				{#if isHost}
+					<details class="admin-hint">
+						<summary>If order resets after reload</summary>
+						<p>In Supabase, open the SQL editor and run:</p>
+						<pre>NOTIFY pgrst, 'reload schema';</pre>
+					</details>
+				{/if}
+			{/if}
 			<p class="hint">Order is saved for the in-game player list. Anyone in the room can reorder.</p>
 			<ul class="presence">
 				{#each membersOrdered as m, i (m.user_id)}
@@ -292,6 +426,19 @@
 	.meta {
 		color: #475569;
 		line-height: 1.6;
+	}
+	.admin-hint {
+		margin: 0.35rem 0 0.75rem;
+		font-size: 0.85rem;
+		color: #475569;
+	}
+	.admin-hint pre {
+		margin: 0.35rem 0 0;
+		padding: 0.5rem 0.65rem;
+		background: #f1f5f9;
+		border-radius: 6px;
+		font-size: 0.8rem;
+		overflow-x: auto;
 	}
 	.hint {
 		font-size: 0.85rem;

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { pageTitle } from '$lib/site';
 	import '../app.css';
 	import { browser } from '$app/environment';
 	import { onDestroy } from 'svelte';
@@ -9,7 +10,7 @@
 	import type { RealtimeChannel, Session } from '@supabase/supabase-js';
 	import type { ProfileRow } from '$lib/supabase/database.types';
 
-	export let data: { session: Session | null; profile: ProfileRow | null };
+	export let data: { session: Session | null; profile: ProfileRow | null; title?: string };
 
 	const supabase = createSupabaseBrowserClient();
 
@@ -93,7 +94,13 @@
 	}
 
 	$: hideNav = $page.url.pathname === '/login' || $page.url.pathname.startsWith('/play');
+
+	$: docTitle = typeof data.title === 'string' ? data.title : pageTitle('Home');
 </script>
+
+<svelte:head>
+	<title>{docTitle}</title>
+</svelte:head>
 
 {#if !hideNav}
 	<header class="nav">
@@ -131,6 +138,11 @@
 		color: #f8fafc;
 		font-family: Roboto, system-ui, sans-serif;
 		font-size: 0.95rem;
+	}
+	/* app.css sets user-select: none globally (for the tabletop); allow copying in the shell UI */
+	.nav :global(*) {
+		user-select: text;
+		cursor: revert;
 	}
 	.brand {
 		color: inherit;
