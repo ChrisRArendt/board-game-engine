@@ -156,6 +156,27 @@ export interface Database {
 				};
 				Relationships: EmptyRel;
 			};
+			friend_voice_settings: {
+				Row: {
+					user_id: string;
+					friend_id: string;
+					volume: number;
+					muted: boolean;
+				};
+				Insert: {
+					user_id: string;
+					friend_id: string;
+					volume?: number;
+					muted?: boolean;
+				};
+				Update: {
+					user_id?: string;
+					friend_id?: string;
+					volume?: number;
+					muted?: boolean;
+				};
+				Relationships: EmptyRel;
+			};
 		};
 		Views: Record<string, never>;
 		Functions: {

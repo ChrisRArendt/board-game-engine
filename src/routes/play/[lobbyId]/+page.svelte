@@ -46,6 +46,8 @@
 	import { isTypingInField, isZoomMinusKey, isZoomPlusKey } from '$lib/engine/input';
 	import { getViewportSize } from '$lib/engine/geometry';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
+	import { loadFriendVoicePrefsFromSupabase, registerFriendVoiceSaver } from '$lib/stores/voiceSettings';
+	import { leaveVoiceRoom, tryAutoJoinVoice } from '$lib/stores/voiceChat';
 	import { endGame } from '$lib/lobby';
 	import type { Json } from '$lib/supabase/database.types';
 	import type { PageData } from './$types';
@@ -148,6 +150,7 @@
 			await endGame(supabase, data.lobby.id, data.session.user.id);
 			emit('game_end', {});
 			disconnectGame();
+			await leaveVoiceRoom();
 			await goto('/lobby');
 		} catch (e) {
 			console.error('[bge] end game', e);
@@ -331,6 +334,14 @@
 		window.addEventListener('bge:history_restore', onHistoryRestore);
 
 		void (async () => {
+			registerFriendVoiceSaver(supabase);
+			await loadFriendVoicePrefsFromSupabase(supabase, data.session.user.id);
+			if (data.profile) {
+				tryAutoJoinVoice(data.lobby.id, {
+					userId: data.session.user.id,
+					displayName: data.profile.display_name
+				});
+			}
 			if (data.profile) {
 				try {
 					await connectGameChannel(
@@ -400,6 +411,9 @@
 	onOpenViewer={openLocalViewerFromSelection}
 	onOpenSettings={() => (winSettings = true)}
 	onOpenConnection={() => (winConn = true)}
+	voiceLobbyId={data.lobby.id}
+	voiceUserId={data.session.user.id}
+	voiceDisplayName={data.profile?.display_name ?? 'You'}
 	onEndGame={data.isHost ? hostEndGame : null}
 />
 

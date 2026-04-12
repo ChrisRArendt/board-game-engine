@@ -7,6 +7,8 @@
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { onlineUserIds } from '$lib/stores/onlinePresence';
 	import { persistSettings } from '$lib/stores/settings';
+	import { registerFriendVoiceSaver } from '$lib/stores/voiceSettings';
+	import { leaveVoiceRoom } from '$lib/stores/voiceChat';
 	import UserIdentity from '$lib/components/UserIdentity.svelte';
 	import type { RealtimeChannel, Session } from '@supabase/supabase-js';
 	import type { ProfileRow } from '$lib/supabase/database.types';
@@ -99,10 +101,14 @@
 
 	onDestroy(() => {
 		teardownGlobalPresence();
+		registerFriendVoiceSaver(null);
+		void leaveVoiceRoom();
 	});
 
 	async function signOut() {
 		teardownGlobalPresence();
+		registerFriendVoiceSaver(null);
+		void leaveVoiceRoom();
 		await supabase.auth.signOut();
 		window.location.href = '/login';
 	}

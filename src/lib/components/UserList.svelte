@@ -10,6 +10,7 @@
 		turnHighlightUserIds
 	} from '$lib/stores/network';
 	import { settings } from '$lib/stores/settings';
+	import { friendVoicePrefs, setFriendVoicePref } from '$lib/stores/voiceSettings';
 	import UserIdentity from '$lib/components/UserIdentity.svelte';
 
 	export let selfUserId: string;
@@ -17,8 +18,8 @@
 	export let selfAvatarUrl: string | null | undefined = undefined;
 
 	const MENU_PAD = 8;
-	const MENU_EST_W = 120;
-	const MENU_EST_H = 72;
+	const MENU_EST_W = 220;
+	const MENU_EST_H = 200;
 
 	let orderMenuOpen = false;
 	/** Left edge of the menu (fixed), chosen so the menu stays on-screen (extends left from the click). */
@@ -127,6 +128,24 @@
 	$: canMoveUp = orderMenuFullIndex > 0;
 	$: canMoveDown =
 		orderMenuFullIndex >= 0 && orderMenuFullIndex < fullPlayerOrderIds.length - 1;
+
+	$: voicePrefForMenu =
+		orderMenuPlayerId && orderMenuPlayerId !== selfUserId
+			? ($friendVoicePrefs[orderMenuPlayerId] ?? { volume: 1, muted: false })
+			: null;
+
+	function onVoiceVolumeInput(e: Event) {
+		const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+		if (orderMenuPlayerId && orderMenuPlayerId !== selfUserId) {
+			setFriendVoicePref(selfUserId, orderMenuPlayerId, { volume: v });
+		}
+	}
+
+	function toggleVoiceMuteForMenu() {
+		if (!orderMenuPlayerId || orderMenuPlayerId === selfUserId) return;
+		const cur = $friendVoicePrefs[orderMenuPlayerId] ?? { volume: 1, muted: false };
+		setFriendVoicePref(selfUserId, orderMenuPlayerId, { muted: !cur.muted });
+	}
 </script>
 
 <svelte:window onclick={closeOrderMenu} />
@@ -188,6 +207,31 @@
 		>
 			Move down
 		</li>
+		{#if orderMenuPlayerId !== selfUserId && voicePrefForMenu}
+			<li class="voice-sep" aria-hidden="true"></li>
+			<li class="voice-header">Voice (this player)</li>
+			<li class="voice-slider">
+				<label>
+					Volume {Math.round(voicePrefForMenu.volume * 100)}%
+					<input
+						type="range"
+						min="0"
+						max="2"
+						step="0.05"
+						value={voicePrefForMenu.volume}
+						oninput={onVoiceVolumeInput}
+					/>
+				</label>
+			</li>
+			<li
+				class="voice-mute"
+				onpointerdown={() => {
+					toggleVoiceMuteForMenu();
+				}}
+			>
+				{voicePrefForMenu.muted ? 'Unmute voice' : 'Mute voice'}
+			</li>
+		{/if}
 	</ul>
 {/if}
 
@@ -280,7 +324,7 @@
 		list-style: none;
 		margin: 0;
 		padding: 4px 0;
-		min-width: 120px;
+		min-width: 200px;
 		background: #fff;
 		border: 1px solid #c3c3c3;
 		border-radius: 4px;
@@ -299,5 +343,38 @@
 	.order-ctx li.disabled {
 		opacity: 0.4;
 		cursor: default;
+	}
+	.order-ctx li.voice-sep {
+		height: 1px;
+		padding: 0;
+		margin: 6px 8px;
+		background: #ddd;
+		cursor: default;
+	}
+	.order-ctx li.voice-header {
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: #666;
+		cursor: default;
+		padding: 6px 12px 2px;
+	}
+	.order-ctx li.voice-slider {
+		padding: 4px 12px 8px;
+		cursor: default;
+	}
+	.order-ctx li.voice-slider label {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		font-size: 12px;
+		color: #333;
+	}
+	.order-ctx li.voice-slider input[type='range'] {
+		width: 100%;
+	}
+	.order-ctx li.voice-mute {
+		font-size: 13px;
 	}
 </style>

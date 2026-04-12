@@ -13,6 +13,11 @@
 	import CopyInviteCode from '$lib/components/CopyInviteCode.svelte';
 	import LobbyRoomChat from '$lib/components/LobbyRoomChat.svelte';
 	import UserIdentity from '$lib/components/UserIdentity.svelte';
+	import VoiceControls from '$lib/components/VoiceControls.svelte';
+	import VoiceSettings from '$lib/components/windows/VoiceSettings.svelte';
+	import WindowFrame from '$lib/components/windows/WindowFrame.svelte';
+	import { loadFriendVoicePrefsFromSupabase, registerFriendVoiceSaver } from '$lib/stores/voiceSettings';
+	import { leaveVoiceRoom, tryAutoJoinVoice } from '$lib/stores/voiceChat';
 	import type { RealtimeChannel } from '@supabase/supabase-js';
 	import type { PageData } from './$types';
 
@@ -40,6 +45,9 @@
 	let reordering = false;
 	let deleting = false;
 	let leaving = false;
+
+	let winVoice = false;
+	let voicePanelVisible = true;
 
 	let membersOrdered: MemberRow[] = [...data.members];
 
@@ -198,6 +206,7 @@
 			await emitLobby('lobby_deleted', {});
 			await deleteLobby(supabase, data.lobby.id, data.session.user.id);
 			disconnectLobby();
+			await leaveVoiceRoom();
 			await goto('/lobby');
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Could not delete lobby';
@@ -214,6 +223,7 @@
 			}
 			await leaveLobby(supabase, data.lobby.id, data.session.user.id);
 			disconnectLobby();
+			await leaveVoiceRoom();
 			await goto('/lobby');
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Could not leave';
@@ -234,6 +244,7 @@
 				},
 				() => {
 					disconnectLobby();
+					void leaveVoiceRoom();
 					void goto('/lobby');
 				}
 			);
@@ -262,6 +273,12 @@
 					userId: data.session.user.id,
 					displayName: data.profile.display_name,
 					avatarUrl: data.profile.avatar_url
+				});
+				registerFriendVoiceSaver(supabase);
+				await loadFriendVoicePrefsFromSupabase(supabase, data.session.user.id);
+				tryAutoJoinVoice(data.lobby.id, {
+					userId: data.session.user.id,
+					displayName: data.profile.display_name
 				});
 				await refreshMembersFromDb();
 			} catch (e) {
@@ -296,6 +313,7 @@
 				lobbyMembersCh = null;
 			}
 			disconnectLobby();
+			/* Do not leave voice here — user may navigate to /play for the same lobby. */
 		};
 	});
 </script>
@@ -390,7 +408,28 @@
 		</button>
 
 		<p class="back"><a href="/lobby">← Back to lobby list</a></p>
+
+		<button type="button" class="btn ghost full voice-toggle" onclick={() => (voicePanelVisible = !voicePanelVisible)}>
+			{voicePanelVisible ? 'Hide voice panel' : 'Show voice panel'}
+		</button>
 	</aside>
+</div>
+
+{#if voicePanelVisible}
+	<div class="voice-dock-lobby">
+		<VoiceControls
+			lobbyId={data.lobby.id}
+			selfUserId={data.session.user.id}
+			displayName={data.profile?.display_name ?? 'You'}
+			onOpenSettings={() => (winVoice = true)}
+		/>
+	</div>
+{/if}
+
+<div class="lobby-voice-window">
+	<WindowFrame title="Voice settings" visible={winVoice} requestClose={() => (winVoice = false)}>
+		<VoiceSettings />
+	</WindowFrame>
 </div>
 
 <style>
@@ -484,6 +523,30 @@
 	}
 	.back a {
 		color: #2563eb;
+	}
+	.btn.ghost {
+		background: transparent;
+		color: #475569;
+		border-color: #cbd5e1;
+	}
+	.voice-toggle {
+		margin-top: 0.75rem;
+	}
+	.voice-dock-lobby {
+		position: fixed;
+		left: 12px;
+		bottom: 12px;
+		z-index: 50;
+		pointer-events: auto;
+	}
+	.lobby-voice-window {
+		position: fixed;
+		inset: 0;
+		z-index: 100;
+		pointer-events: none;
+	}
+	.lobby-voice-window :global(.window) {
+		pointer-events: auto;
 	}
 	.card {
 		border: 1px solid #e2e8f0;

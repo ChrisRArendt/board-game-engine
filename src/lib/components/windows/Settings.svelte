@@ -4,6 +4,7 @@
 	import { settings, persistSettings } from '$lib/stores/settings';
 	import { getLocalPlayerColor, syncLocalPresenceColor } from '$lib/stores/network';
 	import { savePlayerColorToAccount } from '$lib/profile/playerColor';
+	import VoiceSettings from '$lib/components/windows/VoiceSettings.svelte';
 
 	/** `type="color"` needs hex; when using automatic, the control uses a neutral placeholder. */
 	$: pickerHex = $settings.playerColor?.trim() || '#6b7280';
@@ -69,6 +70,13 @@
 			</button>
 		</div>
 	</li>
+	<li class="voice-block">
+		<div class="voice-label">Voice &amp; audio</div>
+		<p class="voice-hint">
+			Microphone, speakers, and levels. Used when you join voice chat from the toolbar.
+		</p>
+		<VoiceSettings />
+	</li>
 </ul>
 
 <style>
@@ -76,7 +84,9 @@
 		list-style: none;
 		padding: 8px;
 		margin: 0;
-		width: 280px;
+		width: min(400px, 92vw);
+		max-height: min(85vh, 720px);
+		overflow-y: auto;
 	}
 	.check {
 		display: flex;
@@ -158,5 +168,25 @@
 	}
 	.reset-color:hover {
 		background: linear-gradient(to bottom, #eee, #ddd);
+	}
+	.voice-block {
+		margin-top: 12px;
+		padding-top: 12px;
+		border-top: 1px solid rgba(0, 0, 0, 0.12);
+	}
+	.voice-label {
+		font-size: 13px;
+		font-weight: 600;
+		color: #333;
+		margin-bottom: 4px;
+	}
+	.voice-hint {
+		margin: 0 0 8px;
+		font-size: 12px;
+		line-height: 1.35;
+		color: #666;
+	}
+	.voice-block :global(.voice-set) {
+		padding-left: 0;
 	}
 </style>

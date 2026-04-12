@@ -4,6 +4,7 @@
 	import { hasAttr } from '$lib/engine/pieces';
 	import { browser } from '$app/environment';
 	import { getViewportSize } from '$lib/engine/geometry';
+	import { voiceChatState, joinVoiceRoom, leaveVoiceRoom } from '$lib/stores/voiceChat';
 
 	export let curGame = 'bsg_1';
 
@@ -28,6 +29,29 @@
 	export let onOpenConnection: () => void;
 	/** Host-only: end the game for everyone (shown when set). */
 	export let onEndGame: (() => void) | null = null;
+	/** When set (e.g. in /play), toolbar shows Join voice / Leave voice for this lobby. */
+	export let voiceLobbyId: string | null = null;
+	export let voiceUserId: string | null = null;
+	export let voiceDisplayName: string | null = null;
+
+	let voiceBusy = false;
+
+	async function onVoiceToolbarClick() {
+		if (!browser || !voiceLobbyId || !voiceUserId || !voiceDisplayName) return;
+		voiceBusy = true;
+		try {
+			if ($voiceChatState.joined) {
+				await leaveVoiceRoom();
+			} else {
+				await joinVoiceRoom(voiceLobbyId, {
+					userId: voiceUserId,
+					displayName: voiceDisplayName
+				});
+			}
+		} finally {
+			voiceBusy = false;
+		}
+	}
 </script>
 
 <ul class="controls" data-toolbar>
@@ -105,6 +129,30 @@
 			<li class="settings">
 				<button type="button" class="tb-btn" onclick={() => onOpenSettings()}>Settings</button>
 			</li>
+			{#if voiceLobbyId && voiceUserId && voiceDisplayName}
+				<li class="voice-li">
+					<button
+						type="button"
+						class="tb-btn voice-tb"
+						disabled={voiceBusy}
+						onclick={() => void onVoiceToolbarClick()}
+					>
+						<svg class="voice-mic" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+							<path
+								fill="currentColor"
+								d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"
+							/>
+						</svg>
+						<span class="voice-tb-label"
+							>{voiceBusy
+								? '…'
+								: $voiceChatState.joined
+									? 'Leave voice'
+									: 'Join voice'}</span
+						>
+					</button>
+				</li>
+			{/if}
 			<li class="conn-li">
 				<button type="button" class="tb-btn" onclick={() => onOpenConnection()}>Connection</button>
 			</li>
@@ -138,7 +186,9 @@
 	}
 	.tb-btn {
 		all: unset;
-		display: inline-block;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
 		padding: 0 10px;
 		line-height: 22px;
 		font-size: 15px;
@@ -178,5 +228,26 @@
 	.endgame .tb-btn {
 		color: #b45309;
 		font-weight: 600;
+	}
+	.voice-tb {
+		color: #1e293b;
+		font-weight: 500;
+	}
+	.voice-tb .voice-mic {
+		flex-shrink: 0;
+		opacity: 0.92;
+	}
+	.voice-tb:disabled {
+		opacity: 0.55;
+		cursor: wait;
+	}
+	.controls .right .right-inner > li:hover > .voice-tb {
+		color: #fff;
+	}
+	.controls .right .right-inner > li:hover > .voice-tb .voice-mic {
+		opacity: 1;
+	}
+	.voice-tb-label {
+		white-space: nowrap;
 	}
 </style>
