@@ -1,2 +1,24 @@
 # Apache basic auth — do not commit
 .htpasswd
+
+# Dependencies & build
+node_modules
+.svelte-kit
+build
+dist
+.output
+.env
+.env.*
+
+# Logs & caches
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# Tests / coverage (if you add a test runner)
+coverage
+
+# OS
+.DS_Store
+Thumbs.db

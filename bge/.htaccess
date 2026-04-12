@@ -1,4 +1,0 @@
-AuthType Basic  
-AuthName "restricted area"  
-AuthUserFile /home/christopher/projects/arendt-digital/arendtdigital-com/board-game-engine/bge_beta/.htpasswd
-require valid-user
