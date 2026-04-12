@@ -7,6 +7,8 @@
 	export let selected = false;
 	export let remoteColor: string | undefined = undefined;
 	export let onpointerdown: ((e: PointerEvent) => void) | undefined = undefined;
+	/** Local-only enlarged viewer (double-click); not synced to other players */
+	export let onpiecedblclick: ((id: number) => void) | undefined = undefined;
 
 	$: canFlip = hasAttr(piece, 'flip');
 	$: bgUrl = `/data/${curGame}/images/${piece.bg}`;
@@ -22,7 +24,8 @@
 	style:height="{piece.initial_size.h}px"
 	style:transform="translate3d({piece.x}px, {piece.y}px, 0)"
 	style:background-image="url({bgUrl})"
-	style:border={remoteColor ? `6px dashed ${remoteColor}` : undefined}
+	/* outline (not border): border shrinks content with border-box + background-clip: content-box */
+	style:outline={remoteColor ? `3px dashed ${remoteColor}` : undefined}
 	style:background-position={canFlip
 		? piece.flipped
 			? '0px 0px'
@@ -33,6 +36,10 @@
 	onpointerdown={(e) => {
 		e.stopPropagation();
 		onpointerdown?.(e);
+	}}
+	ondblclick={(e) => {
+		e.stopPropagation();
+		onpiecedblclick?.(piece.id);
 	}}
 ></div>
 

@@ -26,7 +26,10 @@
 			style:background-repeat="no-repeat"
 		></div>
 	{:else}
-		<p class="empty">No card</p>
+		<p class="empty">
+			Select a piece on the board, then click <strong>Viewer</strong> in the toolbar, or double‑click a piece.
+			Only you see this window.
+		</p>
 	{/if}
 </div>
 
@@ -40,5 +43,8 @@
 	.empty {
 		padding: 8px;
 		color: #888;
+		font-size: 13px;
+		line-height: 1.35;
+		max-width: 280px;
 	}
 </style>

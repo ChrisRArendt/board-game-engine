@@ -91,22 +91,30 @@ export interface Database {
 					lobby_id: string;
 					user_id: string;
 					joined_at: string;
+					sort_order: number;
 				};
 				Insert: {
 					lobby_id: string;
 					user_id: string;
 					joined_at?: string;
+					sort_order?: number;
 				};
 				Update: {
 					lobby_id?: string;
 					user_id?: string;
 					joined_at?: string;
+					sort_order?: number;
 				};
 				Relationships: EmptyRel;
 			};
 		};
 		Views: Record<string, never>;
-		Functions: Record<string, never>;
+		Functions: {
+			set_lobby_member_order: {
+				Args: { p_lobby_id: string; p_user_ids: string[] };
+				Returns: undefined;
+			};
+		};
 		Enums: Record<string, never>;
 		CompositeTypes: Record<string, never>;
 	};

@@ -33,10 +33,35 @@ export async function createLobby(
 			.single();
 
 		if (!error && data) {
-			await supabase.from('lobby_members').insert({
+			const ins = await supabase.from('lobby_members').insert({
 				lobby_id: data.id,
-				user_id: opts.hostId
+				user_id: opts.hostId,
+				sort_order: 0
 			});
+			// #region agent log
+			fetch('http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1762ed' },
+				body: JSON.stringify({
+					sessionId: '1762ed',
+					runId: 'create-lobby',
+					hypothesisId: 'A',
+					location: 'lobby.ts:createLobby',
+					message: 'lobby_members insert after lobby create',
+					data: {
+						lobbyId: data.id,
+						hostId: opts.hostId,
+						memErr: ins.error
+							? { code: ins.error.code, message: ins.error.message, details: ins.error.details }
+							: null
+					},
+					timestamp: Date.now()
+				})
+			}).catch(() => {});
+			// #endregion
+			if (ins.error) {
+				throw new Error(ins.error.message);
+			}
 			return data;
 		}
 		if (error && error.code !== '23505') throw error;
@@ -75,14 +100,29 @@ export async function ensureLobbyMembership(
 		throw new Error('LOBBY_JOIN:full');
 	}
 
+	const { data: maxRow, error: sortErr } = await supabase
+		.from('lobby_members')
+		.select('sort_order')
+		.eq('lobby_id', lobby.id)
+		.order('sort_order', { ascending: false })
+		.limit(1)
+		.maybeSingle();
+
+	if (sortErr) {
+		throw new Error(sortErr.message);
+	}
+
+	const nextSort = (maxRow?.sort_order ?? -1) + 1;
+
 	const { error: insErr } = await supabase.from('lobby_members').insert({
 		lobby_id: lobby.id,
-		user_id: userId
+		user_id: userId,
+		sort_order: nextSort
 	});
 
 	if (insErr) {
 		if (insErr.code === '23505') return;
-		throw insErr;
+		throw new Error(insErr.message);
 	}
 }
 

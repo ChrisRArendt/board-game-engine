@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { pad } from '$lib/engine/geometry';
 	import { emit } from '$lib/stores/network';
+	import { appendRollerLine, rollerLog } from '$lib/stores/rollerLog';
 
 	const tabs = [
 		{ id: 'diceroller_coin', label: 'Coin' },
@@ -13,9 +14,10 @@
 		{ id: 'diceroller_percent', label: 'd%' }
 	];
 
+	/** Shown next to remote rolls so everyone knows who rolled */
+	export let rollerName = 'Player';
+
 	let active = 'diceroller_d8';
-	const lines: Record<string, { text: string; time: string }[]> = {};
-	for (const t of tabs) lines[t.id] = [];
 
 	function roll() {
 		let result: string | number = '';
@@ -49,8 +51,8 @@
 		}
 		const d = new Date();
 		const datestr = `${pad(d.getHours(), 2)}:${pad(d.getMinutes(), 2)}:${pad(d.getSeconds(), 2)}`;
-		lines[active] = [{ text: String(result), time: datestr }, ...lines[active]].slice(0, 50);
-		emit('window_roller_roll', { rollId: active, result, datestr });
+		appendRollerLine(active, String(result), datestr);
+		emit('window_roller_roll', { rollId: active, result, datestr, name: rollerName });
 	}
 </script>
 
@@ -65,7 +67,7 @@
 	<div class="body">
 		<button type="button" class="rollbtn" on:click={roll}>roll</button>
 		<div class="log">
-			{#each lines[active] as line}
+			{#each $rollerLog[active] ?? [] as line}
 				<p><span>{line.text}</span> <span class="muted">at {line.time}</span></p>
 			{/each}
 		</div>

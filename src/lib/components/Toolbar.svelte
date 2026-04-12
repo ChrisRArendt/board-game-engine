@@ -30,13 +30,13 @@
 
 <ul class="controls">
 	<li class="spacer"></li>
-	<li class="zoomout"><p on:pointerdown={() => g.adjustZoom(-1, focalCenter())}>-</p></li>
-	<li class="zoomin"><p on:pointerdown={() => g.adjustZoom(1, focalCenter())}>+</p></li>
+	<li class="zoomout"><p onclick={() => g.adjustZoom(-1, focalCenter())}>-</p></li>
+	<li class="zoomin"><p onclick={() => g.adjustZoom(1, focalCenter())}>+</p></li>
 	<li class="spacer double"></li>
-	<li class="origin"><p on:pointerdown={() => g.resetPan()}>O</p></li>
+	<li class="origin"><p onclick={() => g.resetPan()}>O</p></li>
 	<li class="rulebook">
 		<p
-			on:pointerdown={() => {
+			onclick={() => {
 				if (browser) window.open(`/data/${curGame}/rules.pdf`, '_blank');
 			}}
 		>
@@ -44,27 +44,34 @@
 		</p>
 	</li>
 	<li class="spacer double"></li>
-	<li class="textbox"><p on:pointerdown={roller}>Roller</p></li>
-	<li class="textbox"><p on:pointerdown={viewer}>Viewer</p></li>
+	<li class="textbox"><p onclick={roller}>Roller</p></li>
+	<li class="textbox">
+		<p
+			title="Enlarged preview of the selected piece — only visible on your screen"
+			onclick={viewer}
+		>
+			Viewer
+		</p>
+	</li>
 	{#if showDup}
-		<li class="dup"><p on:pointerdown={() => sel.forEach((p) => g.duplicatePiece(p.id))}>Duplicate</p></li>
+		<li class="dup"><p onclick={() => sel.forEach((p) => g.duplicatePiece(p.id))}>Duplicate</p></li>
 	{/if}
 	{#if showDest}
-		<li class="dest"><p on:pointerdown={() => sel.forEach((p) => g.destroyPiece(p.id))}>Destroy</p></li>
+		<li class="dest"><p onclick={() => sel.forEach((p) => g.destroyPiece(p.id))}>Destroy</p></li>
 	{/if}
 	{#if showFlip}
-		<li class="flip"><p on:pointerdown={() => sel.forEach((p) => g.flipPiece(p.id))}>Flip</p></li>
+		<li class="flip"><p onclick={() => sel.forEach((p) => g.flipPiece(p.id))}>Flip</p></li>
 	{/if}
 	{#if showShuf}
-		<li class="shuf"><p on:pointerdown={() => g.runShuffleSelected()}>Shuffle</p></li>
+		<li class="shuf"><p onclick={() => g.runShuffleSelected()}>Shuffle</p></li>
 	{/if}
 	{#if showFan}
-		<li class="fan"><p on:pointerdown={() => g.runArrangeFanned()}>Fan</p></li>
+		<li class="fan"><p onclick={() => g.runArrangeFanned()}>Fan</p></li>
 	{/if}
 	{#if showStack}
 		<li class="stack">
 			<p
-				on:pointerdown={() => {
+				onclick={() => {
 					g.runShuffleStackToolbar();
 				}}
 			>
@@ -74,8 +81,8 @@
 	{/if}
 	<li class="right">
 		<ul>
-			<li class="settings"><p on:pointerdown={openSettings}>Settings</p></li>
-			<li class="connection"><p on:pointerdown={openConnection}>Connection</p></li>
+			<li class="settings"><p onclick={openSettings}>Settings</p></li>
+			<li class="connection"><p onclick={openConnection}>Connection</p></li>
 			<li class="spacer"></li>
 		</ul>
 	</li>
@@ -113,7 +120,9 @@
 		margin: 0;
 		user-select: none;
 	}
-	.controls li:hover p {
+	/* Direct-child p only — avoid li.right matching :hover for both nested items (CSS4 ancestor :hover) */
+	.controls > li:hover > p,
+	.controls .right ul > li:hover > p {
 		background: linear-gradient(to bottom, #aaa, #777);
 		color: #fff;
 	}

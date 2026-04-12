@@ -193,29 +193,7 @@
 					schema: 'public',
 					table: 'friendships'
 				},
-				(payload) => {
-					// #region agent log
-					const p = payload as { eventType?: string; old?: Record<string, unknown> };
-					fetch('http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1', {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-							'X-Debug-Session-Id': '1762ed'
-						},
-						body: JSON.stringify({
-							sessionId: '1762ed',
-							location: 'lobby/+page.svelte:friendships',
-							message: 'friendships postgres_changes',
-							data: {
-								eventType: p.eventType,
-								oldKeys: p.old ? Object.keys(p.old) : []
-							},
-							timestamp: Date.now(),
-							hypothesisId: 'H1',
-							runId: 'post-fix'
-						})
-					}).catch(() => {});
-					// #endregion
+				() => {
 					void refreshFriendLists();
 				}
 			);
@@ -225,24 +203,6 @@
 			config: { broadcast: { self: false } }
 		});
 		friendPingCh.on('broadcast', { event: FRIEND_LIST_BROADCAST }, () => {
-			// #region agent log
-			fetch('http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					'X-Debug-Session-Id': '1762ed'
-				},
-				body: JSON.stringify({
-					sessionId: '1762ed',
-					location: 'lobby/+page.svelte:friendPing',
-					message: 'friendship broadcast refresh',
-					data: {},
-					timestamp: Date.now(),
-					hypothesisId: 'H2',
-					runId: 'post-fix'
-				})
-			}).catch(() => {});
-			// #endregion
 			void refreshFriendLists();
 		});
 		void friendPingCh.subscribe();

@@ -12,11 +12,78 @@
 
 	export let data: PageData;
 
+	type MemberRow = {
+		user_id: string;
+		sort_order: number;
+		display_name: string;
+		avatar_url: string | null;
+	};
+
 	const supabase = createSupabaseBrowserClient();
 	const isHost = data.lobby.host_id === data.session.user.id;
 
 	let errMsg = '';
 	let starting = false;
+	let reordering = false;
+
+	let membersOrdered: MemberRow[] = [...data.members];
+
+	const profileById = new Map(data.members.map((m) => [m.user_id, m]));
+
+	function subtitleFor(uid: string) {
+		if (uid === data.session.user.id) return 'You';
+		if ($users.some((u) => u.id === uid)) return 'Connected';
+		return 'In lobby';
+	}
+
+	function applyOrderFromIds(userIds: string[]) {
+		membersOrdered = userIds
+			.map((id) => profileById.get(id))
+			.filter((m): m is MemberRow => m != null);
+	}
+
+	function onLobbyOrderEv(ev: Event) {
+		const d = (ev as CustomEvent<{ userIds: string[] }>).detail;
+		if (Array.isArray(d?.userIds)) applyOrderFromIds(d.userIds);
+	}
+
+	function swap(i: number, j: number) {
+		const next = [...membersOrdered];
+		[next[i], next[j]] = [next[j], next[i]];
+		membersOrdered = next;
+	}
+
+	async function persistOrder(previous: MemberRow[]) {
+		if (membersOrdered.length === 0) return;
+		reordering = true;
+		errMsg = '';
+		const userIds = membersOrdered.map((m) => m.user_id);
+		const { error } = await supabase.rpc('set_lobby_member_order', {
+			p_lobby_id: data.lobby.id,
+			p_user_ids: userIds
+		});
+		reordering = false;
+		if (error) {
+			errMsg = error.message;
+			membersOrdered = previous;
+			return;
+		}
+		emitLobby('lobby_order', { userIds });
+	}
+
+	async function moveUp(i: number) {
+		if (i <= 0) return;
+		const previous = membersOrdered;
+		swap(i, i - 1);
+		await persistOrder(previous);
+	}
+
+	async function moveDown(i: number) {
+		if (i >= membersOrdered.length - 1) return;
+		const previous = membersOrdered;
+		swap(i, i + 1);
+		await persistOrder(previous);
+	}
 
 	function onGameStart() {
 		disconnectLobby();
@@ -53,8 +120,10 @@
 		})();
 
 		window.addEventListener('bge:game_start', onGameStart);
+		window.addEventListener('bge:lobby_order', onLobbyOrderEv);
 		return () => {
 			window.removeEventListener('bge:game_start', onGameStart);
+			window.removeEventListener('bge:lobby_order', onLobbyOrderEv);
 			disconnectLobby();
 		};
 	});
@@ -83,32 +152,44 @@
 		{/if}
 
 		<section class="card in-room">
-			<h2>In this room</h2>
-			<p class="hint">Other players in this lobby show up here.</p>
+			<h2>Players</h2>
+			<p class="hint">Order is saved for the in-game player list. Anyone in the room can reorder.</p>
 			<ul class="presence">
-				<li>
-					<UserIdentity
-						variant="row"
-						displayName={data.profile?.display_name ?? 'You'}
-						avatarUrl={data.profile?.avatar_url}
-						subtitle="You"
-					/>
-				</li>
-				{#each $users as u (u.id)}
-					<li>
+				{#each membersOrdered as m, i (m.user_id)}
+					<li class="member-row">
 						<UserIdentity
 							variant="row"
-							displayName={u.name}
-							avatarUrl={u.avatarUrl}
-							subtitle="Connected"
+							displayName={m.display_name}
+							avatarUrl={m.avatar_url}
+							subtitle={subtitleFor(m.user_id)}
 						/>
+						<span class="reorder">
+							<button
+								type="button"
+								class="rebtn"
+								disabled={reordering || i === 0}
+								onclick={() => moveUp(i)}
+								aria-label="Move up"
+							>
+								↑
+							</button>
+							<button
+								type="button"
+								class="rebtn"
+								disabled={reordering || i >= membersOrdered.length - 1}
+								onclick={() => moveDown(i)}
+								aria-label="Move down"
+							>
+								↓
+							</button>
+						</span>
 					</li>
 				{/each}
 			</ul>
 		</section>
 
 		{#if isHost}
-			<button type="button" class="btn primary full" disabled={starting} on:click={hostStart}>
+			<button type="button" class="btn primary full" disabled={starting} onclick={hostStart}>
 				Start game
 			</button>
 		{:else}
@@ -126,7 +207,7 @@
 		padding: 1.5rem;
 		font-family: Roboto, system-ui, sans-serif;
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
+		grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
 		gap: 1.25rem;
 		align-items: start;
 	}
@@ -208,8 +289,37 @@
 		margin: 0;
 		padding: 0;
 	}
-	.presence li {
+	.member-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
 		margin: 0.35rem 0;
+	}
+	.member-row :global(.identity.row) {
+		flex: 1;
+		min-width: 0;
+	}
+	.reorder {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		flex-shrink: 0;
+	}
+	.rebtn {
+		width: 28px;
+		height: 22px;
+		padding: 0;
+		font-size: 12px;
+		line-height: 1;
+		border: 1px solid #cbd5e1;
+		border-radius: 4px;
+		background: #f8fafc;
+		cursor: pointer;
+	}
+	.rebtn:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
 	}
 	.side {
 		display: flex;

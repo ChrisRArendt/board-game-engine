@@ -38,5 +38,13 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		.eq('id', session.user.id)
 		.single();
 
-	return { lobby, session, profile };
+	const { data: orderRows } = await supabase
+		.from('lobby_members')
+		.select('user_id')
+		.eq('lobby_id', lobby.id)
+		.order('sort_order', { ascending: true });
+
+	const memberOrderIds = (orderRows ?? []).map((r) => r.user_id);
+
+	return { lobby, session, profile, memberOrderIds };
 };

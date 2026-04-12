@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
 	import { onMount, onDestroy } from 'svelte';
 	import { get } from 'svelte/store';
 	import Board from '$lib/components/Board.svelte';
@@ -20,8 +19,10 @@
 		emit,
 		connectGameChannel,
 		disconnectGame,
-		getLocalPlayerColor
+		getLocalPlayerColor,
+		playerOrder
 	} from '$lib/stores/network';
+	import { appendRollerLine } from '$lib/stores/rollerLog';
 	import { isZoomMinusKey, isZoomPlusKey } from '$lib/engine/input';
 	import { getViewportSize } from '$lib/engine/geometry';
 	import type { PageData } from './$types';
@@ -37,6 +38,18 @@
 	let winSettings = false;
 	let winViewer = false;
 	let viewerPieceId: number | null = null;
+
+	/** Local enlarged piece preview only — never broadcast (unlike Dice Roller). */
+	function openLocalViewerFromSelection() {
+		const sel = get(game).pieces.filter((p) => get(game).selectedIds.has(p.id));
+		viewerPieceId = sel.length ? sel[0].id : null;
+		winViewer = true;
+	}
+
+	function openLocalViewerForPiece(id: number) {
+		viewerPieceId = id;
+		winViewer = true;
+	}
 
 	function focalCenter() {
 		const vp = getViewportSize();
@@ -97,6 +110,8 @@
 	}
 
 	onMount(() => {
+		playerOrder.set(data.memberOrderIds);
+
 		registerGameEmit((type, data) => {
 			if (type === 'piece_select') {
 				emit(type, { ...data, color: getLocalPlayerColor() });
@@ -120,27 +135,31 @@
 				g.centerCamToVP();
 			});
 
-		if (browser) {
-			(window as unknown as { __bgeViewerSet?: (id: number) => void }).__bgeViewerSet = (id: number) => {
-				viewerPieceId = id;
+		const onRollerRoll = ((ev: CustomEvent) => {
+			const d = ev.detail as {
+				rollId: string;
+				result: string | number;
+				datestr: string;
+				name?: string;
 			};
-			(window as unknown as { __bgeViewerClear?: () => void }).__bgeViewerClear = () => {
-				viewerPieceId = null;
-			};
+			if (!d?.rollId) return;
+			const label = d.name ? `${d.result} (${d.name})` : String(d.result);
+			appendRollerLine(d.rollId, label, d.datestr);
+		}) as EventListener;
 
-			window.addEventListener('bge:roller_roll', ((ev: CustomEvent) => {
-				const d = ev.detail as { rollId: string; result: string | number; datestr: string };
-				(window as unknown as { __bgeLastRoll?: typeof d }).__bgeLastRoll = d;
-			}) as EventListener);
+		const onWindowOpen = ((ev: CustomEvent) => {
+			const w = ev.detail?.winid as string;
+			if (w === 'window_roller') winRoller = true;
+		}) as EventListener;
 
-			window.addEventListener('bge:window_open', ((ev: CustomEvent) => {
-				const w = ev.detail?.winid as string;
-				if (w === 'window_roller') winRoller = true;
-			}) as EventListener);
-		}
-
+		window.addEventListener('bge:roller_roll', onRollerRoll);
+		window.addEventListener('bge:window_open', onWindowOpen);
 		window.addEventListener('click', onDocClick);
-		return () => window.removeEventListener('click', onDocClick);
+		return () => {
+			window.removeEventListener('click', onDocClick);
+			window.removeEventListener('bge:roller_roll', onRollerRoll);
+			window.removeEventListener('bge:window_open', onWindowOpen);
+		};
 	});
 
 	onDestroy(() => {
@@ -156,16 +175,19 @@
 		winRoller = true;
 		emit('window_open', { winid: 'window_roller' });
 	}}
-	viewer={() => {
-		winViewer = true;
-	}}
+	viewer={openLocalViewerFromSelection}
 	openSettings={() => (winSettings = true)}
 	openConnection={() => (winConn = true)}
 />
 
-<Board zoomWithScroll={$settings.zoomWithScroll} panScreenEdge={$settings.panScreenEdge} />
+<Board
+	zoomWithScroll={$settings.zoomWithScroll}
+	panScreenEdge={$settings.panScreenEdge}
+	onOpenViewer={openLocalViewerForPiece}
+/>
 
 <UserList
+	selfUserId={data.session.user.id}
 	selfDisplayName={data.profile?.display_name ?? 'You'}
 	selfAvatarUrl={data.profile?.avatar_url}
 />
@@ -173,7 +195,7 @@
 <ContextMenu bind:open={ctxOpen} x={ctxX} y={ctxY} />
 
 <WindowFrame title="Dice Roller" open={winRoller} onclose={() => (winRoller = false)}>
-	<DiceRoller />
+	<DiceRoller rollerName={data.profile?.display_name ?? 'Player'} />
 </WindowFrame>
 
 <WindowFrame title="Connection" open={winConn} onclose={() => (winConn = false)}>
@@ -184,6 +206,13 @@
 	<Settings />
 </WindowFrame>
 
-<WindowFrame title="Viewer" open={winViewer} onclose={() => (winViewer = false)}>
+<WindowFrame
+	title="Viewer (local)"
+	open={winViewer}
+	onclose={() => {
+		winViewer = false;
+		viewerPieceId = null;
+	}}
+>
 	<CardViewer bind:targetPieceId={viewerPieceId} />
 </WindowFrame>

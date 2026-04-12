@@ -14,6 +14,8 @@
 
 	export let zoomWithScroll = false;
 	export let panScreenEdge = false;
+	/** Open local card viewer for a piece (not broadcast) */
+	export let onOpenViewer: ((pieceId: number) => void) | undefined = undefined;
 
 	let viewportEl: HTMLDivElement | undefined;
 	let cameraEl: HTMLDivElement | undefined;
@@ -208,6 +210,7 @@
 					selected={$game.selectedIds.has(piece.id)}
 					remoteColor={$game.remoteSelection[piece.id]}
 					onpointerdown={(e) => onPiecePointerDown(piece, e)}
+					onpiecedblclick={onOpenViewer}
 				/>
 			{/each}
 
@@ -249,11 +252,12 @@
 		width: 100vw;
 		height: 100vh;
 		overflow: hidden;
-		z-index: -1;
+		/* 0: stay above <main> hit-testing; toolbar / user list use much higher z-index */
+		z-index: 0;
 	}
 	.game {
 		position: absolute;
-		z-index: -1;
+		z-index: 0;
 	}
 	.pieces-layer {
 		position: relative;

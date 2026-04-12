@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import { writable, get } from 'svelte/store';
 import * as game from './game';
+import { clearRollerLog } from './rollerLog';
 import { users } from './users';
 import { createSupabaseBrowserClient } from '$lib/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -24,6 +25,12 @@ export const activeUserId = writable('');
 /** @deprecated use activeUserId — kept for gradual migration */
 export const activeSocketId = activeUserId;
 
+/** Players marked “my turn” (can be multiple; synced via broadcast). */
+export const turnHighlightUserIds = writable<string[]>([]);
+
+/** Display order of player ids in the in-game list (matches lobby_members.sort_order). */
+export const playerOrder = writable<string[]>([]);
+
 let gameChannel: RealtimeChannel | null = null;
 let lobbyChannel: RealtimeChannel | null = null;
 let supabase = createSupabaseBrowserClient();
@@ -43,6 +50,22 @@ function hueFromUserId(userId: string): string {
 export function getLocalPlayerColor(): string {
 	const uid = get(activeUserId);
 	return uid ? hueFromUserId(uid) : '#888';
+}
+
+/**
+ * Click a portrait: add/remove that player from the shared “turn” set (others unchanged).
+ */
+export function toggleTurnHighlight(playerId: string): void {
+	if (!browser) return;
+	let next: string[] = [];
+	turnHighlightUserIds.update((arr) => {
+		const s = new Set(arr);
+		if (s.has(playerId)) s.delete(playerId);
+		else s.add(playerId);
+		next = Array.from(s).sort((a, b) => a.localeCompare(b));
+		return next;
+	});
+	emit('turn_highlight', { userIds: next });
 }
 
 export function emit(type: string, data: Record<string, unknown>) {
@@ -103,7 +126,10 @@ export function disconnectGame() {
 	}
 	connected.set(false);
 	activeUserId.set('');
+	turnHighlightUserIds.set([]);
+	playerOrder.set([]);
 	users.set([]);
+	clearRollerLog();
 }
 
 export function disconnectLobby() {
@@ -140,7 +166,24 @@ function applyPresenceToUsers(ch: RealtimeChannel, selfId: string) {
 			avatarUrl: meta.avatar_url ?? null
 		});
 	}
+	list.sort((a, b) => a.id.localeCompare(b.id));
 	users.set(list);
+	if (gameChannel) {
+		mergePlayerOrderWithPresence(selfId, list.map((u) => u.id));
+	}
+}
+
+/** Keep lobby order; drop disconnected ids; append new joiners at end (sorted by id). */
+function mergePlayerOrderWithPresence(selfId: string, otherIds: string[]) {
+	const allPresent = new Set([selfId, ...otherIds]);
+	playerOrder.update((cur) => {
+		const kept = cur.filter((id) => allPresent.has(id));
+		const existing = new Set(kept);
+		const newcomers = [...new Set([selfId, ...otherIds])]
+			.filter((id) => !existing.has(id))
+			.sort((a, b) => a.localeCompare(b));
+		return [...kept, ...newcomers];
+	});
 }
 
 /**
@@ -165,6 +208,15 @@ export async function connectLobbyChannel(
 	ch.on('broadcast', { event: 'game_start' }, () => {
 		if (browser) {
 			window.dispatchEvent(new CustomEvent('bge:game_start'));
+		}
+	});
+
+	ch.on('broadcast', { event: 'lobby_order' }, ({ payload }) => {
+		const p = payload as { userIds?: string[] };
+		if (browser && Array.isArray(p.userIds)) {
+			window.dispatchEvent(
+				new CustomEvent('bge:lobby_order', { detail: { userIds: p.userIds } })
+			);
 		}
 	});
 
@@ -286,6 +338,13 @@ export async function connectGameChannel(
 	ch.on('broadcast', { event: 'textregion_change' }, ({ payload }) => {
 		const p = payload as { winid: string; val: string };
 		game.setTextRegion(p.winid, p.val);
+	});
+
+	ch.on('broadcast', { event: 'turn_highlight' }, ({ payload }) => {
+		const p = payload as { userIds?: string[] };
+		if (Array.isArray(p.userIds)) {
+			turnHighlightUserIds.set([...p.userIds].sort((a, b) => a.localeCompare(b)));
+		}
 	});
 
 	ch.on('presence', { event: 'sync' }, () => applyPresenceToUsers(ch, presence.userId));
