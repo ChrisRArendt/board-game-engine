@@ -274,7 +274,7 @@
 </script>
 
 <div class="hub">
-	<h1>Lobby</h1>
+	<h1>Lobbies</h1>
 	{#if errMsg}
 		<p class="err">{errMsg}</p>
 	{/if}

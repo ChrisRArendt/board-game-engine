@@ -407,7 +407,7 @@
 			Leave lobby
 		</button>
 
-		<p class="back"><a href="/lobby">← Back to lobby list</a></p>
+		<p class="back"><a href="/lobby">← Back to lobbies</a></p>
 
 		<button type="button" class="btn ghost full voice-toggle" onclick={() => (voicePanelVisible = !voicePanelVisible)}>
 			{voicePanelVisible ? 'Hide voice panel' : 'Show voice panel'}

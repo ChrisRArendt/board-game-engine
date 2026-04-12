@@ -115,7 +115,15 @@
 
 	$: hideNav = $page.url.pathname === '/login' || $page.url.pathname.startsWith('/play');
 
+	/** Only /play locks the viewport (tabletop); lobby and login scroll normally */
+	$: lockTabletopViewport = $page.url.pathname.startsWith('/play');
+
 	$: docTitle = typeof data.title === 'string' ? data.title : pageTitle('Home');
+
+	$: if (browser && typeof document !== 'undefined') {
+		document.body.classList.remove('app-shell', 'app-tabletop');
+		document.body.classList.add(lockTabletopViewport ? 'app-tabletop' : 'app-shell');
+	}
 </script>
 
 <svelte:head>
@@ -124,10 +132,13 @@
 
 {#if !hideNav}
 	<header class="nav">
-		<a class="brand" href="/">Board Game Engine</a>
-		<nav>
+		<a class="brand" href="/">
+			<span class="brand-full">Board Game Engine</span>
+			<span class="brand-short">BGE</span>
+		</a>
+		<nav class="nav-desktop" aria-label="Account">
 			{#if data.session}
-				<a href="/lobby">Lobby</a>
+				<a href="/lobby">Lobbies</a>
 				<div class="user-wrap">
 					<UserIdentity
 						variant="nav"
@@ -141,6 +152,18 @@
 				<a href="/login">Sign in</a>
 			{/if}
 		</nav>
+		{#if data.session}
+			<details class="nav-mobile">
+				<summary class="nav-mobile-trigger">Menu</summary>
+				<div class="nav-mobile-panel">
+					<a href="/lobby">Lobbies</a>
+					<span class="nav-mobile-name">{data.profile?.display_name ?? data.session.user.email ?? 'Player'}</span>
+					<button type="button" class="linkish nav-mobile-out" on:click={signOut}>Sign out</button>
+				</div>
+			</details>
+		{:else}
+			<a class="nav-mobile-signin" href="/login">Sign in</a>
+		{/if}
 	</header>
 {/if}
 
@@ -168,8 +191,12 @@
 		color: inherit;
 		text-decoration: none;
 		font-weight: 600;
+		flex-shrink: 0;
 	}
-	.nav nav {
+	.brand-short {
+		display: none;
+	}
+	.nav-desktop {
 		display: flex;
 		align-items: center;
 		gap: 1rem;
@@ -203,5 +230,77 @@
 	}
 	main.pad {
 		min-height: calc(100vh - 48px);
+	}
+	.nav-mobile,
+	.nav-mobile-signin {
+		display: none;
+	}
+	@media (max-width: 639px) {
+		.nav {
+			padding: 0.5rem 0.75rem;
+			gap: 0.5rem;
+		}
+		.brand-full {
+			display: none;
+		}
+		.brand-short {
+			display: inline;
+		}
+		.nav-desktop {
+			display: none;
+		}
+		.nav-mobile {
+			display: block;
+			margin-left: auto;
+			position: relative;
+		}
+		.nav-mobile-signin {
+			display: inline-block;
+			margin-left: auto;
+			color: #93c5fd;
+			font-size: 0.9rem;
+		}
+		.nav-mobile-trigger {
+			list-style: none;
+			cursor: pointer;
+			color: #93c5fd;
+			font-size: 0.85rem;
+			font-weight: 500;
+			padding: 0.35rem 0.5rem;
+			border: 1px solid rgba(148, 163, 184, 0.45);
+			border-radius: 6px;
+			background: rgba(15, 23, 42, 0.5);
+		}
+		.nav-mobile-trigger::-webkit-details-marker {
+			display: none;
+		}
+		.nav-mobile-panel {
+			position: absolute;
+			right: 0;
+			top: calc(100% + 6px);
+			min-width: 200px;
+			padding: 0.65rem 0.85rem;
+			background: #0f172a;
+			border: 1px solid rgba(148, 163, 184, 0.35);
+			border-radius: 8px;
+			box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+			display: flex;
+			flex-direction: column;
+			gap: 0.65rem;
+			z-index: 100;
+		}
+		.nav-mobile-panel a {
+			color: #93c5fd;
+			text-decoration: none;
+		}
+		.nav-mobile-name {
+			font-size: 0.8rem;
+			color: #94a3b8;
+			word-break: break-word;
+		}
+		.nav-mobile-out {
+			text-align: left;
+			padding: 0;
+		}
 	}
 </style>

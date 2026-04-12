@@ -24,7 +24,7 @@ npm run check
 ## Flow
 
 - `/` redirects to `/login` or `/lobby`.
-- **Lobby** (`/lobby`): friends (search, requests), create/join lobbies, invite codes.
+- **Lobbies** (`/lobby`): friends (search, requests), create/join lobbies, invite codes.
 - **Waiting room** (`/lobby/[id]`): host starts the game → clients go to `/play/[lobbyId]`.
 - **Play** (`/play/[lobbyId]`): tabletop; Realtime channel `game:{lobbyId}` syncs moves, dice, etc.
 - **Voice chat:** WebRTC mesh on Realtime channel `voice:{lobbyId}` (separate from lobby/game). Join from the waiting room or in-game; persists across lobby → play navigation. Per-player volume/mute is stored in `friend_voice_settings` for signed-in users.
