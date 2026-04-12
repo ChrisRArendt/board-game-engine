@@ -6,7 +6,7 @@ Virtual tabletop for the **Battlestar Galactica** board data (`static/data/bsg_1
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173 — Socket.IO on the same origin
+npm run dev      # http://localhost:27482 — Socket.IO on the same origin
 npm run build
 npm run preview
 npm run check

@@ -109,6 +109,7 @@
 	});
 
 	onDestroy(() => {
+		if (!browser) return;
 		window.removeEventListener('pointermove', onPointerMoveGlobal);
 		window.removeEventListener('pointerup', onPointerUpGlobal);
 		if (edgeTimer) clearInterval(edgeTimer);

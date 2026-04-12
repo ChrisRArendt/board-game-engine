@@ -14,5 +14,9 @@ const socketPlugin = {
 };
 
 export default defineConfig({
-	plugins: [sveltekit(), socketPlugin]
+	plugins: [sveltekit(), socketPlugin],
+	// Uncommon port to avoid clashes with other local apps (Vite default is 5173).
+	server: {
+		port: 27482
+	}
 });
