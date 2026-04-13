@@ -141,11 +141,16 @@
 	/** Only /play locks the viewport (tabletop); lobby and login scroll normally */
 	$: lockTabletopViewport = $page.url.pathname.startsWith('/play');
 
+	/** Editor uses a fixed-height shell so the document does not show a viewport scrollbar */
+	$: editorViewportLock = $page.url.pathname.startsWith('/editor');
+
 	$: docTitle = typeof data.title === 'string' ? data.title : pageTitle('Home');
 
 	$: if (browser && typeof document !== 'undefined') {
-		document.body.classList.remove('app-shell', 'app-tabletop');
-		document.body.classList.add(lockTabletopViewport ? 'app-tabletop' : 'app-shell');
+		document.body.classList.remove('app-shell', 'app-tabletop', 'app-editor');
+		if (lockTabletopViewport) document.body.classList.add('app-tabletop');
+		else if (editorViewportLock) document.body.classList.add('app-editor');
+		else document.body.classList.add('app-shell');
 	}
 </script>
 
@@ -263,6 +268,9 @@
 		display: flex;
 		flex-direction: column;
 		box-sizing: border-box;
+	}
+	:global(body.app-editor) .app-main {
+		overflow: hidden;
 	}
 	.nav-mobile,
 	.nav-mobile-signin {

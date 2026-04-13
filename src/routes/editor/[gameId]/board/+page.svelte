@@ -12,12 +12,14 @@
 </script>
 
 {#if data.session?.user}
-	<BoardEditor
-		gameId={data.game.id}
-		userId={data.session.user.id}
-		gameKey={data.game.game_key}
-		{assetBaseUrl}
-		initialGameData={gameData}
-		cardsForBoard={data.cardsForBoard}
-	/>
+	<div class="editor-board-fill">
+		<BoardEditor
+			gameId={data.game.id}
+			userId={data.session.user.id}
+			gameKey={data.game.game_key}
+			{assetBaseUrl}
+			initialGameData={gameData}
+			cardsForBoard={data.cardsForBoard}
+		/>
+	</div>
 {/if}

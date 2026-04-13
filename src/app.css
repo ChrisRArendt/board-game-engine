@@ -138,6 +138,42 @@ body.app-shell {
 	flex-direction: column;
 }
 
+/* Editor: fill viewport without a window-level vertical scrollbar — inner panels scroll */
+body.app-editor {
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	max-height: 100vh;
+	box-sizing: border-box;
+}
+@supports (height: 100dvh) {
+	body.app-editor {
+		max-height: 100dvh;
+	}
+}
+
+/* Long editor forms: scroll inside the game content column (no document scrollbar) */
+body.app-editor .editor-page-scroll {
+	flex: 1 1 auto;
+	min-height: 0;
+	width: 100%;
+	overflow-y: auto;
+	-webkit-overflow-scrolling: touch;
+	box-sizing: border-box;
+}
+
+body.app-editor .editor-board-fill {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	box-sizing: border-box;
+}
+
 /* Tabletop only: fixed viewport for pan/zoom (class set in +layout.svelte on /play) */
 body.app-tabletop {
 	overflow: hidden;

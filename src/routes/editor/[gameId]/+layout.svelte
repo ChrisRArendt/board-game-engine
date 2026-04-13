@@ -29,6 +29,7 @@
 		flex: 1 1 auto;
 		min-height: 0;
 		width: 100%;
+		overflow: hidden;
 	}
 	.sub {
 		display: flex;
@@ -63,5 +64,6 @@
 		display: flex;
 		flex-direction: column;
 		width: 100%;
+		overflow: hidden;
 	}
 </style>

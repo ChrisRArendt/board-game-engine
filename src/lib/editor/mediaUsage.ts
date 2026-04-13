@@ -1,16 +1,18 @@
 import type { Json } from '$lib/supabase/database.types';
 import { collectFieldBindings } from './fieldBindings';
-import { parseLayers } from './types';
+import { parseBackground, parseLayers } from './types';
 
 /** Media IDs referenced by template image layers and by card field_values for image bindings. */
 export function collectUsedMediaIds(
-	templates: { id: string; layers: Json }[],
+	templates: { id: string; layers: Json; background?: Json }[],
 	cards: { template_id: string; field_values: Json }[]
 ): Set<string> {
 	const used = new Set<string>();
 	const tmplById = new Map(templates.map((t) => [t.id, t]));
 
 	for (const t of templates) {
+		const bg = parseBackground(t.background ?? {});
+		if (bg.type === 'image' && bg.mediaId) used.add(bg.mediaId);
 		const layers = parseLayers(t.layers);
 		for (const L of layers) {
 			if (L.type === 'image' && L.mediaId) used.add(L.mediaId);

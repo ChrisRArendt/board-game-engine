@@ -35,7 +35,7 @@
 	}
 </script>
 
-<div class="page">
+<div class="page editor-page-scroll">
 	<h1>Card templates</h1>
 	<button type="button" class="btn primary" disabled={busy} onclick={createTemplate}>New template</button>
 	<ul class="list">

@@ -15,11 +15,24 @@ export function gradientCss(
 	return `linear-gradient(${angleDeg}deg, ${parts})`;
 }
 
-export function backgroundStyle(bg: CardBackground): string {
+/** CSS `background` for the card face (solid, gradient, or image via `game_media` URLs). */
+export function cardFaceBackgroundCss(bg: CardBackground, mediaUrls: Record<string, string>): string {
 	if (bg.type === 'solid') {
 		return bg.color;
 	}
-	return gradientCss(bg.stops, bg.angle);
+	if (bg.type === 'gradient') {
+		return gradientCss(bg.stops, bg.angle);
+	}
+	const fb = bg.fallbackColor ?? '#1a1a1a';
+	const id = bg.mediaId;
+	const url = id ? mediaUrls[id] : '';
+	if (!url) {
+		return fb;
+	}
+	const fit = bg.objectFit ?? 'cover';
+	const size = fit === 'contain' ? 'contain' : fit === 'fill' ? '100% 100%' : 'cover';
+	const safe = JSON.stringify(url);
+	return `${fb} url(${safe}) center / ${size} no-repeat`;
 }
 
 export function shapeFillStyle(fill: ShapeLayer['fill']): string {

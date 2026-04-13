@@ -197,7 +197,7 @@
 	}
 </script>
 
-<div class="page">
+<div class="page editor-page-scroll">
 	<h1>Pieces</h1>
 
 	<div class="list-controls">

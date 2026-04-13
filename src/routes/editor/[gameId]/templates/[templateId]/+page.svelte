@@ -5,6 +5,7 @@
 	import TemplateCanvas from '$lib/components/editor/TemplateCanvas.svelte';
 	import LayerPanel from '$lib/components/editor/LayerPanel.svelte';
 	import LayerProperties from '$lib/components/editor/LayerProperties.svelte';
+	import GameMediaImageTools from '$lib/components/editor/GameMediaImageTools.svelte';
 	import ColorPicker from '$lib/components/editor/ColorPicker.svelte';
 	import GradientEditor from '$lib/components/editor/GradientEditor.svelte';
 	import UnitInput from '$lib/components/editor/UnitInput.svelte';
@@ -47,6 +48,8 @@
 	}
 
 	$effect(() => {
+		if (!browser) return;
+		void data.game.id;
 		void loadMedia();
 	});
 
@@ -187,23 +190,96 @@
 			onchange={(e) => {
 				const t = (e.currentTarget as HTMLSelectElement).value;
 				if (t === 'solid') background = { type: 'solid', color: '#1e293b' };
-				else background = { type: 'gradient', stops: [{ offset: 0, color: '#1e293b' }, { offset: 1, color: '#0f172a' }], angle: 135 };
+				else if (t === 'gradient') {
+					background = {
+						type: 'gradient',
+						stops: [
+							{ offset: 0, color: '#1e293b' },
+							{ offset: 1, color: '#0f172a' }
+						],
+						angle: 135
+					};
+				} else {
+					background = {
+						type: 'image',
+						mediaId: null,
+						objectFit: 'cover',
+						fallbackColor: '#1e293b'
+					};
+				}
 			}}
 		>
 			<option value="solid">Solid</option>
 			<option value="gradient">Gradient</option>
+			<option value="image">Image</option>
 		</select>
 		{#if background.type === 'solid'}
 			<ColorPicker
 				value={background.color}
 				onValueChange={(c) => (background = { type: 'solid', color: c })}
 			/>
-		{:else}
+		{:else if background.type === 'gradient'}
 			<GradientEditor
 				stops={background.stops}
 				angle={background.angle}
 				onChange={(next) => (background = { type: 'gradient', stops: next.stops, angle: next.angle })}
 			/>
+		{:else if background.type === 'image'}
+			{@const bg = background}
+			<div class="bg-image-tools">
+				<GameMediaImageTools
+					compact
+					gameId={data.game.id}
+					mediaId={bg.mediaId}
+					{mediaUrls}
+					onMediaIdChange={(id) => {
+						background = {
+							type: 'image',
+							mediaId: id,
+							objectFit: bg.objectFit ?? 'cover',
+							fallbackColor: bg.fallbackColor ?? '#1e293b'
+						};
+					}}
+					onMergeUrls={(m) => {
+						mediaUrls = { ...mediaUrls, ...m };
+					}}
+					onAfterPick={() => {
+						void loadMedia();
+					}}
+				/>
+				<label class="bg-fallback">
+					<span>Color behind image</span>
+					<ColorPicker
+						value={bg.fallbackColor ?? '#1e293b'}
+						onValueChange={(c) =>
+							(background = {
+								type: 'image',
+								mediaId: bg.mediaId,
+								objectFit: bg.objectFit ?? 'cover',
+								fallbackColor: c
+							})}
+					/>
+				</label>
+				<label class="bg-fit">
+					<span>Fit</span>
+					<select
+						value={bg.objectFit ?? 'cover'}
+						onchange={(e) => {
+							const fit = (e.currentTarget as HTMLSelectElement).value as 'cover' | 'contain' | 'fill';
+							background = {
+								type: 'image',
+								mediaId: bg.mediaId,
+								objectFit: fit,
+								fallbackColor: bg.fallbackColor ?? '#1e293b'
+							};
+						}}
+					>
+						<option value="cover">cover</option>
+						<option value="contain">contain</option>
+						<option value="fill">fill</option>
+					</select>
+				</label>
+			</div>
 		{/if}
 	</div>
 
@@ -282,7 +358,20 @@
 			onmousedown={(e) => beginResize('right', e)}
 		></div>
 		<aside class="right" style:width="{rightPanelW}px">
-			<LayerProperties layer={selectedLayer()} onChange={patchLayer} />
+			<LayerProperties
+				layer={selectedLayer()}
+				onChange={patchLayer}
+				gameMedia={{
+					gameId: data.game.id,
+					mediaUrls,
+					onMergeUrls: (m) => {
+						mediaUrls = { ...mediaUrls, ...m };
+					},
+					onAfterPick: () => {
+						void loadMedia();
+					}
+				}}
+			/>
 		</aside>
 	</div>
 </div>
@@ -294,6 +383,7 @@
 		flex: 1 1 auto;
 		min-height: 0;
 		width: 100%;
+		overflow: hidden;
 	}
 	.top {
 		display: flex;
@@ -339,10 +429,31 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 12px;
-		align-items: center;
+		align-items: flex-start;
 		padding: 10px 16px;
 		border-bottom: 1px solid var(--color-border);
 		font-size: 14px;
+	}
+	.bg-image-tools {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12px 16px;
+		align-items: flex-end;
+	}
+	.bg-fallback,
+	.bg-fit {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		font-size: 12px;
+		color: var(--color-text-muted);
+	}
+	.bg-fit select {
+		padding: 6px 8px;
+		border-radius: 4px;
+		border: 1px solid var(--color-border);
+		background: var(--color-bg);
+		color: inherit;
 	}
 	.main {
 		flex: 1;

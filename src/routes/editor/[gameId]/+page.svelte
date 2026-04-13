@@ -73,7 +73,7 @@
 			: null;
 </script>
 
-<div class="page">
+<div class="page editor-page-scroll">
 	<h1>{data.game.title}</h1>
 	<p class="meta">Key: <code>{data.game.game_key}</code></p>
 

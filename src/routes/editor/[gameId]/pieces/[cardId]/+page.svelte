@@ -2,8 +2,8 @@
 	import { invalidateAll } from '$app/navigation';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import CardPreview from '$lib/components/editor/CardPreview.svelte';
-	import AIGenerateModal from '$lib/components/editor/AIGenerateModal.svelte';
 	import ColorPicker from '$lib/components/editor/ColorPicker.svelte';
+	import GameMediaImageTools from '$lib/components/editor/GameMediaImageTools.svelte';
 	import {
 		buildCardFieldValuesPayload,
 		collectFieldBindings,
@@ -15,7 +15,6 @@
 	import { rasterizeElementToPng } from '$lib/editor/rasterize';
 	import { publicStorageUrl } from '$lib/editor/mediaUrls';
 	import { downloadBlob } from '$lib/editor/printExport';
-	import MediaPickerModal from '$lib/components/editor/MediaPickerModal.svelte';
 	import type { Json } from '$lib/supabase/database.types';
 	import type { PageData } from './$types';
 	import { browser } from '$app/environment';
@@ -101,54 +100,18 @@
 
 	let previewEl: HTMLDivElement | undefined;
 	let saving = $state(false);
-	let aiOpen = $state(false);
-	let aiFieldKey = $state<string | null>(null);
-	let pickerOpen = $state(false);
-	let pickerFieldKey = $state<string | null>(null);
 	let err = $state('');
 
 	let mediaUrls = $state<Record<string, string>>({});
 
 	async function loadMedia() {
 		const gid = data.game.id;
-		const { data: rows, error: mediaErr } = await supabase
-			.from('game_media')
-			.select('id, file_path')
-			.eq('game_id', gid);
+		const { data: rows } = await supabase.from('game_media').select('id, file_path').eq('game_id', gid);
 		const m: Record<string, string> = {};
 		for (const r of rows ?? []) {
 			m[r.id] = publicStorageUrl(r.file_path);
 		}
 		mediaUrls = m;
-		// #region agent log
-		if (browser) {
-			const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-			const missingFromMap: string[] = [];
-			for (const [k, v] of Object.entries(fieldValues)) {
-				const vid = String(v).trim();
-				if (vid && uuidRe.test(vid) && m[vid] === undefined) missingFromMap.push(k);
-			}
-			fetch('http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a428b6' },
-				body: JSON.stringify({
-					sessionId: 'a428b6',
-					location: 'pieces/+page:loadMedia',
-					message: 'game_media loaded',
-					data: {
-						gameId: gid,
-						rowCount: rows?.length ?? 0,
-						mapSize: Object.keys(m).length,
-						mediaErr: mediaErr?.message ?? null,
-						missingFromMap,
-						fieldKeys: Object.keys(fieldValues)
-					},
-					timestamp: Date.now(),
-					hypothesisId: 'D'
-				})
-			}).catch(() => {});
-		}
-		// #endregion
 	}
 
 	$effect(() => {
@@ -228,7 +191,7 @@
 	}
 </script>
 
-<div class="page">
+<div class="page editor-page-scroll">
 	<nav class="breadcrumb" aria-label="Breadcrumb">
 		<a href="/editor/{data.game.id}">Editor</a>
 		<span class="sep">→</span>
@@ -259,35 +222,20 @@
 					<h3 class="field-bucket-title" id="field-{b.fieldName}">{b.fieldLabel}</h3>
 					<div class="field-bucket-main">
 						{#if isImageField(b)}
-							<div class="img-row">
-								{#if fieldValues[b.fieldName] && mediaUrls[fieldValues[b.fieldName]]}
-									<img
-										class="thumb"
-										src={mediaUrls[fieldValues[b.fieldName]]}
-										alt=""
-									/>
-								{:else}
-									<div class="thumb ph">No image</div>
-								{/if}
-								<div class="img-actions">
-									<button
-										type="button"
-										class="btn small"
-										onclick={() => {
-											pickerFieldKey = b.fieldName;
-											pickerOpen = true;
-										}}>Choose from library</button
-									>
-									<button
-										type="button"
-										class="btn small"
-										onclick={() => {
-											aiFieldKey = b.fieldName;
-											aiOpen = true;
-										}}>Generate with AI</button
-									>
-								</div>
-							</div>
+							<GameMediaImageTools
+								gameId={data.game.id}
+								mediaId={fieldValues[b.fieldName]?.trim() || null}
+								{mediaUrls}
+								onMediaIdChange={(id) => {
+									fieldValues = { ...fieldValues, [b.fieldName]: id ?? '' };
+								}}
+								onMergeUrls={(u) => {
+									mediaUrls = { ...mediaUrls, ...u };
+								}}
+								onAfterPick={() => {
+									void loadMedia();
+								}}
+							/>
 						{:else if b.fieldType === 'textarea'}
 							<textarea
 								class="piece-field-textarea"
@@ -395,44 +343,6 @@
 		</div>
 	</div>
 </div>
-
-<AIGenerateModal
-	open={aiOpen}
-	gameId={data.game.id}
-	onClose={() => {
-		aiOpen = false;
-		aiFieldKey = null;
-	}}
-	onPick={(r) => {
-		if (aiFieldKey) {
-			fieldValues = { ...fieldValues, [aiFieldKey]: r.mediaId };
-			mediaUrls = { ...mediaUrls, [r.mediaId]: r.publicUrl };
-		}
-		aiOpen = false;
-		aiFieldKey = null;
-		void loadMedia();
-	}}
-/>
-
-<MediaPickerModal
-	open={pickerOpen}
-	gameId={data.game.id}
-	onClose={() => {
-		pickerOpen = false;
-		pickerFieldKey = null;
-	}}
-	onPick={(id, filePath) => {
-		if (pickerFieldKey) {
-			fieldValues = { ...fieldValues, [pickerFieldKey]: id };
-			if (filePath) {
-				mediaUrls = { ...mediaUrls, [id]: publicStorageUrl(filePath) };
-			}
-		}
-		pickerOpen = false;
-		pickerFieldKey = null;
-		void loadMedia();
-	}}
-/>
 
 <style>
 	.page {
@@ -572,11 +482,6 @@
 		margin-right: 8px;
 		margin-bottom: 8px;
 	}
-	.btn.small {
-		padding: 4px 8px;
-		font-size: 12px;
-		margin-top: 6px;
-	}
 	.btn.primary {
 		background: var(--color-accent, #3b82f6);
 		color: #fff;
@@ -594,32 +499,6 @@
 	}
 	.err {
 		color: #f87171;
-	}
-	.img-row {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: flex-start;
-		gap: 12px;
-	}
-	.thumb {
-		width: 72px;
-		height: 96px;
-		object-fit: cover;
-		border-radius: 6px;
-		border: 1px solid var(--color-border);
-		background: #111;
-	}
-	.thumb.ph {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 11px;
-		color: #888;
-	}
-	.img-actions {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
 	}
 	.field-bucket .style-row {
 		display: flex;

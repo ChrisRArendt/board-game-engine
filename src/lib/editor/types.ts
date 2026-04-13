@@ -65,6 +65,13 @@ export type CardBackground =
 			type: 'gradient';
 			stops: { offset: number; color: string }[];
 			angle: number;
+	  }
+	| {
+			type: 'image';
+			mediaId: string | null;
+			objectFit?: 'cover' | 'contain' | 'fill';
+			/** Shown behind the image or when the asset URL is not loaded. */
+			fallbackColor?: string;
 	  };
 
 export interface CardTemplateState {
@@ -163,6 +170,16 @@ export function parseBackground(raw: unknown): CardBackground {
 	const o = raw as Record<string, unknown>;
 	if (o.type === 'gradient' && Array.isArray(o.stops)) {
 		return raw as CardBackground;
+	}
+	if (o.type === 'image') {
+		const fit = o.objectFit;
+		const mid = typeof o.mediaId === 'string' ? o.mediaId.trim() : '';
+		return {
+			type: 'image',
+			mediaId: mid !== '' ? mid : null,
+			objectFit: fit === 'contain' || fit === 'fill' ? fit : 'cover',
+			fallbackColor: typeof o.fallbackColor === 'string' ? o.fallbackColor : '#1a1a1a'
+		};
 	}
 	if (o.type === 'solid' && typeof o.color === 'string') {
 		return { type: 'solid', color: o.color };

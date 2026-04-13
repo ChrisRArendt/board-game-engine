@@ -11,7 +11,7 @@ export const load: PageServerLoad = async ({ parent, locals: { supabase }, param
 
 	const { data: templates } = await supabase
 		.from('card_templates')
-		.select('id, layers')
+		.select('id, layers, background')
 		.eq('game_id', params.gameId);
 
 	const { data: cards } = await supabase

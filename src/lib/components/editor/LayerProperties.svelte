@@ -1,10 +1,18 @@
 <script lang="ts">
 	import type { CardLayer, FieldType, ImageLayer, ShapeLayer, TextLayer } from '$lib/editor/types';
 	import ColorPicker from './ColorPicker.svelte';
+	import GameMediaImageTools from './GameMediaImageTools.svelte';
 	import GradientEditor from './GradientEditor.svelte';
 
 	export let layer: CardLayer | null;
 	export let onChange: (next: CardLayer) => void;
+	/** When set, static (non-field) image layers get library + AI pickers instead of a raw media id. */
+	export let gameMedia: {
+		gameId: string;
+		mediaUrls: Record<string, string>;
+		onMergeUrls: (m: Record<string, string>) => void;
+		onAfterPick?: () => void;
+	} | null = null;
 
 	function patch(p: Partial<CardLayer>) {
 		if (!layer) return;
@@ -280,15 +288,29 @@
 			{@const I = layer as ImageLayer}
 			<h4>Image</h4>
 			{#if !I.fieldBinding}
-				<label class="row">
-					<span>Media ID</span>
-					<input
-						type="text"
-						placeholder="Paste game_media id"
-						value={I.mediaId ?? ''}
-						oninput={(e) => patch({ mediaId: (e.currentTarget as HTMLInputElement).value || null })}
-					/>
-				</label>
+				{#if gameMedia}
+					<div class="row">
+						<span>Artwork</span>
+						<GameMediaImageTools
+							gameId={gameMedia.gameId}
+							mediaId={I.mediaId}
+							mediaUrls={gameMedia.mediaUrls}
+							onMediaIdChange={(id) => patch({ mediaId: id })}
+							onMergeUrls={gameMedia.onMergeUrls}
+							onAfterPick={gameMedia.onAfterPick}
+						/>
+					</div>
+				{:else}
+					<label class="row">
+						<span>Media ID</span>
+						<input
+							type="text"
+							placeholder="Paste game_media id"
+							value={I.mediaId ?? ''}
+							oninput={(e) => patch({ mediaId: (e.currentTarget as HTMLInputElement).value || null })}
+						/>
+					</label>
+				{/if}
 			{/if}
 			<label class="row">
 				<span>Object fit</span>

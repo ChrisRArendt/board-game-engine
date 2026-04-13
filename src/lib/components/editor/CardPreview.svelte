@@ -1,9 +1,8 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
 	import type { PieceFieldStyle } from '$lib/editor/fieldBindings';
 	import type { CardBackground, CardLayer, ImageLayer, ShapeLayer, TextLayer } from '$lib/editor/types';
 	import {
-		backgroundStyle,
+		cardFaceBackgroundCss,
 		resolveImageMediaId,
 		resolveTextContent,
 		shapeFillStyle,
@@ -56,48 +55,8 @@
 
 	function imageUrlResolved(layer: ImageLayer): string {
 		const id = resolveImageMediaId(layer, fieldValues);
-		const url = id ? (mediaUrls[id] ?? '') : '';
-		// #region agent log
-		if (browser) {
-			const fn = layer.fieldBinding?.fieldName;
-			const fv = fn != null ? fieldValues[fn] : undefined;
-			if (id && !url) {
-				fetch('http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a428b6' },
-					body: JSON.stringify({
-						sessionId: 'a428b6',
-						location: 'CardPreview:imageUrlResolved',
-						message: 'resolved id but empty url (mediaUrls miss)',
-						data: {
-							layerId: layer.id,
-							fieldName: fn,
-							resolvedId: id,
-							mediaKeysCount: Object.keys(mediaUrls).length
-						},
-						timestamp: Date.now(),
-						hypothesisId: 'A'
-					})
-				}).catch(() => {});
-			}
-			if (layer.fieldBinding && !id && fv != null && String(fv).trim() !== '') {
-				fetch('http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a428b6' },
-					body: JSON.stringify({
-						sessionId: 'a428b6',
-						location: 'CardPreview:imageUrlResolved',
-						message: 'field value present but resolveImageMediaId empty',
-						data: { layerId: layer.id, fieldName: fn, fvPreview: String(fv).slice(0, 40) },
-						timestamp: Date.now(),
-						hypothesisId: 'B'
-					})
-				}).catch(() => {});
-			}
-		}
-		// #endregion
 		if (!id) return '';
-		return url;
+		return mediaUrls[id] ?? '';
 	}
 
 	function textStripeHeightPx(T: TextLayer): number {
@@ -110,35 +69,6 @@
 	}
 
 	const sorted = $derived(sortLayers(layers.filter((l) => l.visible)));
-
-	$effect(() => {
-		if (!browser) return;
-		const imgs = layers.filter((l): l is ImageLayer => l.type === 'image');
-		// #region agent log
-		fetch('http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a428b6' },
-			body: JSON.stringify({
-				sessionId: 'a428b6',
-				location: 'CardPreview:layersSnapshot',
-				message: 'image layers + visibility',
-				data: {
-					imgs: imgs.map((L) => ({
-						id: L.id,
-						visible: L.visible,
-						z: L.zIndex,
-						fn: L.fieldBinding?.fieldName
-					})),
-					sortedCount: sorted.length,
-					fieldValueKeys: Object.keys(fieldValues),
-					mediaKeysCount: Object.keys(mediaUrls).length
-				},
-				timestamp: Date.now(),
-				hypothesisId: 'C'
-			})
-		}).catch(() => {});
-		// #endregion
-	});
 </script>
 
 <div
@@ -153,7 +83,7 @@
 		style:width="{width}px"
 		style:height="{height}px"
 		style:border-radius="{borderRadius}px"
-		style:background={backgroundStyle(background)}
+		style:background={cardFaceBackgroundCss(background, mediaUrls)}
 	>
 		{#each sorted as L (L.id)}
 			{#if L.type === 'shape'}
