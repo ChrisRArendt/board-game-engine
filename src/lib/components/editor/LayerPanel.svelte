@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { onDestroy } from 'svelte';
 	import type { CardLayer } from '$lib/editor/types';
 
 	let {
@@ -10,8 +9,7 @@
 		reorderLayers,
 		toggleVisibility,
 		toggleLock,
-		renameLayer,
-		removeLayer
+		openLayerContextMenu
 	}: {
 		layers: CardLayer[];
 		selectedId: string | null;
@@ -19,8 +17,7 @@
 		reorderLayers: (layers: CardLayer[]) => void;
 		toggleVisibility: (id: string) => void;
 		toggleLock: (id: string) => void;
-		renameLayer: (id: string, name: string) => void;
-		removeLayer: (id: string) => void;
+		openLayerContextMenu: (id: string, clientX: number, clientY: number) => void;
 	} = $props();
 
 	// #region agent log
@@ -61,62 +58,10 @@
 	let activePointerId = $state<number | null>(null);
 	let dragPointerCaptureEl = $state<HTMLElement | null>(null);
 
-	let menu = $state<{ id: string; x: number; y: number } | null>(null);
-
-	function clipMenuPos(clientX: number, clientY: number) {
-		const mw = 168;
-		const mh = 88;
-		const pad = 8;
-		if (!browser) return { x: clientX, y: clientY };
-		return {
-			x: Math.min(Math.max(pad, clientX), window.innerWidth - mw - pad),
-			y: Math.min(Math.max(pad, clientY), window.innerHeight - mh - pad)
-		};
-	}
-
-	function onMenuDocKey(e: KeyboardEvent) {
-		if (e.key === 'Escape') closeLayerMenu();
-	}
-
-	function closeLayerMenu() {
-		if (browser) window.removeEventListener('keydown', onMenuDocKey);
-		menu = null;
-	}
-
-	function openLayerMenuAt(id: string, clientX: number, clientY: number) {
-		closeLayerMenu();
-		const p = clipMenuPos(clientX, clientY);
-		menu = { id, x: p.x, y: p.y };
-		if (browser) window.addEventListener('keydown', onMenuDocKey);
-	}
-
 	function onRowContextMenu(e: MouseEvent, id: string) {
 		e.preventDefault();
-		openLayerMenuAt(id, e.clientX, e.clientY);
+		openLayerContextMenu(id, e.clientX, e.clientY);
 	}
-
-	function menuRename() {
-		if (!menu) return;
-		const id = menu.id;
-		const L = layers.find((l) => l.id === id);
-		closeLayerMenu();
-		if (!L) return;
-		const n = window.prompt('Name', L.name);
-		if (n === null) return;
-		const t = n.trim();
-		renameLayer(id, t || L.name);
-	}
-
-	function menuRemove() {
-		if (!menu) return;
-		const id = menu.id;
-		closeLayerMenu();
-		removeLayer(id);
-	}
-
-	onDestroy(() => {
-		if (browser) window.removeEventListener('keydown', onMenuDocKey);
-	});
 
 	function zSorted(): CardLayer[] {
 		return [...layers].sort((a, b) => a.zIndex - b.zIndex);
@@ -378,20 +323,6 @@
 	</ul>
 </section>
 
-{#if menu}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div
-		class="layer-ctx-backdrop"
-		role="presentation"
-		onclick={closeLayerMenu}
-	></div>
-	<div class="layer-ctx-pop" style:left="{menu.x}px" style:top="{menu.y}px" role="menu">
-		<button type="button" class="layer-ctx-item" role="menuitem" onclick={menuRename}>Rename</button>
-		<button type="button" class="layer-ctx-item danger" role="menuitem" onclick={menuRemove}
-			>Remove</button>
-	</div>
-{/if}
-
 <style>
 	.layer-panel {
 		display: flex;
@@ -482,41 +413,6 @@
 	.muted {
 		opacity: 0.6;
 		font-size: 12px;
-	}
-	.layer-ctx-backdrop {
-		position: fixed;
-		inset: 0;
-		z-index: 99990;
-		background: transparent;
-	}
-	.layer-ctx-pop {
-		position: fixed;
-		z-index: 99991;
-		min-width: 160px;
-		padding: 4px;
-		border-radius: 8px;
-		border: 1px solid var(--color-border);
-		background: var(--color-bg);
-		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-	.layer-ctx-item {
-		text-align: left;
-		padding: 8px 10px;
-		border: none;
-		border-radius: 4px;
-		background: transparent;
-		color: inherit;
-		font-size: 13px;
-		cursor: pointer;
-	}
-	.layer-ctx-item:hover {
-		background: rgba(255, 255, 255, 0.06);
-	}
-	.layer-ctx-item.danger {
-		color: #f87171;
 	}
 	/* Beat `.row button { padding: 2px }` so the icon centers */
 	.row > button.eye {

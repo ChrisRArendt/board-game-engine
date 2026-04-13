@@ -23,6 +23,7 @@
 	export let onLayerSelect: (id: string | null) => void;
 	export let onLayerMove: (id: string, x: number, y: number) => void;
 	export let onLayerResize: (id: string, next: { x: number; y: number; w: number; h: number }) => void;
+	export let onLayerContextMenu: ((id: string, e: MouseEvent) => void) | undefined = undefined;
 	export let fieldPreview: Record<string, string> = {};
 	export let mediaUrls: Record<string, string> = {};
 
@@ -38,6 +39,7 @@
 	}
 
 	function onLayerPointerDown(id: string, e: PointerEvent) {
+		if (e.button !== 0) return;
 		const L = layers.find((l) => l.id === id);
 		if (!L) return;
 		e.preventDefault();
@@ -201,6 +203,10 @@
 							style:z-index={L.zIndex + 10}
 							aria-label="Layer {L.name}"
 							onpointerdown={(e) => onLayerPointerDown(L.id, e)}
+							oncontextmenu={(e) => {
+								e.preventDefault();
+								onLayerContextMenu?.(L.id, e);
+							}}
 						></button>
 					{/each}
 					{#if selectedLayerGeom && !selectedLayerGeom.locked}

@@ -3,6 +3,7 @@
 	import { browser } from '$app/environment';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import TemplateCanvas from '$lib/components/editor/TemplateCanvas.svelte';
+	import LayerContextMenu from '$lib/components/editor/LayerContextMenu.svelte';
 	import LayerPanel from '$lib/components/editor/LayerPanel.svelte';
 	import LayerProperties from '$lib/components/editor/LayerProperties.svelte';
 	import GameMediaImageTools from '$lib/components/editor/GameMediaImageTools.svelte';
@@ -17,10 +18,35 @@
 		parseLayers,
 		defaultTextLayer,
 		defaultImageLayer,
-		defaultShapeLayer
+		defaultShapeLayer,
+		newId
 	} from '$lib/editor/types';
 	import type { Json } from '$lib/supabase/database.types';
 	import { publicStorageUrl } from '$lib/editor/mediaUrls';
+
+	function collapsibleStorageKey(templateId: string, section: 'cardBg' | 'frame') {
+		return `bge:template-editor:${templateId}:details:${section}`;
+	}
+
+	function readCollapsibleOpen(templateId: string, section: 'cardBg' | 'frame', defaultOpen = true): boolean {
+		if (!browser) return defaultOpen;
+		try {
+			const v = localStorage.getItem(collapsibleStorageKey(templateId, section));
+			if (v === null) return defaultOpen;
+			return v === '1';
+		} catch {
+			return defaultOpen;
+		}
+	}
+
+	function writeCollapsibleOpen(templateId: string, section: 'cardBg' | 'frame', open: boolean) {
+		if (!browser) return;
+		try {
+			localStorage.setItem(collapsibleStorageKey(templateId, section), open ? '1' : '0');
+		} catch {
+			/* quota / private mode */
+		}
+	}
 
 	let { data }: { data: PageData } = $props();
 
@@ -40,6 +66,32 @@
 	let err = $state('');
 
 	let mediaUrls = $state<Record<string, string>>({});
+
+	let cardBgOpen = $state(true);
+	let frameOpen = $state(true);
+
+	let layerCtxMenu = $state<{ id: string; x: number; y: number } | null>(null);
+
+	function clipLayerCtxPos(clientX: number, clientY: number) {
+		const mw = 168;
+		const mh = 124;
+		const pad = 8;
+		if (!browser) return { x: clientX, y: clientY };
+		return {
+			x: Math.min(Math.max(pad, clientX), window.innerWidth - mw - pad),
+			y: Math.min(Math.max(pad, clientY), window.innerHeight - mh - pad)
+		};
+	}
+
+	function openLayerContextMenu(id: string, clientX: number, clientY: number) {
+		selectedId = id;
+		const p = clipLayerCtxPos(clientX, clientY);
+		layerCtxMenu = { id, x: p.x, y: p.y };
+	}
+
+	function closeLayerContextMenu() {
+		layerCtxMenu = null;
+	}
 
 	async function loadMedia() {
 		const { data: rows } = await supabase.from('game_media').select('id, file_path').eq('game_id', data.game.id);
@@ -71,6 +123,21 @@
 		layers = parsed;
 		background = parseBackground(data.template.background as Json);
 		selectedId = parsed[0]?.id ?? null;
+		layerCtxMenu = null;
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		const id = data.template.id;
+		cardBgOpen = readCollapsibleOpen(id, 'cardBg');
+		frameOpen = readCollapsibleOpen(id, 'frame');
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		const id = data.template.id;
+		writeCollapsibleOpen(id, 'cardBg', cardBgOpen);
+		writeCollapsibleOpen(id, 'frame', frameOpen);
 	});
 
 	function selectedLayer(): CardLayer | null {
@@ -120,6 +187,21 @@
 		L.zIndex = layers.length ? Math.max(...layers.map((l) => l.zIndex)) + 1 : 0;
 		layers = [...layers, L];
 		selectedId = L.id;
+	}
+
+	function duplicateLayer(id: string) {
+		const src = layers.find((l) => l.id === id);
+		if (!src) return;
+		/* $state layer objects are Proxies; structuredClone throws DataCloneError on Proxy. */
+		const copy = JSON.parse(JSON.stringify(src)) as CardLayer;
+		copy.id = newId();
+		const baseName = src.name.replace(/\s+\(copy\)$/i, '').trimEnd() || src.name;
+		copy.name = `${baseName} (copy)`;
+		copy.zIndex = layers.length ? Math.max(...layers.map((l) => l.zIndex)) + 1 : 0;
+		copy.x = src.x + 8;
+		copy.y = src.y + 8;
+		layers = [...layers, copy];
+		selectedId = copy.id;
 	}
 
 	const fieldPreview: Record<string, string> = {};
@@ -189,6 +271,19 @@
 </script>
 
 <div class="shell">
+	<LayerContextMenu
+		menu={layerCtxMenu}
+		{layers}
+		onClose={closeLayerContextMenu}
+		renameLayer={(id, name) => {
+			layers = layers.map((l) => (l.id === id ? { ...l, name } : l));
+		}}
+		{duplicateLayer}
+		removeLayer={(id) => {
+			layers = layers.filter((l) => l.id !== id);
+			if (selectedId === id) selectedId = layers[0]?.id ?? null;
+		}}
+	/>
 	<header class="top">
 		<input type="text" class="title" bind:value={name} />
 		<div class="size">
@@ -207,8 +302,11 @@
 
 	<div class="main" class:resizing={resizeKind !== null}>
 		<aside class="left" style:width="{leftPanelW}px">
-			<section class="card-bg-panel" aria-labelledby="card-bg-heading">
-				<h3 id="card-bg-heading" class="card-bg-heading">Card background</h3>
+			<details class="collapsible-panel card-bg-panel" bind:open={cardBgOpen} aria-labelledby="card-bg-heading">
+				<summary class="collapsible-summary">
+					<h3 id="card-bg-heading" class="card-bg-heading">Card background</h3>
+				</summary>
+				<div class="collapsible-inner">
 				<p class="card-bg-desc">Same for every piece using this template (not a per-piece field).</p>
 				<label class="card-bg-type">
 					<span>Type</span>
@@ -322,10 +420,14 @@
 						/>
 					</div>
 				{/if}
-			</section>
+				</div>
+			</details>
 
-			<section class="frame-panel" aria-labelledby="frame-heading">
-				<h3 id="frame-heading" class="card-bg-heading">Frame border</h3>
+			<details class="collapsible-panel frame-panel" bind:open={frameOpen} aria-labelledby="frame-heading">
+				<summary class="collapsible-summary">
+					<h3 id="frame-heading" class="card-bg-heading">Frame border</h3>
+				</summary>
+				<div class="collapsible-inner">
 				<p class="card-bg-desc">
 					Drawn inside the card size (content area shrinks). Uses the same corner radius as the card.
 				</p>
@@ -363,7 +465,8 @@
 					<span class="mini-label">Color</span>
 					<ColorPicker value={frameColor} onValueChange={(c) => (frameColor = c)} />
 				</div>
-			</section>
+				</div>
+			</details>
 
 			<div class="add">
 				<span>Add layer</span>
@@ -382,13 +485,7 @@
 				toggleLock={(id) => {
 					layers = layers.map((l) => (l.id === id ? { ...l, locked: !l.locked } : l));
 				}}
-				renameLayer={(id, name) => {
-					layers = layers.map((l) => (l.id === id ? { ...l, name } : l));
-				}}
-				removeLayer={(id) => {
-					layers = layers.filter((l) => l.id !== id);
-					if (selectedId === id) selectedId = layers[0]?.id ?? null;
-				}}
+				{openLayerContextMenu}
 			/>
 		</aside>
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -431,6 +528,10 @@
 							}
 						: l
 				);
+			}}
+			onLayerContextMenu={(id, e) => {
+				e.preventDefault();
+				openLayerContextMenu(id, e.clientX, e.clientY);
 			}}
 		/>
 		</div>
@@ -510,10 +611,41 @@
 		color: #f87171;
 		font-size: 13px;
 	}
-	.card-bg-panel {
+	.collapsible-panel {
 		padding-bottom: 14px;
 		margin-bottom: 14px;
 		border-bottom: 1px solid var(--color-border);
+	}
+	.collapsible-summary {
+		list-style: none;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		user-select: none;
+	}
+	.collapsible-summary::-webkit-details-marker {
+		display: none;
+	}
+	.collapsible-summary::before {
+		content: '';
+		flex-shrink: 0;
+		width: 0;
+		height: 0;
+		border-top: 5px solid transparent;
+		border-bottom: 5px solid transparent;
+		border-left: 6px solid var(--color-text-muted);
+		transform: rotate(0deg);
+		transition: transform 0.12s ease;
+	}
+	.collapsible-panel[open] .collapsible-summary::before {
+		transform: rotate(90deg);
+	}
+	.collapsible-summary .card-bg-heading {
+		margin: 0;
+	}
+	.collapsible-inner {
+		padding-top: 4px;
 	}
 	.card-bg-heading {
 		margin: 0 0 4px;
@@ -556,11 +688,6 @@
 		letter-spacing: 0.04em;
 		color: var(--color-text-muted);
 		margin-bottom: 6px;
-	}
-	.frame-panel {
-		padding-bottom: 14px;
-		margin-bottom: 14px;
-		border-bottom: 1px solid var(--color-border);
 	}
 	.frame-presets {
 		display: flex;
