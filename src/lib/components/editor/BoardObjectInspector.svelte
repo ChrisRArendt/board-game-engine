@@ -1,6 +1,5 @@
 <script lang="ts">
 	import PieceProperties from './PieceProperties.svelte';
-	import PieceColorPaletteEditor from './PieceColorPaletteEditor.svelte';
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
 
@@ -68,10 +67,6 @@
 					}}
 				/>
 			</label>
-			<PieceColorPaletteEditor
-				palette={$game.pieceColorPalette}
-				onChange={(cols) => g.setPieceColorPalette(cols)}
-			/>
 		</div>
 	{:else if pieceSel}
 		<h4>Piece</h4>

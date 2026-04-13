@@ -18,6 +18,7 @@
 	import type { Json } from '$lib/supabase/database.types';
 	import type { PageData } from './$types';
 	import { browser } from '$app/environment';
+	import { getPieceColorPaletteFromGameData, parseGameDataJson } from '$lib/editor/gameDataJson';
 
 	let { data }: { data: PageData } = $props();
 
@@ -96,6 +97,7 @@
 		name = data.card.name;
 		fieldValues = mergeForCard();
 		pieceStyles = mergePieceStyles();
+		pieceColorPalette = getPieceColorPaletteFromGameData(data.game.game_data);
 	});
 
 	let previewEl: HTMLDivElement | undefined;
@@ -103,6 +105,8 @@
 	let err = $state('');
 
 	let mediaUrls = $state<Record<string, string>>({});
+
+	let pieceColorPalette = $state(getPieceColorPaletteFromGameData(data.game.game_data));
 
 	async function loadMedia() {
 		const gid = data.game.id;
@@ -141,6 +145,15 @@
 				})
 				.eq('id', data.card.id);
 			if (error) throw error;
+			const gd = parseGameDataJson(data.game.game_data);
+			const { error: gErr } = await supabase
+				.from('custom_board_games')
+				.update({
+					game_data: { ...gd, piece_color_palette: pieceColorPalette } as unknown as Json,
+					updated_at: new Date().toISOString()
+				})
+				.eq('id', data.game.id);
+			if (gErr) throw gErr;
 			await invalidateAll();
 		} catch (e) {
 			err = e instanceof Error ? e.message : 'Save failed';
@@ -220,98 +233,103 @@
 			{#each bindings as b}
 				<section class="field-bucket" aria-labelledby="field-{b.fieldName}">
 					<h3 class="field-bucket-title" id="field-{b.fieldName}">{b.fieldLabel}</h3>
-					<div class="field-bucket-main">
-						{#if isImageField(b)}
-							<GameMediaImageTools
-								gameId={data.game.id}
-								mediaId={fieldValues[b.fieldName]?.trim() || null}
-								{mediaUrls}
-								onMediaIdChange={(id) => {
-									fieldValues = { ...fieldValues, [b.fieldName]: id ?? '' };
-								}}
-								onMergeUrls={(u) => {
-									mediaUrls = { ...mediaUrls, ...u };
-								}}
-								onAfterPick={() => {
-									void loadMedia();
-								}}
-							/>
-						{:else if b.fieldType === 'textarea'}
-							<textarea
-								class="piece-field-textarea"
-								value={fieldValues[b.fieldName]}
-								rows="5"
-								spellcheck="true"
-								oninput={(e) => {
-									fieldValues = {
-										...fieldValues,
-										[b.fieldName]: (e.currentTarget as HTMLTextAreaElement).value
-									};
-								}}
-							></textarea>
-						{:else}
-							<input
-								type={bindingInputType(b.fieldType)}
-								value={fieldValues[b.fieldName]}
-								oninput={(e) => {
-									fieldValues = {
-										...fieldValues,
-										[b.fieldName]: (e.currentTarget as HTMLInputElement).value
-									};
-								}}
-							/>
+					<div
+						class="field-inline-row"
+						class:with-textarea={b.fieldType === 'textarea'}
+						class:is-image={isImageField(b)}
+					>
+						<div class="field-inline-main">
+							{#if isImageField(b)}
+								<GameMediaImageTools
+									gameId={data.game.id}
+									mediaId={fieldValues[b.fieldName]?.trim() || null}
+									{mediaUrls}
+									onMediaIdChange={(id) => {
+										fieldValues = { ...fieldValues, [b.fieldName]: id ?? '' };
+									}}
+									onMergeUrls={(u) => {
+										mediaUrls = { ...mediaUrls, ...u };
+									}}
+									onAfterPick={() => {
+										void loadMedia();
+									}}
+								/>
+							{:else if b.fieldType === 'textarea'}
+								<textarea
+									class="piece-field-textarea"
+									value={fieldValues[b.fieldName]}
+									rows="5"
+									spellcheck="true"
+									oninput={(e) => {
+										fieldValues = {
+											...fieldValues,
+											[b.fieldName]: (e.currentTarget as HTMLTextAreaElement).value
+										};
+									}}
+								></textarea>
+							{:else}
+								<input
+									class="piece-field-input"
+									type={bindingInputType(b.fieldType)}
+									value={fieldValues[b.fieldName]}
+									oninput={(e) => {
+										fieldValues = {
+											...fieldValues,
+											[b.fieldName]: (e.currentTarget as HTMLInputElement).value
+										};
+									}}
+								/>
+							{/if}
+						</div>
+						{#if showsLayerBackground(b) || showsTextColor(b)}
+							<div class="field-swatches">
+								{#if showsLayerBackground(b)}
+									<ColorPicker
+										ariaLabel="Background color for {b.fieldLabel}"
+										value={pieceStyles[b.fieldName]?.backgroundColor?.trim() || '#ffffff'}
+										palette={pieceColorPalette}
+										onPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
+										onValueChange={(v: string) => {
+											pieceStyles = {
+												...pieceStyles,
+												[b.fieldName]: { ...pieceStyles[b.fieldName], backgroundColor: v }
+											};
+										}}
+										resetLabel="Clear override"
+										onReset={() => {
+											pieceStyles = {
+												...pieceStyles,
+												[b.fieldName]: { ...pieceStyles[b.fieldName], backgroundColor: '' }
+											};
+										}}
+									/>
+								{/if}
+								{#if showsTextColor(b)}
+									<ColorPicker
+										ariaLabel="Text color for {b.fieldLabel}"
+										value={pieceStyles[b.fieldName]?.textColor?.trim()
+											? pieceStyles[b.fieldName].textColor
+											: templateTextColor(b.fieldName)}
+										palette={pieceColorPalette}
+										onPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
+										onValueChange={(v: string) => {
+											pieceStyles = {
+												...pieceStyles,
+												[b.fieldName]: { ...pieceStyles[b.fieldName], textColor: v }
+											};
+										}}
+										resetLabel="Use template"
+										onReset={() => {
+											pieceStyles = {
+												...pieceStyles,
+												[b.fieldName]: { ...pieceStyles[b.fieldName], textColor: '' }
+											};
+										}}
+									/>
+								{/if}
+							</div>
 						{/if}
 					</div>
-					{#if showsTextColor(b)}
-						<div class="style-row">
-							<span class="style-label">Text color</span>
-							<ColorPicker
-								value={pieceStyles[b.fieldName]?.textColor?.trim()
-									? pieceStyles[b.fieldName].textColor
-									: templateTextColor(b.fieldName)}
-								onValueChange={(v) => {
-									pieceStyles = {
-										...pieceStyles,
-										[b.fieldName]: { ...pieceStyles[b.fieldName], textColor: v }
-									};
-								}}
-							/>
-							<button
-								type="button"
-								class="btn tiny"
-								onclick={() => {
-									pieceStyles = {
-										...pieceStyles,
-										[b.fieldName]: { ...pieceStyles[b.fieldName], textColor: '' }
-									};
-								}}>Use template</button
-							>
-						</div>
-					{/if}
-					{#if showsLayerBackground(b)}
-						<div class="style-row">
-							<span class="style-label">Layer background</span>
-							<ColorPicker
-								value={pieceStyles[b.fieldName]?.backgroundColor?.trim() || '#ffffff'}
-								onValueChange={(v) => {
-									pieceStyles = {
-										...pieceStyles,
-										[b.fieldName]: { ...pieceStyles[b.fieldName], backgroundColor: v }
-									};
-								}}
-							/>
-							<button
-								type="button"
-								class="btn tiny"
-								onclick={() => {
-									pieceStyles = {
-										...pieceStyles,
-										[b.fieldName]: { ...pieceStyles[b.fieldName], backgroundColor: '' }
-									};
-								}}>Clear</button
-							>
-						</div>
-					{/if}
 				</section>
 			{/each}
 
@@ -429,7 +447,7 @@
 	.field-bucket {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
+		gap: 8px;
 		margin-bottom: 1rem;
 		padding: 14px 16px;
 		border-radius: 10px;
@@ -445,11 +463,35 @@
 		color: var(--color-text);
 		line-height: 1.3;
 	}
-	.field-bucket-main {
+	.field-inline-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 10px;
+		min-width: 0;
+	}
+	.field-inline-row.with-textarea,
+	.field-inline-row.is-image {
+		align-items: flex-start;
+	}
+	.field-inline-main {
+		flex: 1 1 160px;
+		min-width: 0;
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
-		min-width: 0;
+	}
+	.field-swatches {
+		display: flex;
+		flex-direction: row;
+		gap: 6px;
+		flex-shrink: 0;
+		align-items: center;
+	}
+	.field-inline-row.with-textarea .field-swatches,
+	.field-inline-row.is-image .field-swatches {
+		align-items: flex-start;
+		padding-top: 2px;
 	}
 	.field {
 		display: flex;
@@ -458,7 +500,7 @@
 		margin-bottom: 1rem;
 	}
 	.field input,
-	.field-bucket input,
+	.field-bucket input.piece-field-input,
 	.field-bucket textarea {
 		padding: 8px 10px;
 		border-radius: 6px;
@@ -501,28 +543,5 @@
 	}
 	.err {
 		color: #f87171;
-	}
-	.field-bucket .style-row {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 8px 12px;
-		margin: 0;
-		padding: 10px 0 0;
-		border-top: 1px solid var(--color-border);
-	}
-	.style-row :global(.color-row) {
-		flex: 1 1 180px;
-		min-width: 0;
-	}
-	.style-label {
-		font-size: 12px;
-		color: var(--color-text-muted);
-		width: 100%;
-	}
-	.btn.tiny {
-		padding: 4px 8px;
-		font-size: 11px;
-		align-self: center;
 	}
 </style>

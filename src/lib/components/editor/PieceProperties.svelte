@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { PieceInstance } from '$lib/engine/types';
 	import ImageUploader from './ImageUploader.svelte';
-	import { game } from '$lib/stores/game';
+	import ColorPicker from './ColorPicker.svelte';
+	import { game, setPieceColorPalette } from '$lib/stores/game';
 
 	export let piece: PieceInstance | null;
 	export let gameId: string;
@@ -82,29 +83,15 @@
 		</label>
 		<h4>Background color</h4>
 		<p class="subhint">Solid fill behind the image (visible through transparent PNG areas).</p>
-		<div class="swatches">
-			{#each $game.pieceColorPalette as c, i (i)}
-				<button
-					type="button"
-					class="sw"
-					class:active={piece.bg_color === c}
-					style:background-color={c}
-					title={c}
-					aria-label="Use {c}"
-					onclick={() => patch({ bg_color: c })}
-				></button>
-			{/each}
-		</div>
-		<div class="row custom-bg">
-			<label class="inline">
-				<span>Custom</span>
-				<input
-					type="color"
-					value={piece.bg_color || '#94a3b8'}
-					oninput={(e) => patch({ bg_color: (e.currentTarget as HTMLInputElement).value })}
-				/>
-			</label>
-			<button type="button" class="clear-bg" onclick={() => patch({ bg_color: undefined })}>Clear</button>
+		<div class="bg-picker">
+			<ColorPicker
+				value={piece.bg_color || '#94a3b8'}
+				palette={$game.pieceColorPalette}
+				onPaletteChange={(cols: string[]) => setPieceColorPalette(cols)}
+				onValueChange={(c: string) => patch({ bg_color: c })}
+				resetLabel="Clear"
+				onReset={() => patch({ bg_color: undefined })}
+			/>
 		</div>
 		<h4>Attributes</h4>
 		{#each attrs as a}
@@ -162,56 +149,8 @@
 		color: var(--color-text-muted);
 		line-height: 1.35;
 	}
-	.swatches {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		margin-bottom: 8px;
-	}
-	.sw {
-		width: 26px;
-		height: 26px;
-		border-radius: 4px;
-		border: 2px solid var(--color-border);
-		padding: 0;
-		cursor: pointer;
-		box-sizing: border-box;
-	}
-	.sw.active {
-		border-color: var(--color-accent, #3b82f6);
-		box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.5);
-	}
-	.custom-bg {
-		flex-direction: row;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: 10px;
-	}
-	.inline {
+	.bg-picker {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		flex-direction: row;
-	}
-	.inline span {
-		font-size: 12px;
-		color: var(--color-text-muted);
-	}
-	.inline input[type='color'] {
-		width: 40px;
-		height: 28px;
-		padding: 0;
-		border: 1px solid var(--color-border);
-		border-radius: 4px;
-		cursor: pointer;
-	}
-	.clear-bg {
-		padding: 4px 10px;
-		font-size: 12px;
-		border-radius: 4px;
-		border: 1px solid var(--color-border);
-		background: var(--color-surface);
-		color: inherit;
-		cursor: pointer;
 	}
 </style>

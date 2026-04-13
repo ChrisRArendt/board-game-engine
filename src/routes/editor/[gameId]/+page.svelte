@@ -1,12 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 	import { customRulesPublicUrl } from '$lib/customGames';
 	import type { PageData } from './$types';
 	import type { GameDataJson } from '$lib/engine/types';
-	import { DEFAULT_PIECE_COLOR_PALETTE } from '$lib/engine/types';
-	import PieceColorPaletteEditor from '$lib/components/editor/PieceColorPaletteEditor.svelte';
 
 	export let data: PageData;
 
@@ -24,12 +21,6 @@
 	let saving = false;
 	let msg = '';
 	let err = '';
-	let palette: string[] = [...DEFAULT_PIECE_COLOR_PALETTE];
-
-	onMount(() => {
-		const gd = readGameData();
-		palette = gd.piece_color_palette?.length ? [...gd.piece_color_palette] : [...DEFAULT_PIECE_COLOR_PALETTE];
-	});
 
 	async function save() {
 		saving = true;
@@ -47,7 +38,7 @@
 				rulesPath = path;
 			}
 			const gd = readGameData();
-			const game_data: GameDataJson = { ...gd, piece_color_palette: palette };
+			const game_data: GameDataJson = { ...gd };
 			const { error } = await supabase
 				.from('custom_board_games')
 				.update({
@@ -106,10 +97,6 @@
 		{/if}
 	</label>
 
-	<section class="palette-section">
-		<PieceColorPaletteEditor {palette} onChange={(c) => (palette = c)} />
-	</section>
-
 	<button type="button" class="btn primary" disabled={saving} onclick={save}>{saving ? 'Saving…' : 'Save'}</button>
 </div>
 
@@ -142,14 +129,6 @@
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
 		color: inherit;
-	}
-	.palette-section {
-		margin-bottom: 1.25rem;
-		padding: 1rem;
-		border-radius: 8px;
-		border: 1px solid var(--color-border);
-		background: var(--color-surface);
-		max-width: 520px;
 	}
 	.btn {
 		padding: 8px 16px;

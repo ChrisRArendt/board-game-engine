@@ -16,6 +16,9 @@
 		onAfterPick?: () => void;
 	} | null = null;
 
+	export let pieceColorPalette: string[] | undefined = undefined;
+	export let onPieceColorPaletteChange: ((next: string[]) => void) | undefined = undefined;
+
 	function patch(p: Partial<CardLayer>) {
 		if (!layer) return;
 		onChange({ ...layer, ...p } as CardLayer);
@@ -178,7 +181,9 @@
 				{:else if layer.fieldBinding.fieldType === 'color'}
 					<ColorPicker
 						value={layer.fieldBinding.defaultValue || '#334155'}
-						onValueChange={(c) =>
+						palette={pieceColorPalette}
+						onPaletteChange={onPieceColorPaletteChange}
+						onValueChange={(c: string) =>
 							patch({
 								fieldBinding: {
 									...layer.fieldBinding!,
@@ -225,7 +230,9 @@
 					<span>Color</span>
 					<ColorPicker
 						value={S.fill.color}
-						onValueChange={(c) =>
+						palette={pieceColorPalette}
+						onPaletteChange={onPieceColorPaletteChange}
+						onValueChange={(c: string) =>
 							patch({ ...S, fill: { type: 'solid', color: c } } as CardLayer)}
 					/>
 				</label>
@@ -233,6 +240,8 @@
 				<GradientEditor
 					stops={S.fill.stops}
 					angle={S.fill.angle}
+					palette={pieceColorPalette}
+					onPaletteChange={onPieceColorPaletteChange}
 					onChange={(next) =>
 						patch({
 							...S,
@@ -315,7 +324,12 @@
 			</label>
 			<label class="row">
 				<span>Color</span>
-				<ColorPicker value={T.color} onValueChange={(c) => patch({ color: c })} />
+				<ColorPicker
+					value={T.color}
+					palette={pieceColorPalette}
+					onPaletteChange={onPieceColorPaletteChange}
+					onValueChange={(c: string) => patch({ color: c })}
+				/>
 			</label>
 			<label class="row">
 				<span>Align (horizontal)</span>

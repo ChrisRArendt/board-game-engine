@@ -23,6 +23,7 @@
 	} from '$lib/editor/types';
 	import type { Json } from '$lib/supabase/database.types';
 	import { publicStorageUrl } from '$lib/editor/mediaUrls';
+	import { getPieceColorPaletteFromGameData, parseGameDataJson } from '$lib/editor/gameDataJson';
 
 	function collapsibleStorageKey(templateId: string, section: 'cardBg' | 'frame') {
 		return `bge:template-editor:${templateId}:details:${section}`;
@@ -71,6 +72,8 @@
 	let frameOpen = $state(true);
 
 	let layerCtxMenu = $state<{ id: string; x: number; y: number } | null>(null);
+
+	let pieceColorPalette = $state(getPieceColorPaletteFromGameData(data.game.game_data));
 
 	function clipLayerCtxPos(clientX: number, clientY: number) {
 		const mw = 168;
@@ -124,6 +127,7 @@
 		background = parseBackground(data.template.background as Json);
 		selectedId = parsed[0]?.id ?? null;
 		layerCtxMenu = null;
+		pieceColorPalette = getPieceColorPaletteFromGameData(data.game.game_data);
 	});
 
 	$effect(() => {
@@ -172,6 +176,15 @@
 				})
 				.eq('id', data.template.id);
 			if (error) throw error;
+			const gd = parseGameDataJson(data.game.game_data);
+			const { error: gErr } = await supabase
+				.from('custom_board_games')
+				.update({
+					game_data: { ...gd, piece_color_palette: pieceColorPalette } as unknown as Json,
+					updated_at: new Date().toISOString()
+				})
+				.eq('id', data.game.id);
+			if (gErr) throw gErr;
 			await supabase.from('card_instances').update({ render_stale: true }).eq('template_id', data.template.id);
 		} catch (e) {
 			err = e instanceof Error ? e.message : 'Save failed';
@@ -345,7 +358,9 @@
 						<span class="mini-label">Color</span>
 						<ColorPicker
 							value={background.color}
-							onValueChange={(c) => (background = { type: 'solid', color: c })}
+							palette={pieceColorPalette}
+							onPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
+							onValueChange={(c: string) => (background = { type: 'solid', color: c })}
 						/>
 					</div>
 				{:else if background.type === 'gradient'}
@@ -353,6 +368,8 @@
 						<GradientEditor
 							stops={background.stops}
 							angle={background.angle}
+							palette={pieceColorPalette}
+							onPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
 							onChange={(next) => (background = { type: 'gradient', stops: next.stops, angle: next.angle })}
 						/>
 					</div>
@@ -386,7 +403,9 @@
 						<span class="mini-label">Color behind image</span>
 						<ColorPicker
 							value={bg.fallbackColor ?? '#1e293b'}
-							onValueChange={(c) =>
+							palette={pieceColorPalette}
+							onPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
+							onValueChange={(c: string) =>
 								(background = {
 									type: 'image',
 									mediaId: bg.mediaId,
@@ -463,7 +482,12 @@
 				</label>
 				<div class="card-bg-block">
 					<span class="mini-label">Color</span>
-					<ColorPicker value={frameColor} onValueChange={(c) => (frameColor = c)} />
+					<ColorPicker
+						value={frameColor}
+						palette={pieceColorPalette}
+						onPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
+						onValueChange={(c: string) => (frameColor = c)}
+					/>
 				</div>
 				</div>
 			</details>
@@ -547,6 +571,8 @@
 			<LayerProperties
 				layer={selectedLayer()}
 				onChange={patchLayer}
+				pieceColorPalette={pieceColorPalette}
+				onPieceColorPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
 				gameMedia={{
 					gameId: data.game.id,
 					mediaUrls,

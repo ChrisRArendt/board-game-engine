@@ -1,6 +1,9 @@
 <script lang="ts">
 	import ColorPicker from './ColorPicker.svelte';
 
+	export let palette: string[] | undefined = undefined;
+	export let onPaletteChange: ((next: string[]) => void) | undefined = undefined;
+
 	export let stops: { offset: number; color: string }[] = [
 		{ offset: 0, color: '#1a1a2e' },
 		{ offset: 1, color: '#16213e' }
@@ -50,7 +53,9 @@
 			/>
 			<ColorPicker
 				value={s.color}
-				onValueChange={(c) => {
+				{palette}
+				{onPaletteChange}
+				onValueChange={(c: string) => {
 					stops = stops.map((x, j) => (j === i ? { ...x, color: c } : x));
 					emit();
 				}}
