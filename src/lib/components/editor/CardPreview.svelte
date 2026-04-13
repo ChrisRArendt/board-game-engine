@@ -167,6 +167,7 @@
 			{:else if L.type === 'text'}
 				{@const T = L as TextLayer}
 				{@const resolved = resolveTextContent(T, fieldValues)}
+				{@const multiline = T.fieldBinding?.fieldType === 'textarea'}
 				{@const showTextPh = showEmptyPlaceholders && !resolved.trim()}
 				{@const st = styleForField(T.fieldBinding?.fieldName)}
 				{@const textColor = showTextPh
@@ -177,6 +178,7 @@
 				<div
 					class="layer text"
 					class:text-ph={showTextPh}
+					class:multiline={multiline}
 					style={layerStyle(T)}
 					style:font-family={T.fontFamily}
 					style:font-size="{T.fontSize}px"
@@ -238,6 +240,9 @@
 	.layer.text {
 		overflow: hidden;
 		word-break: break-word;
+	}
+	.layer.text.multiline {
+		white-space: pre-wrap;
 	}
 	.layer.text.text-ph {
 		color: transparent;

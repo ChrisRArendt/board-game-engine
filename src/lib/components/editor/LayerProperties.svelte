@@ -129,8 +129,8 @@
 							}
 						})}
 				>
-					<option value="text">text</option>
-					<option value="textarea">textarea</option>
+					<option value="text">Single line</option>
+					<option value="textarea">Multiline</option>
 					<option value="number">number</option>
 					<option value="color">color</option>
 					<option value="image">image</option>

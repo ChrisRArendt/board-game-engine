@@ -290,8 +290,10 @@
 							</div>
 						{:else if b.fieldType === 'textarea'}
 							<textarea
+								class="piece-field-textarea"
 								value={fieldValues[b.fieldName]}
-								rows="3"
+								rows="5"
+								spellcheck="true"
 								oninput={(e) => {
 									fieldValues = {
 										...fieldValues,
@@ -544,7 +546,6 @@
 		margin-bottom: 1rem;
 	}
 	.field input,
-	.field textarea,
 	.field-bucket input,
 	.field-bucket textarea {
 		padding: 8px 10px;
@@ -554,6 +555,12 @@
 		color: inherit;
 		width: 100%;
 		box-sizing: border-box;
+	}
+	.field-bucket textarea.piece-field-textarea {
+		min-height: 7rem;
+		resize: vertical;
+		font: inherit;
+		line-height: 1.45;
 	}
 	.btn {
 		padding: 8px 14px;
