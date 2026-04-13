@@ -1,5 +1,12 @@
 <script lang="ts">
 	import type { CardBackground, CardLayer } from '$lib/editor/types';
+	import {
+		buildSnapTargets,
+		snapResizeRect,
+		snapThresholdCardPx,
+		snapTranslate,
+		type SnapGuides
+	} from '$lib/editor/snapGeometry';
 	import CardPreview from './CardPreview.svelte';
 	import ResizeHandles from './ResizeHandles.svelte';
 
@@ -19,7 +26,16 @@
 	export let fieldPreview: Record<string, string> = {};
 	export let mediaUrls: Record<string, string> = {};
 
+	const SNAP_SCREEN_PX = 8;
+	const EMPTY_GUIDES: SnapGuides = { verticals: [], horizontals: [] };
+
+	let guides: SnapGuides = { verticals: [], horizontals: [] };
+
 	let drag: null | { id: string; sx: number; sy: number; ox: number; oy: number } = null;
+
+	function snapThreshold(): number {
+		return snapThresholdCardPx(SNAP_SCREEN_PX, zoom);
+	}
 
 	function onLayerPointerDown(id: string, e: PointerEvent) {
 		const L = layers.find((l) => l.id === id);
@@ -41,16 +57,59 @@
 	}
 
 	function moveLayer(e: PointerEvent) {
-		if (!drag) return;
-		const dx = (e.clientX - drag.sx) / zoom;
-		const dy = (e.clientY - drag.sy) / zoom;
-		onLayerMove(drag.id, drag.ox + dx, drag.oy + dy);
+		const d = drag;
+		if (!d) return;
+		const dx = (e.clientX - d.sx) / zoom;
+		const dy = (e.clientY - d.sy) / zoom;
+		const nx = d.ox + dx;
+		const ny = d.oy + dy;
+		const L = layers.find((l) => l.id === d.id);
+		if (!L) return;
+		if (e.altKey) {
+			guides = { verticals: [], horizontals: [] };
+			onLayerMove(d.id, nx, ny);
+			return;
+		}
+		const { x: tx, y: ty } = buildSnapTargets(contentW, contentH, layers, d.id);
+		const snapped = snapTranslate(nx, ny, L.width, L.height, tx, ty, snapThreshold());
+		guides = snapped.guides;
+		onLayerMove(d.id, snapped.x, snapped.y);
 	}
 
 	function endLayer() {
 		drag = null;
+		guides = EMPTY_GUIDES;
 		window.removeEventListener('pointermove', moveLayer);
 		window.removeEventListener('pointerup', endLayer);
+	}
+
+	function onLayerResizeSnapped(
+		id: string,
+		next: { x: number; y: number; w: number; h: number },
+		kind: string,
+		e: PointerEvent
+	) {
+		/* ResizeHandles x/y are in overlay space (frameInset + content); layer data + snap are content space. */
+		const fx = frameInset;
+		const contentRect = {
+			x: next.x - fx,
+			y: next.y - fx,
+			w: next.w,
+			h: next.h
+		};
+		if (e.altKey) {
+			guides = { verticals: [], horizontals: [] };
+			onLayerResize(id, contentRect);
+			return;
+		}
+		const { x: tx, y: ty } = buildSnapTargets(contentW, contentH, layers, id);
+		const snapped = snapResizeRect(kind, contentRect, 8, 8, tx, ty, snapThreshold());
+		guides = snapped.guides;
+		onLayerResize(id, { x: snapped.x, y: snapped.y, w: snapped.w, h: snapped.h });
+	}
+
+	function clearSnapGuides() {
+		guides = EMPTY_GUIDES;
 	}
 
 	function onWheel(e: WheelEvent) {
@@ -62,6 +121,11 @@
 	$: selectedLayerGeom = selectedId
 		? (layers.find((l) => l.id === selectedId) ?? null)
 		: null;
+
+	/** Layers live in the card-face *content* box; the frame border is drawn inside W×H (border-box), so overlays must match CardPreview's inset. */
+	$: frameInset = Math.max(0, frameBorderWidth ?? 0);
+	$: contentW = Math.max(0, canvasWidth - 2 * frameInset);
+	$: contentH = Math.max(0, canvasHeight - 2 * frameInset);
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -98,13 +162,40 @@
 						displayScale={1}
 						showEmptyPlaceholders={true}
 					/>
+					{#if guides.verticals.length > 0 || guides.horizontals.length > 0}
+						<svg
+							class="snap-guides"
+							width={canvasWidth}
+							height={canvasHeight}
+							aria-hidden="true"
+						>
+							{#each guides.verticals as vx}
+								<line
+									x1={frameInset + vx}
+									y1={0}
+									x2={frameInset + vx}
+									y2={canvasHeight}
+									class="snap-line"
+								/>
+							{/each}
+							{#each guides.horizontals as hy}
+								<line
+									x1={0}
+									y1={frameInset + hy}
+									x2={canvasWidth}
+									y2={frameInset + hy}
+									class="snap-line"
+								/>
+							{/each}
+						</svg>
+					{/if}
 					{#each [...layers].filter((l) => l.visible).sort((a, b) => b.zIndex - a.zIndex) as L (L.id)}
 						<button
 							type="button"
 							class="layer-hit"
 							class:sel={selectedId === L.id}
-							style:left="{L.x}px"
-							style:top="{L.y}px"
+							style:left="{frameInset + L.x}px"
+							style:top="{frameInset + L.y}px"
 							style:width="{L.width}px"
 							style:height="{L.height}px"
 							style:z-index={L.zIndex + 10}
@@ -115,14 +206,16 @@
 					{#if selectedLayerGeom && !selectedLayerGeom.locked}
 						<div class="layer-resize-layer" aria-hidden="true">
 							<ResizeHandles
-								x={selectedLayerGeom.x}
-								y={selectedLayerGeom.y}
+								x={frameInset + selectedLayerGeom.x}
+								y={frameInset + selectedLayerGeom.y}
 								w={selectedLayerGeom.width}
 								h={selectedLayerGeom.height}
 								minW={8}
 								minH={8}
 								zoomScale={zoom}
-								onResize={(next) => onLayerResize(selectedLayerGeom!.id, next)}
+								onResize={(next, kind, e) =>
+									onLayerResizeSnapped(selectedLayerGeom!.id, next, kind, e)}
+								onResizeEnd={clearSnapGuides}
 							/>
 						</div>
 					{/if}
@@ -130,7 +223,9 @@
 			</div>
 		</div>
 	</div>
-	<div class="zoom-readout">{Math.round(zoom * 100)}%</div>
+	<div class="zoom-readout" title="Hold Alt while dragging or resizing to disable snap">
+		{Math.round(zoom * 100)}% · Alt disables snap
+	</div>
 </div>
 
 <style>
@@ -195,5 +290,18 @@
 		right: 12px;
 		font-size: 12px;
 		color: #aaa;
+	}
+	.snap-guides {
+		position: absolute;
+		left: 0;
+		top: 0;
+		z-index: 99990;
+		pointer-events: none;
+		overflow: visible;
+	}
+	.snap-line {
+		stroke: rgba(236, 72, 153, 0.9);
+		stroke-width: 1;
+		vector-effect: non-scaling-stroke;
 	}
 </style>

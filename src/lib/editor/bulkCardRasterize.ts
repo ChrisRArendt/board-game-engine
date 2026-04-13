@@ -6,6 +6,7 @@ import CardPreview from '$lib/components/editor/CardPreview.svelte';
 import type { Json } from '$lib/supabase/database.types';
 import { splitFieldValuesPayload } from './fieldBindings';
 import { rasterizeElementToPng } from './rasterize';
+import { ensureGoogleFontsForLayers } from './googleFontsLoader';
 import { parseBackground, parseLayers } from './types';
 
 export type TemplateRow = {
@@ -34,6 +35,9 @@ export async function rasterizeCardInstanceToBlob(
 
 	const { values: fieldValues, styles: fieldStyles } = splitFieldValuesPayload(fieldValuesRaw);
 
+	const parsedLayers = parseLayers(template.layers);
+	ensureGoogleFontsForLayers(parsedLayers);
+
 	const app = mount(CardPreview, {
 		target: wrap,
 		props: {
@@ -43,7 +47,7 @@ export async function rasterizeCardInstanceToBlob(
 			frameBorderWidth: template.frame_border_width ?? 0,
 			frameBorderColor: template.frame_border_color ?? '#000000',
 			background: parseBackground(template.background),
-			layers: parseLayers(template.layers),
+			layers: parsedLayers,
 			fieldValues,
 			fieldStyles,
 			mediaUrls,
@@ -52,6 +56,9 @@ export async function rasterizeCardInstanceToBlob(
 	});
 
 	await tick();
+	if (typeof document !== 'undefined' && document.fonts?.ready) {
+		await document.fonts.ready;
+	}
 	await new Promise<void>((resolve) => {
 		requestAnimationFrame(() => {
 			requestAnimationFrame(() => resolve());

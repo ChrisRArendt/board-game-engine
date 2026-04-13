@@ -48,7 +48,15 @@ export interface TextLayer extends LayerBase {
 	fontWeight: string;
 	color: string;
 	textAlign: 'left' | 'center' | 'right';
+	/** Vertical alignment of text within the layer box */
+	verticalAlign: 'top' | 'center' | 'bottom';
 	lineHeight: number;
+	letterSpacingPx: number;
+	fontStyle: 'normal' | 'italic';
+	textDecoration: 'none' | 'underline' | 'line-through';
+	textTransform: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
+	/** CSS `text-shadow`; empty string = none */
+	textShadow: string;
 }
 
 export interface ImageLayer extends LayerBase {
@@ -112,7 +120,13 @@ export function defaultTextLayer(): TextLayer {
 		fontWeight: '600',
 		color: '#ffffff',
 		textAlign: 'left',
-		lineHeight: 1.2
+		verticalAlign: 'top',
+		lineHeight: 1.2,
+		letterSpacingPx: 0,
+		fontStyle: 'normal',
+		textDecoration: 'none',
+		textTransform: 'none',
+		textShadow: ''
 	};
 }
 
@@ -155,6 +169,71 @@ export function defaultShapeLayer(): ShapeLayer {
 	};
 }
 
+function normalizeTextLayer(
+	t: TextLayer,
+	o: Record<string, unknown>,
+	visible: boolean,
+	locked: boolean
+): TextLayer {
+	const T = t;
+	const letterSpacingPx =
+		typeof T.letterSpacingPx === 'number' && Number.isFinite(T.letterSpacingPx)
+			? T.letterSpacingPx
+			: typeof o.letterSpacingPx === 'number' && Number.isFinite(o.letterSpacingPx as number)
+				? (o.letterSpacingPx as number)
+				: 0;
+
+	const fontStyle: TextLayer['fontStyle'] = T.fontStyle === 'italic' ? 'italic' : 'normal';
+
+	let textDecoration: TextLayer['textDecoration'] = 'none';
+	if (T.textDecoration === 'underline' || T.textDecoration === 'line-through') {
+		textDecoration = T.textDecoration;
+	} else if (o.textDecoration === 'underline' || o.textDecoration === 'line-through') {
+		textDecoration = o.textDecoration;
+	}
+
+	let textTransform: TextLayer['textTransform'] = 'none';
+	if (
+		T.textTransform === 'uppercase' ||
+		T.textTransform === 'lowercase' ||
+		T.textTransform === 'capitalize'
+	) {
+		textTransform = T.textTransform;
+	} else if (
+		o.textTransform === 'uppercase' ||
+		o.textTransform === 'lowercase' ||
+		o.textTransform === 'capitalize'
+	) {
+		textTransform = o.textTransform as TextLayer['textTransform'];
+	}
+
+	const textShadow =
+		typeof T.textShadow === 'string'
+			? T.textShadow
+			: typeof o.textShadow === 'string'
+				? o.textShadow
+				: '';
+
+	const verticalAlign: TextLayer['verticalAlign'] =
+		T.verticalAlign === 'center' || T.verticalAlign === 'bottom'
+			? T.verticalAlign
+			: o.verticalAlign === 'center' || o.verticalAlign === 'bottom'
+				? (o.verticalAlign as TextLayer['verticalAlign'])
+				: 'top';
+
+	return {
+		...T,
+		visible,
+		locked,
+		letterSpacingPx,
+		fontStyle,
+		textDecoration,
+		textTransform,
+		textShadow,
+		verticalAlign
+	};
+}
+
 export function parseLayers(raw: unknown): CardLayer[] {
 	if (!Array.isArray(raw)) return [];
 	const out: CardLayer[] = [];
@@ -163,13 +242,21 @@ export function parseLayers(raw: unknown): CardLayer[] {
 		const o = item as Record<string, unknown>;
 		if (o.type === 'text' || o.type === 'image' || o.type === 'shape') {
 			let L = item as CardLayer;
+			const visible = typeof o.visible === 'boolean' ? o.visible : true;
+			const locked = typeof o.locked === 'boolean' ? o.locked : false;
 			if (o.type === 'image') {
 				const img = L as ImageLayer;
 				const p = img.objectPosition;
 				L = {
 					...img,
-					objectPosition: typeof p === 'string' && p.trim() !== '' ? p.trim() : 'center'
+					objectPosition: typeof p === 'string' && p.trim() !== '' ? p.trim() : 'center',
+					visible,
+					locked
 				};
+			} else if (o.type === 'text') {
+				L = normalizeTextLayer(L as TextLayer, o, visible, locked);
+			} else {
+				L = { ...L, visible, locked };
 			}
 			out.push(L);
 		}

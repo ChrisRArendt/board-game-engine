@@ -374,15 +374,18 @@
 			<LayerPanel
 				{layers}
 				{selectedId}
-				onSelect={(id) => (selectedId = id)}
-				onReorder={setLayers}
-				onToggleVis={(id) => {
+				selectLayer={(id) => (selectedId = id)}
+				reorderLayers={setLayers}
+				toggleVisibility={(id) => {
 					layers = layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l));
 				}}
-				onToggleLock={(id) => {
+				toggleLock={(id) => {
 					layers = layers.map((l) => (l.id === id ? { ...l, locked: !l.locked } : l));
 				}}
-				onDelete={(id) => {
+				renameLayer={(id, name) => {
+					layers = layers.map((l) => (l.id === id ? { ...l, name } : l));
+				}}
+				removeLayer={(id) => {
 					layers = layers.filter((l) => l.id !== id);
 					if (selectedId === id) selectedId = layers[0]?.id ?? null;
 				}}

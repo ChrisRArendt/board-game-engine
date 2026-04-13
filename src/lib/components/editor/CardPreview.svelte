@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import type { PieceFieldStyle } from '$lib/editor/fieldBindings';
 	import type { CardBackground, CardLayer, ImageLayer, ShapeLayer, TextLayer } from '$lib/editor/types';
+	import { ensureGoogleFontsForLayers } from '$lib/editor/googleFontsLoader';
 	import {
 		cardFaceBackgroundCss,
 		resolveImageMediaId,
@@ -74,6 +76,11 @@
 	}
 
 	const sorted = $derived(sortLayers(layers.filter((l) => l.visible)));
+
+	$effect(() => {
+		if (!browser) return;
+		ensureGoogleFontsForLayers(layers);
+	});
 </script>
 
 <div
@@ -117,14 +124,21 @@
 					class="layer text"
 					class:text-ph={showTextPh}
 					class:multiline={multiline}
+					class:text-v-center={T.verticalAlign === 'center'}
+					class:text-v-bottom={T.verticalAlign === 'bottom'}
 					style={layerStyle(T)}
 					style:font-family={T.fontFamily}
 					style:font-size="{T.fontSize}px"
 					style:font-weight={T.fontWeight}
+					style:font-style={T.fontStyle ?? 'normal'}
 					style:color={textColor}
 					style:background-color={st?.backgroundColor?.trim() ? st.backgroundColor : 'transparent'}
 					style:text-align={T.textAlign}
 					style:line-height={T.lineHeight}
+					style:letter-spacing="{T.letterSpacingPx ? `${T.letterSpacingPx}px` : '0'}"
+					style:text-decoration={T.textDecoration ?? 'none'}
+					style:text-transform={T.textTransform ?? 'none'}
+					style:text-shadow={T.textShadow?.trim() ? T.textShadow : 'none'}
 					style:--text-stripe="{textStripeHeightPx(T)}px"
 				>
 					{#if showTextPh}
@@ -177,8 +191,17 @@
 		box-sizing: border-box;
 	}
 	.layer.text {
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-start;
 		overflow: hidden;
 		word-break: break-word;
+	}
+	.layer.text.text-v-center {
+		justify-content: center;
+	}
+	.layer.text.text-v-bottom {
+		justify-content: flex-end;
 	}
 	.layer.text.multiline {
 		white-space: pre-wrap;

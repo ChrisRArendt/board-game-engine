@@ -451,7 +451,7 @@
 						w={editorResizePiece.initial_size.w}
 						h={editorResizePiece.initial_size.h}
 						zoomScale={zm}
-						onResize={(next) => {
+						onResize={(next, _kind, _e) => {
 							const cur = get(game).pieces.find((x) => x.id === editorResizePiece!.id);
 							if (!cur) return;
 							g.replacePieceInstance({
@@ -475,7 +475,7 @@
 						h={$game.table.h}
 						zoomScale={zm}
 						originLocked={true}
-						onResize={(next) => {
+						onResize={(next, _kind, _e) => {
 							g.game.update((s) => ({
 								...s,
 								table: {

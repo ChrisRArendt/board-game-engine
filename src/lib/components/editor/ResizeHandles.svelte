@@ -12,7 +12,13 @@
 	export let zoomScale = 1;
 	/** Table / anchored rect: only resize from E, S, SE (top-left fixed at origin). */
 	export let originLocked = false;
-	export let onResize: (next: { x: number; y: number; w: number; h: number }) => void;
+	export let onResize: (
+		next: { x: number; y: number; w: number; h: number },
+		kind: string,
+		e: PointerEvent
+	) => void;
+	/** Called when resize gesture ends (pointer up). */
+	export let onResizeEnd: (() => void) | undefined = undefined;
 
 	let drag: null | { kind: string; sx: number; sy: number; ox: number; oy: number; ow: number; oh: number } =
 		null;
@@ -55,13 +61,14 @@
 				ny = drag.oy + drag.oh - nh;
 			}
 		}
-		onResize({ x: nx, y: ny, w: nw, h: nh });
+		onResize({ x: nx, y: ny, w: nw, h: nh }, k, e);
 	}
 
 	function end() {
 		drag = null;
 		window.removeEventListener('pointermove', move);
 		window.removeEventListener('pointerup', end);
+		onResizeEnd?.();
 	}
 </script>
 

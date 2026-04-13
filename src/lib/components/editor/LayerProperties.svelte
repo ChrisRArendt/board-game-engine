@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { CardLayer, FieldType, ImageLayer, ShapeLayer, TextLayer } from '$lib/editor/types';
 	import ColorPicker from './ColorPicker.svelte';
+	import FontFamilyPicker from './FontFamilyPicker.svelte';
 	import GameMediaImageTools from './GameMediaImageTools.svelte';
 	import GradientEditor from './GradientEditor.svelte';
 	import ImageLayoutControls from './ImageLayoutControls.svelte';
@@ -262,12 +263,54 @@
 					/>
 				</label>
 			{/if}
+			<div class="font-block">
+				<FontFamilyPicker value={T.fontFamily} onChange={(fontFamily) => patch({ fontFamily })} />
+			</div>
 			<label class="row">
 				<span>Font size</span>
 				<input
 					type="number"
+					min="4"
+					step="1"
 					value={T.fontSize}
 					oninput={(e) => patch({ fontSize: parseFloat((e.currentTarget as HTMLInputElement).value) || 12 })}
+				/>
+			</label>
+			<label class="row">
+				<span>Weight</span>
+				<select
+					value={T.fontWeight}
+					onchange={(e) => patch({ fontWeight: (e.currentTarget as HTMLSelectElement).value })}
+				>
+					<option value="100">100</option>
+					<option value="200">200</option>
+					<option value="300">300</option>
+					<option value="400">400</option>
+					<option value="500">500</option>
+					<option value="600">600</option>
+					<option value="700">700</option>
+					<option value="800">800</option>
+					<option value="900">900</option>
+				</select>
+			</label>
+			<label class="row">
+				<span>Line height</span>
+				<input
+					type="number"
+					min="0.5"
+					step="0.05"
+					value={T.lineHeight}
+					oninput={(e) => patch({ lineHeight: parseFloat((e.currentTarget as HTMLInputElement).value) || 1.2 })}
+				/>
+			</label>
+			<label class="row">
+				<span>Letter spacing (px)</span>
+				<input
+					type="number"
+					step="0.25"
+					value={T.letterSpacingPx}
+					oninput={(e) =>
+						patch({ letterSpacingPx: parseFloat((e.currentTarget as HTMLInputElement).value) || 0 })}
 				/>
 			</label>
 			<label class="row">
@@ -275,7 +318,7 @@
 				<ColorPicker value={T.color} onValueChange={(c) => patch({ color: c })} />
 			</label>
 			<label class="row">
-				<span>Align</span>
+				<span>Align (horizontal)</span>
 				<select
 					value={T.textAlign}
 					onchange={(e) => patch({ textAlign: (e.currentTarget as HTMLSelectElement).value as TextLayer['textAlign'] })}
@@ -284,6 +327,69 @@
 					<option value="center">center</option>
 					<option value="right">right</option>
 				</select>
+			</label>
+			<label class="row">
+				<span>Align (vertical)</span>
+				<select
+					value={T.verticalAlign}
+					onchange={(e) =>
+						patch({
+							verticalAlign: (e.currentTarget as HTMLSelectElement).value as TextLayer['verticalAlign']
+						})}
+				>
+					<option value="top">top</option>
+					<option value="center">center</option>
+					<option value="bottom">bottom</option>
+				</select>
+			</label>
+			<label class="row">
+				<span>Style</span>
+				<select
+					value={T.fontStyle}
+					onchange={(e) =>
+						patch({ fontStyle: (e.currentTarget as HTMLSelectElement).value as TextLayer['fontStyle'] })}
+				>
+					<option value="normal">normal</option>
+					<option value="italic">italic</option>
+				</select>
+			</label>
+			<label class="row">
+				<span>Decoration</span>
+				<select
+					value={T.textDecoration}
+					onchange={(e) =>
+						patch({
+							textDecoration: (e.currentTarget as HTMLSelectElement).value as TextLayer['textDecoration']
+						})}
+				>
+					<option value="none">none</option>
+					<option value="underline">underline</option>
+					<option value="line-through">line-through</option>
+				</select>
+			</label>
+			<label class="row">
+				<span>Transform</span>
+				<select
+					value={T.textTransform}
+					onchange={(e) =>
+						patch({
+							textTransform: (e.currentTarget as HTMLSelectElement).value as TextLayer['textTransform']
+						})}
+				>
+					<option value="none">none</option>
+					<option value="uppercase">uppercase</option>
+					<option value="lowercase">lowercase</option>
+					<option value="capitalize">capitalize</option>
+				</select>
+			</label>
+			<label class="row">
+				<span>Text shadow (CSS)</span>
+				<input
+					type="text"
+					placeholder="e.g. 0 1px 2px rgba(0,0,0,0.5)"
+					value={T.textShadow}
+					oninput={(e) => patch({ textShadow: (e.currentTarget as HTMLInputElement).value })}
+				/>
 			</label>
 		{/if}
 
@@ -421,6 +527,9 @@
 		color: var(--color-text-muted);
 	}
 	.layout-block {
+		margin-top: 4px;
+	}
+	.font-block {
 		margin-top: 4px;
 	}
 </style>
