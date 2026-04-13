@@ -101,6 +101,10 @@
 	let unsubAutosave: (() => void) | undefined;
 	let historyRecordInterval: ReturnType<typeof setInterval> | undefined;
 
+	$: rulesUrlForMenu = data.customGame
+		? data.customGame.rulesUrl
+		: `/data/${$game.curGame}/rules.pdf`;
+
 	/** Local enlarged piece preview only — never broadcast (unlike Dice Roller). */
 	function openLocalViewerFromSelection() {
 		const sel = get(game).pieces.filter((p) => get(game).selectedIds.has(p.id));
@@ -387,6 +391,13 @@
 			const snap = data.storedSnapshot;
 			if (snap && g.isStoredGameSnapshot(snap)) {
 				g.applyStoredGameSnapshot(snap);
+			} else if (data.customGame) {
+				g.loadGameData(data.customGame.gameData, {
+					curGame: data.lobby.game_key,
+					assetBaseUrl: data.customGame.assetBaseUrl
+				});
+				g.centerCamToVP();
+				await persistSnapshot();
 			} else {
 				const r = await fetch(`/data/${data.lobby.game_key}/pieces.json`);
 				const j = (await r.json()) as GameDataJson;
@@ -439,6 +450,7 @@
 <div class="play-topbar">
 	<Toolbar
 		curGame={$game.curGame}
+		rulesUrl={data.customGame ? data.customGame.rulesUrl : undefined}
 		onOpenRoller={openRollerWindow}
 		onOpenViewer={openLocalViewerFromSelection}
 		onOpenSettings={() => {
@@ -484,16 +496,18 @@
 	{#if useMobileSheets}
 		<BottomSheet title="Menu" visible={winMenuSheet} requestClose={() => (winMenuSheet = false)}>
 			<ul class="play-menu">
-				<li>
-					<button
-						type="button"
-						class="play-menu-btn"
-						onclick={() => {
-							winMenuSheet = false;
-							window.open(`/data/${$game.curGame}/rules.pdf`, '_blank', 'noopener,noreferrer');
-						}}>Rules</button
-					>
-				</li>
+				{#if rulesUrlForMenu}
+					<li>
+						<button
+							type="button"
+							class="play-menu-btn"
+							onclick={() => {
+								winMenuSheet = false;
+								window.open(rulesUrlForMenu, '_blank', 'noopener,noreferrer');
+							}}>Rules</button
+						>
+					</li>
+				{/if}
 				<li>
 					<button
 						type="button"

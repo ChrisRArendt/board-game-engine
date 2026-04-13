@@ -5,6 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
+		"dev:force": "vite dev --force",
 		"build": "vite build",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
@@ -21,6 +22,11 @@
 	},
 	"dependencies": {
 		"@supabase/ssr": "^0.10.2",
-		"@supabase/supabase-js": "^2.103.0"
+		"@supabase/supabase-js": "^2.103.0",
+		"@types/html2canvas": "^0.5.35",
+		"html2canvas": "^1.4.1",
+		"jszip": "^3.10.1",
+		"openai": "^6.34.0",
+		"sharp": "^0.34.5"
 	}
 }

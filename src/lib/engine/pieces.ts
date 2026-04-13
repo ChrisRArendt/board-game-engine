@@ -122,6 +122,75 @@ export function arrangeFanned(pieces: PieceInstance[], selectedIds: Set<number>)
 	return updates;
 }
 
+const DEFAULT_SPREAD_GAP = 32;
+
+/**
+ * Spread selected movable pieces along a line through their centroid, preserving z-order.
+ * `gap` is the distance between consecutive piece **centers** along the unit direction.
+ */
+export function spreadPiecesLinear(
+	pieces: PieceInstance[],
+	selectedIds: Set<number>,
+	gap: number,
+	dir: { x: number; y: number }
+): Map<number, { x: number; y: number }> {
+	const sel = pieces.filter((p) => selectedIds.has(p.id) && hasAttr(p, 'move'));
+	const updates = new Map<number, { x: number; y: number }>();
+	if (sel.length < 2) return updates;
+
+	let len = Math.hypot(dir.x, dir.y);
+	if (len < 1e-9) len = 1;
+	const ux = dir.x / len;
+	const uy = dir.y / len;
+
+	const sorted = [...sel].sort((a, b) => a.zIndex - b.zIndex);
+	let cx = 0;
+	let cy = 0;
+	for (const p of sorted) {
+		cx += p.x + p.initial_size.w / 2;
+		cy += p.y + p.initial_size.h / 2;
+	}
+	cx /= sorted.length;
+	cy /= sorted.length;
+
+	const n = sorted.length;
+	const mid = (n - 1) / 2;
+	for (let i = 0; i < n; i++) {
+		const p = sorted[i];
+		const ox = cx + (i - mid) * gap * ux - p.initial_size.w / 2;
+		const oy = cy + (i - mid) * gap * uy - p.initial_size.h / 2;
+		updates.set(p.id, { x: ox, y: oy });
+	}
+	return updates;
+}
+
+export function spreadHorizontal(
+	pieces: PieceInstance[],
+	selectedIds: Set<number>,
+	gap = DEFAULT_SPREAD_GAP
+): Map<number, { x: number; y: number }> {
+	return spreadPiecesLinear(pieces, selectedIds, gap, { x: 1, y: 0 });
+}
+
+export function spreadVertical(
+	pieces: PieceInstance[],
+	selectedIds: Set<number>,
+	gap = DEFAULT_SPREAD_GAP
+): Map<number, { x: number; y: number }> {
+	return spreadPiecesLinear(pieces, selectedIds, gap, { x: 0, y: 1 });
+}
+
+/** Direction angle in degrees: 0 = right, 90 = down (screen coordinates). */
+export function spreadCustom(
+	pieces: PieceInstance[],
+	selectedIds: Set<number>,
+	gap: number,
+	angleDeg: number
+): Map<number, { x: number; y: number }> {
+	const rad = (angleDeg * Math.PI) / 180;
+	return spreadPiecesLinear(pieces, selectedIds, gap, { x: Math.cos(rad), y: Math.sin(rad) });
+}
+
 export function arrangeStacked(pieces: PieceInstance[], selectedIds: Set<number>): Map<number, { x: number; y: number }> {
 	const sel = pieces.filter((p) => selectedIds.has(p.id));
 	const updates = new Map<number, { x: number; y: number }>();

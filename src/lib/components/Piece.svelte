@@ -4,6 +4,8 @@
 
 	export let piece: PieceInstance;
 	export let curGame: string;
+	/** When set, image URL is `${assetBaseUrl}${piece.bg}` (include trailing slash in base). */
+	export let assetBaseUrl: string | null = null;
 	export let replayMode = false;
 	/** True when this piece is in another player's private zone — show card back only. */
 	export let faceHidden = false;
@@ -16,7 +18,9 @@
 	export let onpiecedblclick: ((id: number) => void) | undefined = undefined;
 
 	$: canFlip = hasAttr(piece, 'flip');
-	$: bgUrl = `/data/${curGame}/images/${piece.bg}`;
+	$: bgUrl = assetBaseUrl
+		? `${assetBaseUrl}${piece.bg}`
+		: `/data/${curGame}/images/${piece.bg}`;
 	$: showFace = !faceHidden;
 </script>
 

@@ -1,6 +1,9 @@
 import { error, redirect } from '@sveltejs/kit';
+import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { fetchLobbyMembersOrdered, messageFromUnknown } from '$lib/lobby/sortOrderFallback';
 import { pageTitle } from '$lib/site';
+import { customGameAssetBaseUrl, customRulesPublicUrl, isCustomGameKey } from '$lib/customGames';
+import type { GameDataJson } from '$lib/engine/types';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals: { supabase, safeGetSession } }) => {
@@ -56,6 +59,38 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 
 	const isHost = lobby.host_id === session.user.id;
 
+	let customGame:
+		| {
+				gameData: GameDataJson;
+				assetBaseUrl: string;
+				rulesUrl: string | null;
+		  }
+		| null = null;
+
+	if (isCustomGameKey(lobby.game_key)) {
+		const { data: cg, error: cgErr } = await supabase
+			.from('custom_board_games')
+			.select('id, creator_id, game_data, rules_pdf_path')
+			.eq('game_key', lobby.game_key)
+			.maybeSingle();
+
+		if (cgErr) {
+			throw error(500, messageFromUnknown(cgErr));
+		}
+		if (!cg) {
+			throw error(404, 'Custom board game not found or not visible');
+		}
+		const assetBaseUrl = customGameAssetBaseUrl(PUBLIC_SUPABASE_URL, cg.creator_id, cg.id);
+		const rulesUrl = cg.rules_pdf_path
+			? customRulesPublicUrl(PUBLIC_SUPABASE_URL, cg.rules_pdf_path)
+			: null;
+		customGame = {
+			gameData: cg.game_data as unknown as GameDataJson,
+			assetBaseUrl,
+			rulesUrl
+		};
+	}
+
 	return {
 		lobby,
 		session,
@@ -63,6 +98,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 		memberOrderIds,
 		storedSnapshot: snapRow?.snapshot ?? null,
 		isHost,
+		customGame,
 		title: pageTitle(lobby.name.trim() || 'Game')
 	};
 };

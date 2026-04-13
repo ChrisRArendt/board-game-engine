@@ -3,13 +3,16 @@
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
 	import { hasAttr } from '$lib/engine/pieces';
+	import SpreadCustomDialog from '$lib/components/SpreadCustomDialog.svelte';
 
 	export let open = false;
 	export let x = 0;
 	export let y = 0;
 
-	const MENU_W = 200;
-	const MENU_H = 220;
+	const MENU_W = 220;
+	const MENU_H = 420;
+
+	let spreadCustomOpen = false;
 
 	$: clip = (() => {
 		if (!browser) return { left: x, top: y };
@@ -27,10 +30,19 @@
 	$: showShuf = sel.length > 1 && sel.every((p) => hasAttr(p, 'shuffle'));
 	$: showFan = sel.length > 1;
 	$: showStack = sel.length > 1;
-	$: showSpacer = (showFlip || showShuf) && (showFan || showStack);
+	$: showSpread = sel.length > 1 && sel.every((p) => hasAttr(p, 'move'));
+	$: showSpacer =
+		(showFlip || showShuf) && (showFan || showStack || showSpread);
+	$: showSpacer2 = showSpread && (showFan || showStack);
 </script>
 
-{#if open && (showFlip || showShuf || showFan || showStack)}
+<SpreadCustomDialog
+	open={spreadCustomOpen}
+	onApply={(gap: number, angle: number) => g.runSpreadCustom(gap, angle)}
+	onClose={() => (spreadCustomOpen = false)}
+/>
+
+{#if open && (showFlip || showShuf || showFan || showStack || showSpread)}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<ul class="ctx" style:top="{clip.top}px" style:left="{clip.left}px">
 		{#if showFlip}
@@ -54,6 +66,35 @@
 			</li>
 		{/if}
 		{#if showSpacer}
+			<li class="spacer"></li>
+		{/if}
+		{#if showSpread}
+			<li
+				on:pointerdown={() => {
+					g.runSpreadHorizontal();
+					open = false;
+				}}
+			>
+				Spread horizontal
+			</li>
+			<li
+				on:pointerdown={() => {
+					g.runSpreadVertical();
+					open = false;
+				}}
+			>
+				Spread vertical
+			</li>
+			<li
+				on:pointerdown={() => {
+					open = false;
+					spreadCustomOpen = true;
+				}}
+			>
+				Spread custom…
+			</li>
+		{/if}
+		{#if showSpacer2}
 			<li class="spacer"></li>
 		{/if}
 		{#if showFan}

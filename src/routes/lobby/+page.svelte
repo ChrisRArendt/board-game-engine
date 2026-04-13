@@ -29,6 +29,7 @@
 	import type { RealtimeChannel } from '@supabase/supabase-js';
 	import UserIdentity from '$lib/components/UserIdentity.svelte';
 	import CopyInviteCode from '$lib/components/CopyInviteCode.svelte';
+	import { loadPlayableGameOptions, BUILTIN_GAME_OPTIONS } from '$lib/customGames';
 	import type { PageData } from './$types';
 
 	export let data: PageData;
@@ -55,12 +56,14 @@
 	let newLobbyName = 'Game night';
 	let newLobbyGame = 'bsg_1';
 	let newLobbyMax = 6;
+	let gameOptions = BUILTIN_GAME_OPTIONS;
 	let joinCode = '';
 
 	let friendshipsCh: RealtimeChannel | null = null;
 	let friendPingCh: RealtimeChannel | null = null;
 	/** Open lobbies + my active games — kept in sync via Realtime on `lobbies`. */
 	let lobbiesCh: RealtimeChannel | null = null;
+	let customGamesCh: RealtimeChannel | null = null;
 
 	const FRIEND_LIST_BROADCAST = 'friend_lists_refresh';
 
@@ -119,6 +122,7 @@
 			profile = p;
 			await refreshFriendLists();
 			await refreshLobbyLists();
+			gameOptions = await loadPlayableGameOptions(supabase);
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Error';
 		}
@@ -255,6 +259,19 @@
 				}
 			);
 		void lobbiesCh.subscribe();
+
+		customGamesCh = supabase
+			.channel('custom_board_games_list')
+			.on(
+				'postgres_changes',
+				{ event: '*', schema: 'public', table: 'custom_board_games' },
+				() => {
+					void loadPlayableGameOptions(supabase).then((o) => {
+						gameOptions = o;
+					});
+				}
+			);
+		void customGamesCh.subscribe();
 	});
 
 	onDestroy(() => {
@@ -270,11 +287,19 @@
 			void supabase.removeChannel(lobbiesCh);
 			lobbiesCh = null;
 		}
+		if (customGamesCh) {
+			void supabase.removeChannel(customGamesCh);
+			customGamesCh = null;
+		}
 	});
 </script>
 
 <div class="hub">
 	<h1>Lobbies</h1>
+	<p class="subnav">
+		<a href="/editor">Board editor</a>
+		<span class="muted">— create games your friends can pick when hosting.</span>
+	</p>
 	{#if errMsg}
 		<p class="err">{errMsg}</p>
 	{/if}
@@ -392,7 +417,9 @@
 			<div class="create">
 				<input bind:value={newLobbyName} placeholder="Lobby name" />
 				<select bind:value={newLobbyGame}>
-					<option value="bsg_1">Battlestar Galactica (bsg_1)</option>
+					{#each gameOptions as g}
+						<option value={g.key}>{g.label} ({g.key})</option>
+					{/each}
 				</select>
 				<label>
 					Max players
@@ -439,6 +466,13 @@
 	h1 {
 		margin-top: 0;
 		color: var(--color-text);
+	}
+	.subnav {
+		margin: -0.35rem 0 1rem;
+		font-size: 0.95rem;
+	}
+	.subnav a {
+		color: var(--color-accent, #3b82f6);
 	}
 	h2 {
 		margin-top: 0;

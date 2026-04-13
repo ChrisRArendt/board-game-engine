@@ -14,7 +14,10 @@ import {
 	hasAttr,
 	maxZIndex,
 	pieceFromData,
-	shuffleSelectedPieces
+	shuffleSelectedPieces,
+	spreadCustom,
+	spreadHorizontal,
+	spreadVertical
 } from '$lib/engine/pieces';
 import {
 	clampZoom,
@@ -26,6 +29,11 @@ import {
 
 export interface GameState {
 	curGame: string;
+	/** When set, piece images load from this base (trailing slash). Otherwise `/data/{curGame}/images/`. */
+	assetBaseUrl: string | null;
+	/** Custom games: `table-bg.jpg` etc. under asset base. Bumped after upload to bust browser cache. */
+	tableBgFilename: string;
+	tableBgRev: number;
 	table: { w: number; h: number };
 	pieces: PieceInstance[];
 	selectedIds: Set<number>;
@@ -39,6 +47,8 @@ export interface GameState {
 	cameraY: number;
 	textRegions: Record<string, string>;
 	nextPieceId: number;
+	/** Board editor: table surface is selected (vs piece selection). Mutually exclusive with non-empty selection. */
+	editorTableSelected: boolean;
 	shiftDown: boolean;
 	selectionBox: null | { x: number; y: number; w: number; h: number };
 	selectingBox: boolean;
@@ -67,6 +77,9 @@ function initialState(): GameState {
 	const vp = typeof window !== 'undefined' ? getViewportSize() : { w: 1200, h: 800 };
 	return {
 		curGame: 'bsg_1',
+		assetBaseUrl: null,
+		tableBgFilename: 'table-bg.jpg',
+		tableBgRev: 0,
 		table: { w: 3000, h: 3000 },
 		pieces: [],
 		selectedIds: new Set(),
@@ -83,6 +96,7 @@ function initialState(): GameState {
 			textregion_3: '00'
 		},
 		nextPieceId: 0,
+		editorTableSelected: false,
 		shiftDown: false,
 		selectionBox: null,
 		selectingBox: false,
@@ -99,10 +113,19 @@ function initialState(): GameState {
 
 export const game = writable<GameState>(initialState());
 
+/** Clear board state (e.g. leaving board editor). */
+export function resetGameToEmpty() {
+	game.set(initialState());
+}
+
 export const selectedPieces = derived(game, ($g) => $g.pieces.filter((p) => $g.selectedIds.has(p.id)));
 
-export function loadGameData(json: GameDataJson) {
-	const curGame = 'bsg_1';
+export function loadGameData(
+	json: GameDataJson,
+	opts?: { curGame?: string; assetBaseUrl?: string | null }
+) {
+	const curGame = opts?.curGame ?? 'bsg_1';
+	const assetBaseUrl = opts?.assetBaseUrl !== undefined ? opts.assetBaseUrl : null;
 	game.update((s) => {
 		const pieces: PieceInstance[] = [];
 		let nextId = 0;
@@ -126,14 +149,19 @@ export function loadGameData(json: GameDataJson) {
 		}
 
 		const vp = getViewportSize();
+		const tableBgFilename = json.table_bg?.trim() || 'table-bg.jpg';
 		return {
 			...s,
 			curGame,
+			assetBaseUrl,
+			tableBgFilename,
+			tableBgRev: 0,
 			table: { w: json.table.size.w, h: json.table.size.h },
 			pieces,
 			nextPieceId: nextId,
 			selectedIds: new Set(),
 			remoteSelection: {},
+			editorTableSelected: false,
 			cameraX: vp.w / 2,
 			cameraY: vp.h / 2,
 			panX: 0,
@@ -355,7 +383,7 @@ export function selectPiece(id: number) {
 		if (!p || !hasAttr(p, 'select')) return s;
 		const selectedIds = new Set(s.selectedIds);
 		selectedIds.add(id);
-		return { ...s, selectedIds };
+		return { ...s, selectedIds, editorTableSelected: false };
 	});
 }
 
@@ -373,7 +401,17 @@ export function deselectAll() {
 		for (const id of s.selectedIds) {
 			emitGame?.('piece_deselect', { id });
 		}
-		return { ...s, selectedIds: new Set() };
+		return { ...s, selectedIds: new Set(), editorTableSelected: false };
+	});
+}
+
+/** Board editor: select the table surface (clears piece selection). */
+export function selectEditorTable() {
+	game.update((s) => {
+		for (const id of s.selectedIds) {
+			emitGame?.('piece_deselect', { id });
+		}
+		return { ...s, selectedIds: new Set(), editorTableSelected: true };
 	});
 }
 
@@ -384,7 +422,7 @@ export function toggleSelect(id: number) {
 		const selectedIds = new Set(s.selectedIds);
 		if (selectedIds.has(id)) selectedIds.delete(id);
 		else selectedIds.add(id);
-		return { ...s, selectedIds };
+		return { ...s, selectedIds, editorTableSelected: false };
 	});
 }
 
@@ -411,7 +449,7 @@ export function clickSelect(id: number, shift: boolean) {
 				emitGame?.('piece_select', { id });
 			}
 		}
-		return { ...s, selectedIds };
+		return { ...s, selectedIds, editorTableSelected: false };
 	});
 }
 
@@ -438,6 +476,30 @@ export function movePieceTo(id: number, x: number, y: number) {
 		...s,
 		pieces: s.pieces.map((p) => (p.id === id ? { ...p, x, y } : p))
 	}));
+}
+
+/** Replace a piece wholesale (board editor). */
+export function replacePieceInstance(p: PieceInstance) {
+	game.update((s) => ({
+		...s,
+		pieces: s.pieces.map((x) => (x.id === p.id ? p : x))
+	}));
+}
+
+/** Append a new piece (board editor). */
+export function addPieceInstance(p: PieceInstance) {
+	game.update((s) => {
+		const nextId = Math.max(s.nextPieceId, p.id + 1);
+		const sel = new Set(s.selectedIds);
+		sel.add(p.id);
+		return {
+			...s,
+			pieces: [...s.pieces, p],
+			nextPieceId: nextId,
+			selectedIds: sel,
+			editorTableSelected: false
+		};
+	});
 }
 
 export function updatePiecesZ(updates: Map<number, number>) {
@@ -471,6 +533,69 @@ export function duplicatePiece(id: number): number | null {
 		};
 	});
 	return newId;
+}
+
+const EDITOR_DUPLICATE_OFFSET = 24;
+
+/** Board editor: clone a piece (no duplicate/destroy attrs required). Selects the new instance. */
+export function duplicatePieceForEditor(id: number): number | null {
+	let newId: number | null = null;
+	game.update((s) => {
+		const p = s.pieces.find((x) => x.id === id);
+		if (!p) return s;
+		const nid = s.nextPieceId;
+		const z = maxZIndex(s.pieces) + 1;
+		const np: PieceInstance = {
+			...p,
+			id: nid,
+			x: p.x + EDITOR_DUPLICATE_OFFSET,
+			y: p.y + EDITOR_DUPLICATE_OFFSET,
+			zIndex: z
+		};
+		newId = nid;
+		return {
+			...s,
+			pieces: [...s.pieces, np],
+			nextPieceId: s.nextPieceId + 1,
+			selectedIds: new Set([nid]),
+			editorTableSelected: false
+		};
+	});
+	return newId;
+}
+
+/** Board editor: duplicate all selected pieces in one pass; selects the new instances. */
+export function duplicateSelectedForEditor(): void {
+	game.update((s) => {
+		const ids = [...s.selectedIds].sort((a, b) => a - b);
+		if (ids.length === 0) return s;
+		let nextId = s.nextPieceId;
+		const newPieces = [...s.pieces];
+		const newIds: number[] = [];
+		let z = maxZIndex(s.pieces);
+		for (const id of ids) {
+			const p = newPieces.find((x) => x.id === id);
+			if (!p) continue;
+			z += 1;
+			const nid = nextId++;
+			newPieces.push({
+				...p,
+				id: nid,
+				x: p.x + EDITOR_DUPLICATE_OFFSET,
+				y: p.y + EDITOR_DUPLICATE_OFFSET,
+				zIndex: z
+			});
+			newIds.push(nid);
+		}
+		if (newIds.length === 0) return s;
+		return {
+			...s,
+			pieces: newPieces,
+			nextPieceId: nextId,
+			selectedIds: new Set(newIds),
+			editorTableSelected: false
+		};
+	});
 }
 
 export function destroyPiece(id: number) {
@@ -535,6 +660,50 @@ export function runArrangeStacked() {
 		const p = s.pieces.find((x) => x.id === id);
 		if (p) emitGame?.('piece_move', { id: p.id, x: p.x, y: p.y });
 	}
+}
+
+function emitMovesForSelected() {
+	const s = get(game);
+	for (const id of s.selectedIds) {
+		const p = s.pieces.find((x) => x.id === id);
+		if (p) emitGame?.('piece_move', { id: p.id, x: p.x, y: p.y });
+	}
+}
+
+export function runSpreadHorizontal() {
+	game.update((s) => {
+		const u = spreadHorizontal(s.pieces, s.selectedIds);
+		const pieces = s.pieces.map((p) => {
+			const upd = u.get(p.id);
+			return upd ? { ...p, x: upd.x, y: upd.y } : p;
+		});
+		return { ...s, pieces };
+	});
+	emitMovesForSelected();
+}
+
+export function runSpreadVertical() {
+	game.update((s) => {
+		const u = spreadVertical(s.pieces, s.selectedIds);
+		const pieces = s.pieces.map((p) => {
+			const upd = u.get(p.id);
+			return upd ? { ...p, x: upd.x, y: upd.y } : p;
+		});
+		return { ...s, pieces };
+	});
+	emitMovesForSelected();
+}
+
+export function runSpreadCustom(gap: number, angleDeg: number) {
+	game.update((s) => {
+		const u = spreadCustom(s.pieces, s.selectedIds, gap, angleDeg);
+		const pieces = s.pieces.map((p) => {
+			const upd = u.get(p.id);
+			return upd ? { ...p, x: upd.x, y: upd.y } : p;
+		});
+		return { ...s, pieces };
+	});
+	emitMovesForSelected();
 }
 
 export function runArrangeSmart() {
@@ -668,7 +837,8 @@ export function startSelectionBox(x: number, y: number) {
 		...s,
 		selectingBox: true,
 		selectionBox: { x, y, w: 0, h: 0 },
-		selectBoxStartItems: new Set(s.selectedIds)
+		selectBoxStartItems: new Set(s.selectedIds),
+		editorTableSelected: false
 	}));
 }
 
@@ -706,7 +876,7 @@ export function updateSelectionBox(
 			}
 		}
 
-		return { ...s, selectionBox: selrect, selectedIds };
+		return { ...s, selectionBox: selrect, selectedIds, editorTableSelected: false };
 	});
 }
 
@@ -841,6 +1011,7 @@ export type StoredGameSnapshot = {
 	textRegions: Record<string, string>;
 	table: { w: number; h: number };
 	curGame: string;
+	assetBaseUrl?: string | null;
 	/** Continuous zoom (preferred). */
 	zoom?: number;
 	/** @deprecated old discrete levels; migrated on load */
@@ -876,6 +1047,7 @@ export function serializeGameState(): StoredGameSnapshot {
 		textRegions: { ...s.textRegions },
 		table: { ...s.table },
 		curGame: s.curGame,
+		assetBaseUrl: s.assetBaseUrl,
 		zoom: s.zoom,
 		panX: s.panX,
 		panY: s.panY
@@ -893,6 +1065,7 @@ export function applyStoredGameSnapshot(
 		textRegions: { ...snapshot.textRegions },
 		table: { ...snapshot.table },
 		curGame: snapshot.curGame,
+		assetBaseUrl: snapshot.assetBaseUrl !== undefined ? snapshot.assetBaseUrl : null,
 		zoom: zoomFromSnapshot(snapshot),
 		panX: snapshot.panX,
 		panY: snapshot.panY,
@@ -907,7 +1080,8 @@ export function applyStoredGameSnapshot(
 		zSorted: false,
 		spacePanHeld: false,
 		panPointerStart: null,
-		handscroll: false
+		handscroll: false,
+		editorTableSelected: false
 	}));
 	if (!opts?.skipCenter) centerCamToVP();
 }

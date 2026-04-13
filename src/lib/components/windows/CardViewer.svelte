@@ -36,7 +36,12 @@
 		$activeUserId !== '' &&
 		isPieceFaceHiddenFromPeers(piece, stashRoster, $activeUserId, $isHistoryReplayActive);
 
-	$: bg = piece && piece.bg ? `/data/${$game.curGame}/images/${piece.bg}` : '';
+	$: bg =
+		piece && piece.bg
+			? $game.assetBaseUrl
+				? `${$game.assetBaseUrl}${piece.bg}`
+				: `/data/${$game.curGame}/images/${piece.bg}`
+			: '';
 	$: w = piece ? piece.initial_size.w * 2 : 0;
 	$: h = piece ? piece.initial_size.h * 2 : 0;
 </script>

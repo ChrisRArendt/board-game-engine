@@ -177,6 +177,154 @@ export interface Database {
 				};
 				Relationships: EmptyRel;
 			};
+			custom_board_games: {
+				Row: {
+					id: string;
+					creator_id: string;
+					title: string;
+					description: string;
+					game_key: string;
+					game_data: Json;
+					rules_pdf_path: string | null;
+					created_at: string;
+					updated_at: string;
+				};
+				Insert: {
+					id?: string;
+					creator_id: string;
+					title: string;
+					description?: string;
+					game_data: Json;
+					rules_pdf_path?: string | null;
+					created_at?: string;
+					updated_at?: string;
+				};
+				Update: {
+					id?: string;
+					creator_id?: string;
+					title?: string;
+					description?: string;
+					game_data?: Json;
+					rules_pdf_path?: string | null;
+					created_at?: string;
+					updated_at?: string;
+				};
+				Relationships: EmptyRel;
+			};
+			card_templates: {
+				Row: {
+					id: string;
+					game_id: string;
+					name: string;
+					canvas_width: number;
+					canvas_height: number;
+					border_radius: number;
+					background: Json;
+					layers: Json;
+					created_at: string;
+					updated_at: string;
+				};
+				Insert: {
+					id?: string;
+					game_id: string;
+					name: string;
+					canvas_width: number;
+					canvas_height: number;
+					border_radius?: number;
+					background?: Json;
+					layers?: Json;
+					created_at?: string;
+					updated_at?: string;
+				};
+				Update: {
+					id?: string;
+					game_id?: string;
+					name?: string;
+					canvas_width?: number;
+					canvas_height?: number;
+					border_radius?: number;
+					background?: Json;
+					layers?: Json;
+					created_at?: string;
+					updated_at?: string;
+				};
+				Relationships: EmptyRel;
+			};
+			card_instances: {
+				Row: {
+					id: string;
+					template_id: string;
+					game_id: string;
+					name: string;
+					field_values: Json;
+					rendered_image_path: string | null;
+					render_stale: boolean;
+					created_at: string;
+					updated_at: string;
+				};
+				Insert: {
+					id?: string;
+					template_id: string;
+					game_id: string;
+					name?: string;
+					field_values?: Json;
+					rendered_image_path?: string | null;
+					render_stale?: boolean;
+					created_at?: string;
+					updated_at?: string;
+				};
+				Update: {
+					id?: string;
+					template_id?: string;
+					game_id?: string;
+					name?: string;
+					field_values?: Json;
+					rendered_image_path?: string | null;
+					render_stale?: boolean;
+					created_at?: string;
+					updated_at?: string;
+				};
+				Relationships: EmptyRel;
+			};
+			game_media: {
+				Row: {
+					id: string;
+					game_id: string;
+					creator_id: string;
+					file_path: string;
+					filename: string;
+					source_type: 'upload' | 'ai_generated';
+					ai_prompt: string | null;
+					width: number | null;
+					height: number | null;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					game_id: string;
+					creator_id: string;
+					file_path: string;
+					filename: string;
+					source_type: 'upload' | 'ai_generated';
+					ai_prompt?: string | null;
+					width?: number | null;
+					height?: number | null;
+					created_at?: string;
+				};
+				Update: {
+					id?: string;
+					game_id?: string;
+					creator_id?: string;
+					file_path?: string;
+					filename?: string;
+					source_type?: 'upload' | 'ai_generated';
+					ai_prompt?: string | null;
+					width?: number | null;
+					height?: number | null;
+					created_at?: string;
+				};
+				Relationships: EmptyRel;
+			};
 		};
 		Views: Record<string, never>;
 		Functions: {

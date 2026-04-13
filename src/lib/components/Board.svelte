@@ -4,6 +4,7 @@
 	import { get } from 'svelte/store';
 	import Piece from './Piece.svelte';
 	import SelectionBox from './SelectionBox.svelte';
+	import ResizeHandles from '$lib/components/editor/ResizeHandles.svelte';
 	import * as g from '$lib/stores/game';
 	import { game } from '$lib/stores/game';
 	import { ZOOM_DEFAULT } from '$lib/engine/geometry';
@@ -28,6 +29,8 @@
 	export let selfDisplayName = 'You';
 	/** Long-press on touch: open context menu at (x,y) in client coords */
 	export let onOpenContextMenu: ((clientX: number, clientY: number) => void) | undefined = undefined;
+	/** Board layout editor: no stash/textregions, all pieces selectable, no realtime emits */
+	export let editorMode = false;
 
 	let viewportEl: HTMLDivElement | undefined;
 	let cameraEl: HTMLDivElement | undefined;
@@ -71,6 +74,7 @@
 	}
 
 	function canViewerSelectPiece(piece: PieceInstance): boolean {
+		if (editorMode) return true;
 		return canSelectPieceForViewer(piece, stashRosterNow(), selfUserId, replayMode);
 	}
 
@@ -171,9 +175,11 @@
 			onPieceDragMove: (x, y) => {
 				g.moveDragTo(x, y);
 				const st2 = get(game);
-				for (const p of st2.pieces) {
-					if (st2.selectedIds.has(p.id) && p.attributes.includes('move')) {
-						emit('piece_move', { id: p.id, x: p.x, y: p.y });
+				if (!editorMode) {
+					for (const p of st2.pieces) {
+						if (st2.selectedIds.has(p.id) && p.attributes.includes('move')) {
+							emit('piece_move', { id: p.id, x: p.x, y: p.y });
+						}
 					}
 				}
 			},
@@ -200,6 +206,10 @@
 				}
 				if (shift) {
 					g.startSelectionBox(clientX, clientY);
+					return;
+				}
+				if (editorMode) {
+					g.selectEditorTable();
 					return;
 				}
 				g.deselectAll();
@@ -345,7 +355,13 @@
 	})();
 
 	$: zm = $game.zoom;
-	$: bgTable = `/data/${$game.curGame}/images/table-bg.jpg`;
+	$: bgTable = $game.assetBaseUrl
+		? `${$game.assetBaseUrl}${$game.tableBgFilename}?v=${$game.tableBgRev}`
+		: `/data/${$game.curGame}/images/table-bg.jpg`;
+	$: editorResizePiece =
+		editorMode && !$game.editorTableSelected && $game.selectedIds.size === 1
+			? $game.pieces.find((p) => $game.selectedIds.has(p.id)) ?? null
+			: null;
 	$: viewportCursor = replayMode
 		? 'default'
 		: $game.spacePanHeld
@@ -378,6 +394,7 @@
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class="table"
+				class:table-selected={editorMode && $game.editorTableSelected}
 				bind:this={tableEl}
 				style:width="{$game.table.w}px"
 				style:height="{$game.table.h}px"
@@ -385,29 +402,34 @@
 				onpointerdown={onTablePointerDown}
 			></div>
 
-			<!-- Your private zone: under pieces so you see your own tokens clearly on top. -->
-			<div class="user-stashes user-stashes-mine" aria-hidden="true">
-				{#each stashRoster as user, i (user.id)}
-					{#if user.id === selfUserId}
-						{@const pos = stashPos(i)}
-						<div class="stash-slot" style:transform="translate3d({pos.x}px, {pos.y}px, 0)">
-							<div
-								class="stash footprint mine"
-								style:background-color={user.color}
-							>
-								<span class="sr-only">Your private area</span>
+			{#if !editorMode}
+				<!-- Your private zone: under pieces so you see your own tokens clearly on top. -->
+				<div class="user-stashes user-stashes-mine" aria-hidden="true">
+					{#each stashRoster as user, i (user.id)}
+						{#if user.id === selfUserId}
+							{@const pos = stashPos(i)}
+							<div class="stash-slot" style:transform="translate3d({pos.x}px, {pos.y}px, 0)">
+								<div
+									class="stash footprint mine"
+									style:background-color={user.color}
+								>
+									<span class="sr-only">Your private area</span>
+								</div>
 							</div>
-						</div>
-					{/if}
-				{/each}
-			</div>
+						{/if}
+					{/each}
+				</div>
+			{/if}
 
 			{#each $game.pieces as piece (piece.id)}
 				<Piece
 					{piece}
 					curGame={$game.curGame}
+					assetBaseUrl={$game.assetBaseUrl}
 					replayMode={replayMode}
-					faceHidden={isPieceFaceHiddenFromPeers(piece, stashRoster, selfUserId, replayMode)}
+					faceHidden={editorMode
+						? false
+						: isPieceFaceHiddenFromPeers(piece, stashRoster, selfUserId, replayMode)}
 					selected={$game.selectedIds.has(piece.id)}
 					dragging={$game.moveDrag != null && $game.selectedIds.has(piece.id) && piece.attributes.includes('move')}
 					pressing={pressingPieceId === piece.id}
@@ -421,38 +443,85 @@
 				/>
 			{/each}
 
-			<!-- Other players’ zones: on top of pieces so their area obscures hidden tokens for everyone else. -->
-			<div class="user-stashes user-stashes-others" aria-hidden="true">
-				{#each stashRoster as user, i (user.id)}
-					{#if user.id !== selfUserId}
-						{@const pos = stashPos(i)}
-						<div class="stash-slot" style:transform="translate3d({pos.x}px, {pos.y}px, 0)">
-							<div class="stash footprint theirs" style:background-color={user.color}></div>
-							<div class="stash top" style:background-color={user.color}>
-								{user.name}
-							</div>
-							<div class="stash-private-label" aria-hidden="true">PRIVATE</div>
-						</div>
-					{/if}
-				{/each}
-			</div>
-
-			{#each [0, 1, 2, 3] as i}
-				<div class="textregion" id="textregion_{i}" style:left="{1260 + i * 190}px" style:top="580px">
-					<input
-						type="text"
-						readonly={replayMode}
-						tabindex={replayMode ? -1 : 0}
-						value={$game.textRegions[`textregion_${i}`] ?? '00'}
-						oninput={(e) => {
-							if (replayMode) return;
-							const v = (e.currentTarget as HTMLInputElement).value;
-							g.setTextRegion(`textregion_${i}`, v);
-							emit('textregion_change', { winid: `textregion_${i}`, val: v });
+			{#if editorMode && editorResizePiece}
+				<div class="editor-resize-layer" style:z-index={editorResizePiece.zIndex + 100000}>
+					<ResizeHandles
+						x={editorResizePiece.x}
+						y={editorResizePiece.y}
+						w={editorResizePiece.initial_size.w}
+						h={editorResizePiece.initial_size.h}
+						zoomScale={zm}
+						onResize={(next) => {
+							const cur = get(game).pieces.find((x) => x.id === editorResizePiece!.id);
+							if (!cur) return;
+							g.replacePieceInstance({
+								...cur,
+								x: next.x,
+								y: next.y,
+								initial_size: { w: next.w, h: next.h },
+								image_size: cur.image_size ? { w: next.w, h: next.h } : undefined
+							});
 						}}
 					/>
 				</div>
-			{/each}
+			{/if}
+
+			{#if editorMode && $game.editorTableSelected}
+				<div class="editor-resize-layer editor-table-handles" style:z-index="999998">
+					<ResizeHandles
+						x={0}
+						y={0}
+						w={$game.table.w}
+						h={$game.table.h}
+						zoomScale={zm}
+						originLocked={true}
+						onResize={(next) => {
+							g.game.update((s) => ({
+								...s,
+								table: {
+									w: Math.max(500, Math.round(next.w)),
+									h: Math.max(500, Math.round(next.h))
+								}
+							}));
+						}}
+					/>
+				</div>
+			{/if}
+
+			{#if !editorMode}
+				<!-- Other players’ zones: on top of pieces so their area obscures hidden tokens for everyone else. -->
+				<div class="user-stashes user-stashes-others" aria-hidden="true">
+					{#each stashRoster as user, i (user.id)}
+						{#if user.id !== selfUserId}
+							{@const pos = stashPos(i)}
+							<div class="stash-slot" style:transform="translate3d({pos.x}px, {pos.y}px, 0)">
+								<div class="stash footprint theirs" style:background-color={user.color}></div>
+								<div class="stash top" style:background-color={user.color}>
+									{user.name}
+								</div>
+								<div class="stash-private-label" aria-hidden="true">PRIVATE</div>
+							</div>
+						{/if}
+					{/each}
+				</div>
+
+				{#each [0, 1, 2, 3] as i}
+					<div class="textregion" id="textregion_{i}" style:left="{1260 + i * 190}px" style:top="580px">
+						<input
+							type="text"
+							readonly={replayMode}
+							tabindex={replayMode ? -1 : 0}
+							value={$game.textRegions[`textregion_${i}`] ?? '00'}
+							oninput={(e) => {
+								if (replayMode) return;
+								const v = (e.currentTarget as HTMLInputElement).value;
+								g.setTextRegion(`textregion_${i}`, v);
+								emit('textregion_change', { winid: `textregion_${i}`, val: v });
+							}}
+						/>
+					</div>
+				{/each}
+			{/if}
 
 			<div
 				class="camera"
@@ -513,6 +582,9 @@
 		background-repeat: no-repeat;
 		background-size: cover;
 	}
+	.table.table-selected {
+		box-shadow: inset 0 0 0 2px var(--editor-selection, #3b82f6);
+	}
 	.user-stashes {
 		position: absolute;
 		inset: 0;
@@ -559,6 +631,20 @@
 		box-shadow:
 			inset 0 0 0 2px rgba(0, 0, 0, 0.2),
 			inset 0 4px 24px rgba(0, 0, 0, 0.35);
+	}
+	.editor-resize-layer {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+	}
+	.editor-resize-layer :global(.box) {
+		pointer-events: none;
+	}
+	.editor-resize-layer :global(.h) {
+		pointer-events: auto;
 	}
 	.stash.top {
 		color: #fff;

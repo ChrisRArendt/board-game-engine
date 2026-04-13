@@ -8,6 +8,11 @@
 	import { voiceChatState, joinVoiceRoom, leaveVoiceRoom } from '$lib/stores/voiceChat';
 
 	export let curGame = 'bsg_1';
+	/** `undefined` = default `/data/{curGame}/rules.pdf`. `null` = no rulebook (hide button). */
+	export let rulesUrl: string | null | undefined = undefined;
+
+	$: effectiveRulesUrl =
+		rulesUrl === undefined ? `/data/${curGame}/rules.pdf` : rulesUrl;
 
 	function focalCenter() {
 		const vp = getViewportSize();
@@ -116,13 +121,13 @@
 				</svg>
 			</button>
 		</li>
-		{#if !mobile}
+		{#if !mobile && effectiveRulesUrl}
 			<li class="rulebook">
 				<button
 					type="button"
 					class="tb-btn"
 					onclick={() => {
-						window.open(`/data/${curGame}/rules.pdf`, '_blank', 'noopener,noreferrer');
+						window.open(effectiveRulesUrl, '_blank', 'noopener,noreferrer');
 					}}
 				>
 					Rules

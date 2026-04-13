@@ -163,6 +163,7 @@
 		<nav class="nav-desktop" aria-label="Account">
 			{#if data.session}
 				<a href="/lobby">Lobbies</a>
+				<a href="/editor">Editor</a>
 				<a href="/settings">Settings</a>
 				<div class="user-wrap">
 					<UserIdentity
@@ -182,6 +183,7 @@
 				<summary class="nav-mobile-trigger">Menu</summary>
 				<div class="nav-mobile-panel">
 					<a href="/lobby">Lobbies</a>
+					<a href="/editor">Editor</a>
 					<a href="/settings">Settings</a>
 					<span class="nav-mobile-name">{data.profile?.display_name ?? data.session.user.email ?? 'Player'}</span>
 					<button type="button" class="linkish nav-mobile-out" on:click={signOut}>Sign out</button>

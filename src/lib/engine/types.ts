@@ -25,6 +25,8 @@ export interface PieceData {
 export interface GameDataJson {
 	table: { size: TableSize };
 	pieces: PieceData[];
+	/** Filename under custom-game-assets `/{userId}/{gameId}/` for the full-table background (default `table-bg.jpg`). */
+	table_bg?: string;
 }
 
 /** Runtime piece instance on the board */
