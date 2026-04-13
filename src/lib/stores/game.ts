@@ -66,6 +66,8 @@ export interface GameState {
 	nextWidgetId: number;
 	shiftDown: boolean;
 	selectionBox: null | { x: number; y: number; w: number; h: number };
+	/** Mousedown point for marquee; must stay fixed (selectionBox x/y are the normalized rect top-left). */
+	selectBoxAnchor: { x: number; y: number } | null;
 	selectingBox: boolean;
 	selectBoxStartItems: Set<number>;
 	selectBoxStartWidgetItems: Set<number>;
@@ -123,6 +125,7 @@ function initialState(): GameState {
 		nextWidgetId: 0,
 		shiftDown: false,
 		selectionBox: null,
+		selectBoxAnchor: null,
 		selectingBox: false,
 		selectBoxStartItems: new Set(),
 		selectBoxStartWidgetItems: new Set(),
@@ -1111,6 +1114,7 @@ export function startSelectionBox(x: number, y: number) {
 	game.update((s) => ({
 		...s,
 		selectingBox: true,
+		selectBoxAnchor: { x, y },
 		selectionBox: { x, y, w: 0, h: 0 },
 		selectBoxStartItems: new Set(s.selectedIds),
 		selectBoxStartWidgetItems: new Set(s.selectedWidgetIds)
@@ -1127,13 +1131,13 @@ export function updateSelectionBox(
 	}
 ) {
 	game.update((s) => {
-		if (!s.selectingBox || !s.selectionBox) return s;
-		const start = { x: s.selectionBox.x, y: s.selectionBox.y };
+		if (!s.selectingBox || !s.selectBoxAnchor) return s;
+		const a = s.selectBoxAnchor;
 		const selrect: Rect = {
-			x: Math.min(start.x, x),
-			y: Math.min(start.y, y),
-			w: Math.abs(start.x - x),
-			h: Math.abs(start.y - y)
+			x: Math.min(a.x, x),
+			y: Math.min(a.y, y),
+			w: Math.abs(a.x - x),
+			h: Math.abs(a.y - y)
 		};
 
 		const selectedIds = new Set(s.selectedIds);
@@ -1187,7 +1191,10 @@ export function updateSelectionBox(
 	});
 }
 
-function intersects(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) {
+function intersects(
+	a: { x: number; y: number; w: number; h: number },
+	b: { x: number; y: number; w: number; h: number }
+) {
 	return !(
 		a.x + a.w < b.x ||
 		a.x > b.x + b.w ||
@@ -1201,6 +1208,7 @@ export function endSelectionBox() {
 		...s,
 		selectingBox: false,
 		selectionBox: null,
+		selectBoxAnchor: null,
 		selectBoxStartItems: new Set(),
 		selectBoxStartWidgetItems: new Set()
 	}));
@@ -1783,8 +1791,10 @@ export function applyStoredGameSnapshot(
 		loaded: true,
 		moveDrag: null,
 		selectionBox: null,
+		selectBoxAnchor: null,
 		selectingBox: false,
 		selectBoxStartItems: new Set(),
+		selectBoxStartWidgetItems: new Set(),
 		edgePan: { x: 0, y: 0 },
 		zSorted: false,
 		spacePanHeld: false,
