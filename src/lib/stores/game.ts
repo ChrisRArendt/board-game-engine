@@ -1215,7 +1215,6 @@ export function moveDragTo(clientX: number, clientY: number) {
 		if (!s.moveDrag) return s;
 		const z = s.zoom;
 		const md = s.moveDrag;
-		const dragging = s.pieces.filter((p) => s.selectedIds.has(p.id) && hasAttr(p, 'move'));
 		let pieces = s.pieces.map((p) => {
 			if (!s.selectedIds.has(p.id) || !hasAttr(p, 'move')) return p;
 			const start = md.elStarts.get(p.id);
@@ -1251,6 +1250,8 @@ export function moveDragTo(clientX: number, clientY: number) {
 			}
 			return { ...w, x: nx, y: ny };
 		});
+
+		const dragging = pieces.filter((p) => s.selectedIds.has(p.id) && hasAttr(p, 'move'));
 
 		let mergedGuides: BoardSnapGuides = EMPTY_BOARD_GUIDES;
 		if (s.editorSnapEnabled && dragging.length > 0) {

@@ -35,6 +35,10 @@ export function maxZIndex(pieces: PieceInstance[]): number {
 	return m;
 }
 
+/**
+ * Raise selected pieces above everything else while preserving their **relative** z-order.
+ * (Spatial sorting breaks fanned / arced hands where y varies along the spread.)
+ */
 export function bringDraggingToFront(
 	dragging: PieceInstance[],
 	all: PieceInstance[]
@@ -58,26 +62,11 @@ export function bringDraggingToFront(
 		highz = highestNsZ;
 	}
 
-	const dlist = [...dragging].sort((a, b) => a.y - b.y || a.x - b.x);
-
-	const xlists: PieceInstance[][] = [];
-	let xlistsi = 0;
-	let cury = -999999;
-	for (const p of dlist) {
-		if (cury + 50 < p.y) {
-			cury = p.y;
-			xlists.push([]);
-			xlistsi = xlists.length - 1;
-		}
-		xlists[xlistsi].push(p);
-	}
-	for (const xl of xlists) xl.sort((a, b) => a.x - b.x);
+	const ordered = [...dragging].sort((a, b) => a.zIndex - b.zIndex || a.id - b.id);
 
 	let nextz = 0;
-	for (const row of xlists) {
-		for (const p of row) {
-			updates.set(p.id, highz + ++nextz);
-		}
+	for (const p of ordered) {
+		updates.set(p.id, highz + ++nextz);
 	}
 	return updates;
 }
