@@ -224,6 +224,8 @@ export interface Database {
 					frame_inner_radius: number | null;
 					background: Json;
 					layers: Json;
+					back_background: Json | null;
+					back_layers: Json | null;
 					created_at: string;
 					updated_at: string;
 				};
@@ -239,6 +241,8 @@ export interface Database {
 					frame_inner_radius?: number | null;
 					background?: Json;
 					layers?: Json;
+					back_background?: Json | null;
+					back_layers?: Json | null;
 					created_at?: string;
 					updated_at?: string;
 				};
@@ -254,6 +258,8 @@ export interface Database {
 					frame_inner_radius?: number | null;
 					background?: Json;
 					layers?: Json;
+					back_background?: Json | null;
+					back_layers?: Json | null;
 					created_at?: string;
 					updated_at?: string;
 				};

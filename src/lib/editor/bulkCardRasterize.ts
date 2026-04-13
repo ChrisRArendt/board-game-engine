@@ -7,7 +7,15 @@ import type { Json } from '$lib/supabase/database.types';
 import { splitFieldValuesPayload } from './fieldBindings';
 import { rasterizeElementToPng } from './rasterize';
 import { ensureGoogleFontsForLayers } from './googleFontsLoader';
-import { parseBackground, parseLayers } from './types';
+import {
+	parseBackground,
+	parseLayers,
+	defaultBackBackground,
+	parseOptionalBackgroundOrNull,
+	parseOptionalLayersOrNull,
+	templateHasBack
+} from './types';
+import type { CardBackground, CardLayer } from './types';
 
 export type TemplateRow = {
 	canvas_width: number;
@@ -20,12 +28,37 @@ export type TemplateRow = {
 	frame_border_color?: string;
 	/** null = auto inner clip radius */
 	frame_inner_radius?: number | null;
+	back_background?: Json | null;
+	back_layers?: Json | null;
 };
 
-export async function rasterizeCardInstanceToBlob(
+export function templateRowHasBack(t: TemplateRow): boolean {
+	return templateHasBack(t.back_background, t.back_layers);
+}
+
+function faceBackgroundAndLayers(
+	template: TemplateRow,
+	face: 'front' | 'back'
+): { background: CardBackground; layers: CardLayer[] } {
+	if (face === 'front') {
+		return {
+			background: parseBackground(template.background),
+			layers: parseLayers(template.layers)
+		};
+	}
+	const bb = parseOptionalBackgroundOrNull(template.back_background);
+	const bl = parseOptionalLayersOrNull(template.back_layers);
+	return {
+		background: bb ?? defaultBackBackground(),
+		layers: bl ?? []
+	};
+}
+
+async function rasterizeCardFaceToBlob(
 	template: TemplateRow,
 	fieldValuesRaw: unknown,
 	mediaUrls: Record<string, string>,
+	face: 'front' | 'back',
 	opts?: { scale?: number }
 ): Promise<Blob> {
 	const wrap = document.createElement('div');
@@ -36,9 +69,8 @@ export async function rasterizeCardInstanceToBlob(
 	document.body.appendChild(wrap);
 
 	const { values: fieldValues, styles: fieldStyles } = splitFieldValuesPayload(fieldValuesRaw);
-
-	const parsedLayers = parseLayers(template.layers);
-	ensureGoogleFontsForLayers(parsedLayers);
+	const { background, layers } = faceBackgroundAndLayers(template, face);
+	ensureGoogleFontsForLayers(layers);
 
 	const app = mount(CardPreview, {
 		target: wrap,
@@ -49,8 +81,8 @@ export async function rasterizeCardInstanceToBlob(
 			frameBorderWidth: template.frame_border_width ?? 0,
 			frameBorderColor: template.frame_border_color ?? '#000000',
 			frameInnerRadius: template.frame_inner_radius ?? null,
-			background: parseBackground(template.background),
-			layers: parsedLayers,
+			background,
+			layers,
 			fieldValues,
 			fieldStyles,
 			mediaUrls,
@@ -78,4 +110,74 @@ export async function rasterizeCardInstanceToBlob(
 		unmount(app);
 		if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
 	}
+}
+
+export async function rasterizeCardInstanceToBlob(
+	template: TemplateRow,
+	fieldValuesRaw: unknown,
+	mediaUrls: Record<string, string>,
+	opts?: { scale?: number; face?: 'front' | 'back' }
+): Promise<Blob> {
+	return rasterizeCardFaceToBlob(
+		template,
+		fieldValuesRaw,
+		mediaUrls,
+		opts?.face ?? 'front',
+		opts
+	);
+}
+
+function blobToImage(blob: Blob): Promise<HTMLImageElement> {
+	return new Promise((resolve, reject) => {
+		const url = URL.createObjectURL(blob);
+		const img = new Image();
+		img.onload = () => {
+			URL.revokeObjectURL(url);
+			resolve(img);
+		};
+		img.onerror = () => {
+			URL.revokeObjectURL(url);
+			reject(new Error('Image load failed'));
+		};
+		img.src = url;
+	});
+}
+
+/**
+ * Horizontal sprite: left half = back (shown when piece is flipped in UI), right half = front (face-up).
+ * Matches Piece.svelte background-position for flip.
+ */
+export async function composeFrontBackSprite(frontBlob: Blob, backBlob: Blob): Promise<Blob> {
+	const [imgF, imgB] = await Promise.all([blobToImage(frontBlob), blobToImage(backBlob)]);
+	const w = imgF.naturalWidth;
+	const h = imgF.naturalHeight;
+	const canvas = document.createElement('canvas');
+	canvas.width = w * 2;
+	canvas.height = h;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('2d context unavailable');
+	ctx.drawImage(imgB, 0, 0, w, h);
+	ctx.drawImage(imgF, w, 0, w, h);
+	return new Promise((resolve, reject) => {
+		canvas.toBlob(
+			(b) => (b ? resolve(b) : reject(new Error('toBlob failed'))),
+			'image/png',
+			1
+		);
+	});
+}
+
+export async function rasterizeCardFrontAndBackSprite(
+	template: TemplateRow,
+	fieldValuesRaw: unknown,
+	mediaUrls: Record<string, string>,
+	opts?: { scale?: number }
+): Promise<{ blob: Blob; isSprite: boolean }> {
+	const front = await rasterizeCardFaceToBlob(template, fieldValuesRaw, mediaUrls, 'front', opts);
+	if (!templateRowHasBack(template)) {
+		return { blob: front, isSprite: false };
+	}
+	const back = await rasterizeCardFaceToBlob(template, fieldValuesRaw, mediaUrls, 'back', opts);
+	const sprite = await composeFrontBackSprite(front, back);
+	return { blob: sprite, isSprite: true };
 }

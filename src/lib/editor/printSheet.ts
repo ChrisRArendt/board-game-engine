@@ -160,3 +160,106 @@ export async function rasterBlobDimensions(blob: Blob): Promise<{ w: number; h: 
 	const img = await blobToImage(blob);
 	return { w: img.naturalWidth, h: img.naturalHeight };
 }
+
+/** Front + optional back for duplex packing (back drawn X-mirrored on the paired sheet). */
+export interface DuplexCardForSheet {
+	frontBlob: Blob;
+	backBlob: Blob | null;
+	widthPx: number;
+	heightPx: number;
+}
+
+/**
+ * For each printable sheet: first image = fronts, second = backs with each card mirrored on X
+ * so long-edge duplex aligns backs to fronts.
+ */
+export async function layoutDuplexCardSheets(
+	cards: DuplexCardForSheet[],
+	pageSize: PageSizeId = 'letter'
+): Promise<{ front: Blob; back: Blob }[]> {
+	if (!cards.length) return [];
+	const pageIn = PAGE_INCH[pageSize];
+	const pageW = inchToPx(pageIn.w);
+	const pageH = inchToPx(pageIn.h);
+	const margin = inchToPx(MARGIN_IN);
+	const innerW = pageW - 2 * margin;
+	const innerH = pageH - 2 * margin;
+
+	const pairs: { front: Blob; back: Blob }[] = [];
+	let i = 0;
+
+	while (i < cards.length) {
+		const canvasF = document.createElement('canvas');
+		canvasF.width = pageW;
+		canvasF.height = pageH;
+		const ctxF = canvasF.getContext('2d');
+		const canvasB = document.createElement('canvas');
+		canvasB.width = pageW;
+		canvasB.height = pageH;
+		const ctxB = canvasB.getContext('2d');
+		if (!ctxF || !ctxB) throw new Error('2d context unavailable');
+		ctxF.fillStyle = '#ffffff';
+		ctxF.fillRect(0, 0, pageW, pageH);
+		ctxB.fillStyle = '#ffffff';
+		ctxB.fillRect(0, 0, pageW, pageH);
+
+		let x = margin;
+		let y = margin;
+		let rowH = 0;
+		let placed = false;
+
+		while (i < cards.length) {
+			const c = cards[i];
+			const imgF = await blobToImage(c.frontBlob);
+			let cw = c.widthPx;
+			let ch = c.heightPx;
+			const fitted = scaleToFit(cw, ch, innerW, innerH);
+			cw = fitted.w;
+			ch = fitted.h;
+
+			if (x + cw > margin + innerW && x > margin) {
+				x = margin;
+				y += rowH + GAP_PX;
+				rowH = 0;
+			}
+
+			if (y + ch > margin + innerH) {
+				if (!placed) {
+					const full = scaleToFit(c.widthPx, c.heightPx, innerW, innerH);
+					const imgFe = await blobToImage(c.frontBlob);
+					ctxF.drawImage(imgFe, margin, margin, full.w, full.h);
+					drawCutMarks(ctxF, margin, margin, full.w, full.h);
+					if (c.backBlob) {
+						const imgBe = await blobToImage(c.backBlob);
+						const bx = pageW - margin - full.w;
+						ctxB.drawImage(imgBe, bx, margin, full.w, full.h);
+						drawCutMarks(ctxB, bx, margin, full.w, full.h);
+					}
+					i++;
+					placed = true;
+				}
+				break;
+			}
+
+			ctxF.drawImage(imgF, x, y, cw, ch);
+			drawCutMarks(ctxF, x, y, cw, ch);
+			const bx = pageW - x - cw;
+			if (c.backBlob) {
+				const imgB = await blobToImage(c.backBlob);
+				ctxB.drawImage(imgB, bx, y, cw, ch);
+				drawCutMarks(ctxB, bx, y, cw, ch);
+			}
+			rowH = Math.max(rowH, ch);
+			x += cw + GAP_PX;
+			i++;
+			placed = true;
+		}
+
+		pairs.push({
+			front: await canvasToPngBlob(canvasF),
+			back: await canvasToPngBlob(canvasB)
+		});
+	}
+
+	return pairs;
+}

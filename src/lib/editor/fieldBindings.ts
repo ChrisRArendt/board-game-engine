@@ -9,15 +9,18 @@ export interface PieceFieldStyle {
 	fontSize?: number;
 }
 
-export function collectFieldBindings(layers: CardLayer[]): FieldBinding[] {
+/** Unique field bindings from one or more layer lists (e.g. front + back). */
+export function collectFieldBindings(...layerGroups: CardLayer[][]): FieldBinding[] {
 	const seen = new Set<string>();
 	const out: FieldBinding[] = [];
-	for (const L of layers) {
-		if (!L.fieldBinding) continue;
-		const fn = L.fieldBinding.fieldName;
-		if (seen.has(fn)) continue;
-		seen.add(fn);
-		out.push(L.fieldBinding);
+	for (const layers of layerGroups) {
+		for (const L of layers) {
+			if (!L.fieldBinding) continue;
+			const fn = L.fieldBinding.fieldName;
+			if (seen.has(fn)) continue;
+			seen.add(fn);
+			out.push(L.fieldBinding);
+		}
 	}
 	return out;
 }
@@ -103,7 +106,9 @@ export function mergeFieldValuesForBindings(
 	const out: Record<string, string> = {};
 	const layerByField = new Map<string, CardLayer>();
 	for (const L of layers) {
-		if (L.fieldBinding) layerByField.set(L.fieldBinding.fieldName, L);
+		if (L.fieldBinding && !layerByField.has(L.fieldBinding.fieldName)) {
+			layerByField.set(L.fieldBinding.fieldName, L);
+		}
 	}
 	for (const b of bindings) {
 		const raw = stored[b.fieldName];

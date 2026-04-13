@@ -11,10 +11,19 @@
 		mergeFieldValuesForBindings,
 		splitFieldValuesPayload
 	} from '$lib/editor/fieldBindings';
-	import { parseBackground, parseLayers, type TextLayer } from '$lib/editor/types';
+	import {
+		parseBackground,
+		parseLayers,
+		parseOptionalBackgroundOrNull,
+		parseOptionalLayersOrNull,
+		defaultBackBackground,
+		templateHasBack,
+		type TextLayer
+	} from '$lib/editor/types';
 	import { rasterizeElementToPng } from '$lib/editor/rasterize';
+	import { rasterizeCardFrontAndBackSprite, rasterizeCardInstanceToBlob } from '$lib/editor/bulkCardRasterize';
 	import { publicStorageUrl } from '$lib/editor/mediaUrls';
-	import { downloadBlob } from '$lib/editor/printExport';
+	import { downloadBlob, zipPngFiles } from '$lib/editor/printExport';
 	import type { Json } from '$lib/supabase/database.types';
 	import type { PageData } from './$types';
 	import { browser } from '$app/environment';
@@ -30,17 +39,36 @@
 	const supabase = createSupabaseBrowserClient();
 
 	const parsedLayers = $derived(parseLayers(data.template.layers as Json));
-	const bindings = $derived(collectFieldBindings(parsedLayers));
+	const parsedBackLayers = $derived(
+		parseOptionalLayersOrNull(data.template.back_layers as Json) ?? []
+	);
+	const hasBack = $derived(
+		templateHasBack(data.template.back_background, data.template.back_layers)
+	);
+	const backBackground = $derived(
+		parseOptionalBackgroundOrNull(data.template.back_background as Json) ?? defaultBackBackground()
+	);
+	const bindings = $derived(collectFieldBindings(parsedLayers, parsedBackLayers));
+
+	function allLayersFlat(): ReturnType<typeof parseLayers> {
+		return [...parseLayers(data.template.layers as Json), ...parsedBackLayers];
+	}
 
 	function mergeForCard(): Record<string, string> {
 		const pl = parseLayers(data.template.layers as Json);
-		const b = collectFieldBindings(pl);
-		return mergeFieldValuesForBindings(splitFieldValuesPayload(data.card.field_values).values, b, pl);
+		const pb = parseOptionalLayersOrNull(data.template.back_layers as Json) ?? [];
+		const b = collectFieldBindings(pl, pb);
+		return mergeFieldValuesForBindings(
+			splitFieldValuesPayload(data.card.field_values).values,
+			b,
+			[...pl, ...pb]
+		);
 	}
 
 	function mergePieceStyles(): Record<string, PieceFieldStyle> {
 		const pl = parseLayers(data.template.layers as Json);
-		const bs = collectFieldBindings(pl);
+		const pb = parseOptionalLayersOrNull(data.template.back_layers as Json) ?? [];
+		const bs = collectFieldBindings(pl, pb);
 		const { styles } = splitFieldValuesPayload(data.card.field_values);
 		const out: Record<string, PieceFieldStyle> = {};
 		for (const b of bs) {
@@ -58,7 +86,7 @@
 	}
 
 	function templateFontSize(fieldName: string): number {
-		for (const L of parseLayers(data.template.layers as Json)) {
+		for (const L of allLayersFlat()) {
 			if (L.type === 'text' && L.fieldBinding?.fieldName === fieldName) {
 				return (L as TextLayer).fontSize ?? 16;
 			}
@@ -67,7 +95,7 @@
 	}
 
 	function templateTextColor(fieldName: string): string {
-		for (const L of parseLayers(data.template.layers as Json)) {
+		for (const L of allLayersFlat()) {
 			if (L.type === 'text' && L.fieldBinding?.fieldName === fieldName) {
 				return (L as TextLayer).color;
 			}
@@ -77,7 +105,7 @@
 
 	/** Template layer is image + this field — even if fieldType was left as "text" when adding Per-piece field. */
 	function bindingIsImageLayer(fieldName: string): boolean {
-		for (const L of parseLayers(data.template.layers as Json)) {
+		for (const L of allLayersFlat()) {
 			if (L.type === 'image' && L.fieldBinding?.fieldName === fieldName) return true;
 		}
 		return false;
@@ -190,7 +218,8 @@
 		err = '';
 		try {
 			const pl = parseLayers(data.template.layers as Json);
-			const bindings = collectFieldBindings(pl);
+			const pb = parseOptionalLayersOrNull(data.template.back_layers as Json) ?? [];
+			const bindings = collectFieldBindings(pl, pb);
 			const fvJson = buildCardFieldValuesPayload(fieldValues, pieceStyles, bindings);
 			const { error } = await supabase
 				.from('card_instances')
@@ -222,13 +251,33 @@
 		}
 	}
 
+	function templateRowForRasterize() {
+		return {
+			canvas_width: data.template.canvas_width,
+			canvas_height: data.template.canvas_height,
+			border_radius: data.template.border_radius,
+			frame_border_width: data.template.frame_border_width,
+			frame_border_color: data.template.frame_border_color,
+			frame_inner_radius: data.template.frame_inner_radius ?? null,
+			background: data.template.background,
+			layers: data.template.layers,
+			back_background: data.template.back_background,
+			back_layers: data.template.back_layers
+		};
+	}
+
 	async function renderPng() {
-		if (!previewEl || !data.session?.user) return;
+		if (!data.session?.user) return;
 		if (renderBtnState === 'loading') return;
 		renderBtnState = 'loading';
 		err = '';
 		try {
-			const blob = await rasterizeElementToPng(previewEl, { scale: 2, backgroundColor: null });
+			const { blob } = await rasterizeCardFrontAndBackSprite(
+				templateRowForRasterize(),
+				data.card.field_values,
+				mediaUrls,
+				{ scale: 2 }
+			);
 			const path = `${data.session.user.id}/${data.game.id}/cards/${data.card.id}.png`;
 			const { error: upErr } = await supabase.storage.from('custom-game-assets').upload(path, blob, {
 				upsert: true,
@@ -298,14 +347,32 @@
 	}
 
 	async function renderPrintPng() {
-		if (!previewEl) return;
 		if (printBtnState === 'loading') return;
+		if (!hasBack && !previewEl) return;
 		printBtnState = 'loading';
 		err = '';
 		try {
-			/** 150 DPI design → 300 DPI: 2× supersampling on design-sized DOM */
-			const blob = await rasterizeElementToPng(previewEl, { scale: 2, backgroundColor: null });
-			downloadBlob(blob, `${(name || 'piece').replace(/\s+/g, '-')}-print-300dpi.png`);
+			const base = `${(name || 'piece').replace(/\s+/g, '-')}-print-300dpi`;
+			if (hasBack) {
+				const tmpl = templateRowForRasterize();
+				const front = await rasterizeCardInstanceToBlob(tmpl, data.card.field_values, mediaUrls, {
+					scale: 2,
+					face: 'front'
+				});
+				const back = await rasterizeCardInstanceToBlob(tmpl, data.card.field_values, mediaUrls, {
+					scale: 2,
+					face: 'back'
+				});
+				const zip = await zipPngFiles([
+					{ path: `${base}-front.png`, blob: front },
+					{ path: `${base}-back.png`, blob: back }
+				]);
+				downloadBlob(zip, `${base}.zip`);
+			} else {
+				if (!previewEl) return;
+				const blob = await rasterizeElementToPng(previewEl, { scale: 2, backgroundColor: null });
+				downloadBlob(blob, `${base}.png`);
+			}
 			printBtnState = 'success';
 			window.setTimeout(() => {
 				printBtnState = 'idle';
@@ -527,6 +594,8 @@
 						Preparing…
 					{:else if printBtnState === 'success'}
 						Downloaded
+					{:else if hasBack}
+						Download print PNGs (ZIP, front + back)
 					{:else}
 						Download print PNG (300 DPI)
 					{/if}
@@ -545,23 +614,47 @@
 
 		<div class="preview-col">
 			<h2>Preview</h2>
-			<div class="preview-chrome">
-				<div class="preview-export-root" bind:this={previewEl}>
-					<CardPreview
-						width={data.template.canvas_width}
-						height={data.template.canvas_height}
-						borderRadius={data.template.border_radius}
-						frameBorderWidth={data.template.frame_border_width ?? 0}
-						frameBorderColor={data.template.frame_border_color ?? '#000000'}
-						frameInnerRadius={data.template.frame_inner_radius ?? null}
-						background={parseBackground(data.template.background as Json)}
-						layers={parsedLayers}
-						{fieldValues}
-						fieldStyles={pieceStyles}
-						{mediaUrls}
-						flattenLayout={true}
-					/>
+			<div class="preview-chrome" class:two-up={hasBack}>
+				<div class="preview-face">
+					<span class="preview-face-label">Front</span>
+					<div class="preview-export-root" bind:this={previewEl}>
+						<CardPreview
+							width={data.template.canvas_width}
+							height={data.template.canvas_height}
+							borderRadius={data.template.border_radius}
+							frameBorderWidth={data.template.frame_border_width ?? 0}
+							frameBorderColor={data.template.frame_border_color ?? '#000000'}
+							frameInnerRadius={data.template.frame_inner_radius ?? null}
+							background={parseBackground(data.template.background as Json)}
+							layers={parsedLayers}
+							{fieldValues}
+							fieldStyles={pieceStyles}
+							{mediaUrls}
+							flattenLayout={true}
+						/>
+					</div>
 				</div>
+				{#if hasBack}
+					<div class="preview-face">
+						<span class="preview-face-label">Back</span>
+						<div class="preview-export-root" aria-hidden="true">
+							<CardPreview
+								width={data.template.canvas_width}
+								height={data.template.canvas_height}
+								borderRadius={data.template.border_radius}
+								frameBorderWidth={data.template.frame_border_width ?? 0}
+								frameBorderColor={data.template.frame_border_color ?? '#000000'}
+								frameInnerRadius={data.template.frame_inner_radius ?? null}
+								background={backBackground}
+								layers={parsedBackLayers}
+								{fieldValues}
+								fieldStyles={pieceStyles}
+								{mediaUrls}
+								flattenLayout={true}
+							/>
+						</div>
+					</div>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -640,6 +733,29 @@
 	.preview-col {
 		position: sticky;
 		top: 0.75rem;
+	}
+	.preview-chrome.two-up {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+		align-items: start;
+	}
+	@media (max-width: 900px) {
+		.preview-chrome.two-up {
+			grid-template-columns: 1fr;
+		}
+	}
+	.preview-face {
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.preview-face-label {
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-text-muted);
 	}
 	.form-col {
 		min-width: 0;

@@ -216,7 +216,7 @@
 				id,
 				bg: rel,
 				classes: `card_${card.name.replace(/\W+/g, '_').slice(0, 40) || id}`,
-				attributes: ['select', 'move'],
+				attributes: card.has_back ? ['select', 'move', 'flip'] : ['select', 'move'],
 				x: pos.x,
 				y: pos.y,
 				zIndex: z,

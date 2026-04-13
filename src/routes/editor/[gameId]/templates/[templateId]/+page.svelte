@@ -19,6 +19,9 @@
 		defaultTextLayer,
 		defaultImageLayer,
 		defaultShapeLayer,
+		defaultBackBackground,
+		parseOptionalBackgroundOrNull,
+		parseOptionalLayersOrNull,
 		newId
 	} from '$lib/editor/types';
 	import type { Json } from '$lib/supabase/database.types';
@@ -61,10 +64,20 @@
 	let frameW = $state(data.template.frame_border_width ?? 0);
 	let frameColor = $state(data.template.frame_border_color ?? '#000000');
 	let frameInnerR = $state<number | null>(data.template.frame_inner_radius ?? null);
-	const initialLayers = parseLayers(data.template.layers as Json);
+	const initialFrontLayers = parseLayers(data.template.layers as Json);
+	let front_background = $state(parseBackground(data.template.background as Json));
+	let front_layers = $state(initialFrontLayers);
+	let back_background = $state<CardBackground | null>(
+		parseOptionalBackgroundOrNull(data.template.back_background as Json)
+	);
+	let back_layers = $state<CardLayer[] | null>(
+		parseOptionalLayersOrNull(data.template.back_layers as Json)
+	);
+	let activeFace = $state<'front' | 'back'>('front');
+	/** Working copy for the active face (TemplateCanvas + left panel). */
 	let background = $state(parseBackground(data.template.background as Json));
-	let layers = $state(initialLayers);
-	let selectedId = $state<string | null>(initialLayers[0]?.id ?? null);
+	let layers = $state(initialFrontLayers);
+	let selectedId = $state<string | null>(initialFrontLayers[0]?.id ?? null);
 	let saving = $state(false);
 	let err = $state('');
 
@@ -113,6 +126,35 @@
 		layerCtxMenu = null;
 	}
 
+	function flushActiveFaceToStores() {
+		if (activeFace === 'front') {
+			front_background = background;
+			front_layers = layers;
+		} else {
+			back_background = background;
+			back_layers = layers;
+		}
+	}
+
+	function setFace(f: 'front' | 'back') {
+		if (f === activeFace) return;
+		flushActiveFaceToStores();
+		activeFace = f;
+		if (f === 'front') {
+			background = front_background;
+			layers = [...front_layers];
+			selectedId = layers[0]?.id ?? null;
+		} else {
+			if (back_background === null || back_layers === null) {
+				back_background = defaultBackBackground();
+				back_layers = [];
+			}
+			background = back_background;
+			layers = [...back_layers];
+			selectedId = layers[0]?.id ?? null;
+		}
+	}
+
 	async function loadMedia() {
 		const { data: rows } = await supabase.from('game_media').select('id, file_path').eq('game_id', data.game.id);
 		const m: Record<string, string> = {};
@@ -141,8 +183,13 @@
 		frameColor = data.template.frame_border_color ?? '#000000';
 		frameInnerR = data.template.frame_inner_radius ?? null;
 		const parsed = parseLayers(data.template.layers as Json);
-		layers = parsed;
-		background = parseBackground(data.template.background as Json);
+		front_layers = parsed;
+		front_background = parseBackground(data.template.background as Json);
+		back_background = parseOptionalBackgroundOrNull(data.template.back_background as Json);
+		back_layers = parseOptionalLayersOrNull(data.template.back_layers as Json);
+		activeFace = 'front';
+		layers = [...parsed];
+		background = front_background;
 		selectedId = parsed[0]?.id ?? null;
 		layerCtxMenu = null;
 		pieceColorPalette = getPieceColorPaletteFromGameData(data.game.game_data);
@@ -179,6 +226,7 @@
 		saving = true;
 		err = '';
 		try {
+			flushActiveFaceToStores();
 			const { error } = await supabase
 				.from('card_templates')
 				.update({
@@ -189,8 +237,10 @@
 					frame_border_width: Math.max(0, Math.min(64, Math.round(frameW))),
 					frame_border_color: frameColor.trim() || '#000000',
 					frame_inner_radius: frameInnerR,
-					background: background as unknown as Json,
-					layers: layers as unknown as Json,
+					background: front_background as unknown as Json,
+					layers: front_layers as unknown as Json,
+					back_background: back_background === null ? null : (back_background as unknown as Json),
+					back_layers: back_layers === null ? null : (back_layers as unknown as Json),
 					updated_at: new Date().toISOString()
 				})
 				.eq('id', data.template.id);
@@ -317,6 +367,28 @@
 		}}
 	/>
 	<header class="top">
+		<div class="face-tabs" role="tablist" aria-label="Card face">
+			<button
+				type="button"
+				class="face-tab"
+				class:active={activeFace === 'front'}
+				onclick={() => setFace('front')}
+				role="tab"
+				aria-selected={activeFace === 'front'}
+			>
+				Front
+			</button>
+			<button
+				type="button"
+				class="face-tab"
+				class:active={activeFace === 'back'}
+				onclick={() => setFace('back')}
+				role="tab"
+				aria-selected={activeFace === 'back'}
+			>
+				Back
+			</button>
+		</div>
 		<input type="text" class="title" bind:value={name} />
 		<div class="size">
 			<UnitInput label="Width" bind:pxValue={canvasW} />
@@ -619,6 +691,26 @@
 		padding: 10px 16px;
 		border-bottom: 1px solid var(--color-border);
 		background: var(--color-surface);
+	}
+	.face-tabs {
+		flex: 1 1 100%;
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
+	.face-tab {
+		padding: 6px 14px;
+		border-radius: 6px;
+		border: 1px solid var(--color-border);
+		background: var(--color-bg);
+		color: inherit;
+		cursor: pointer;
+		font-size: 13px;
+	}
+	.face-tab.active {
+		background: var(--color-accent, #3b82f6);
+		color: #fff;
+		border-color: transparent;
 	}
 	.title {
 		font-size: 1.1rem;

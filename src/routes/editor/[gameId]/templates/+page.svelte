@@ -60,7 +60,9 @@
 					frame_border_color: row.frame_border_color,
 					frame_inner_radius: row.frame_inner_radius,
 					background: row.background,
-					layers: row.layers
+					layers: row.layers,
+					back_background: row.back_background ?? null,
+					back_layers: row.back_layers ?? null
 				})
 				.select('id')
 				.single();

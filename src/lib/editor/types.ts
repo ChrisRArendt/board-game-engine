@@ -93,6 +93,34 @@ export interface CardTemplateState {
 	border_radius: number;
 	background: CardBackground;
 	layers: CardLayer[];
+	/** Null = no back face designed yet (DB columns null). */
+	back_background: CardBackground | null;
+	back_layers: CardLayer[] | null;
+}
+
+/** Default when user first enables the back tab. */
+export function defaultBackBackground(): CardBackground {
+	return { type: 'solid', color: '#1e293b' };
+}
+
+/** Parse back_layers JSON; null/undefined means no back. */
+export function parseOptionalLayersOrNull(raw: unknown): CardLayer[] | null {
+	if (raw === null || raw === undefined) return null;
+	return parseLayers(raw);
+}
+
+/** Parse back_background JSON; null/undefined means no back. */
+export function parseOptionalBackgroundOrNull(raw: unknown): CardBackground | null {
+	if (raw === null || raw === undefined) return null;
+	return parseBackground(raw);
+}
+
+/** Whether template has a designed back face (non-null columns). */
+export function templateHasBack(
+	back_background: unknown,
+	back_layers: unknown
+): boolean {
+	return back_background != null || back_layers != null;
 }
 
 export function newId(): string {
@@ -299,4 +327,6 @@ export interface CardForBoardPiece {
 	rendered_image_path: string | null;
 	canvas_width: number;
 	canvas_height: number;
+	/** Template has a designed back — piece gets flip so the board can show front/back from the sprite. */
+	has_back: boolean;
 }
