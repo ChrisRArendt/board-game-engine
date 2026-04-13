@@ -5,6 +5,8 @@ import type { CardLayer, FieldBinding, TextLayer } from './types';
 export interface PieceFieldStyle {
 	textColor?: string;
 	backgroundColor?: string;
+	/** Override template text `fontSize` (px). */
+	fontSize?: number;
 }
 
 export function collectFieldBindings(layers: CardLayer[]): FieldBinding[] {
@@ -38,9 +40,18 @@ export function splitFieldValuesPayload(raw: unknown): {
 				for (const [fk, sv] of Object.entries(v as Record<string, unknown>)) {
 					if (typeof sv === 'object' && sv !== null) {
 						const s = sv as Record<string, unknown>;
+						const fsz = s.fontSize;
+						let fontSize: number | undefined;
+						if (typeof fsz === 'number' && Number.isFinite(fsz) && fsz > 0) {
+							fontSize = fsz;
+						} else if (typeof fsz === 'string' && fsz.trim() !== '') {
+							const n = parseFloat(fsz);
+							if (Number.isFinite(n) && n > 0) fontSize = n;
+						}
 						styles[fk] = {
 							textColor: typeof s.textColor === 'string' ? s.textColor : undefined,
-							backgroundColor: typeof s.backgroundColor === 'string' ? s.backgroundColor : undefined
+							backgroundColor: typeof s.backgroundColor === 'string' ? s.backgroundColor : undefined,
+							fontSize
 						};
 					}
 				}
@@ -71,7 +82,10 @@ export function buildCardFieldValuesPayload(
 		const e: PieceFieldStyle = {};
 		if (ps.textColor?.trim()) e.textColor = ps.textColor.trim();
 		if (ps.backgroundColor?.trim()) e.backgroundColor = ps.backgroundColor.trim();
-		if (e.textColor || e.backgroundColor) fs[b.fieldName] = e;
+		if (ps.fontSize != null && Number.isFinite(ps.fontSize) && ps.fontSize > 0) {
+			e.fontSize = ps.fontSize;
+		}
+		if (e.textColor || e.backgroundColor || e.fontSize != null) fs[b.fieldName] = e;
 	}
 	if (Object.keys(fs).length) o.fieldStyles = fs;
 	return o as Json;

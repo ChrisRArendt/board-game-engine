@@ -9,6 +9,7 @@
 	const supabase = createSupabaseBrowserClient();
 
 	let busy = false;
+	let duplicatingId: string | null = null;
 
 	async function createTemplate() {
 		busy = true;
@@ -33,19 +34,69 @@
 		}
 		busy = false;
 	}
+
+	async function duplicateTemplate(sourceId: string) {
+		if (busy || duplicatingId) return;
+		duplicatingId = sourceId;
+		try {
+			const { data: row, error: fetchErr } = await supabase
+				.from('card_templates')
+				.select('*')
+				.eq('id', sourceId)
+				.eq('game_id', data.game.id)
+				.single();
+			if (fetchErr || !row) throw fetchErr ?? new Error('Template not found');
+
+			const baseName = row.name?.trim() || 'Template';
+			const { data: inserted, error: insErr } = await supabase
+				.from('card_templates')
+				.insert({
+					game_id: data.game.id,
+					name: `${baseName} (copy)`,
+					canvas_width: row.canvas_width,
+					canvas_height: row.canvas_height,
+					border_radius: row.border_radius,
+					frame_border_width: row.frame_border_width,
+					frame_border_color: row.frame_border_color,
+					frame_inner_radius: row.frame_inner_radius,
+					background: row.background,
+					layers: row.layers
+				})
+				.select('id')
+				.single();
+			if (insErr || !inserted) throw insErr ?? new Error('Duplicate failed');
+			await goto(`/editor/${data.game.id}/templates/${inserted.id}`);
+		} catch (e) {
+			console.error(e);
+		} finally {
+			duplicatingId = null;
+		}
+	}
 </script>
 
 <div class="page editor-page-scroll">
-	<h1>Card templates</h1>
-	<button type="button" class="btn primary" disabled={busy} onclick={createTemplate}>New template</button>
+	<h1>Piece templates</h1>
+	<button type="button" class="btn primary" disabled={busy || duplicatingId !== null} onclick={createTemplate}>
+		New template
+	</button>
 	<ul class="list">
 		{#each data.templates as t}
 			<li>
-				<a href="/editor/{data.game.id}/templates/{t.id}">{t.name}</a>
-				<span class="muted">{t.canvas_width}×{t.canvas_height}px</span>
+				<div class="row-main">
+					<a href="/editor/{data.game.id}/templates/{t.id}">{t.name}</a>
+					<span class="muted">{t.canvas_width}×{t.canvas_height}px</span>
+				</div>
+				<button
+					type="button"
+					class="btn dup"
+					disabled={busy || duplicatingId !== null}
+					onclick={() => duplicateTemplate(t.id)}
+				>
+					{duplicatingId === t.id ? 'Duplicating…' : 'Duplicate'}
+				</button>
 			</li>
 		{:else}
-			<li class="muted">No templates yet.</li>
+			<li class="muted">No piece templates yet.</li>
 		{/each}
 	</ul>
 </div>
@@ -77,7 +128,31 @@
 		padding: 10px 0;
 		border-bottom: 1px solid var(--color-border);
 		display: flex;
+		align-items: center;
+		justify-content: space-between;
 		gap: 12px;
+		flex-wrap: wrap;
+	}
+	.row-main {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		flex: 1;
+		min-width: 0;
+	}
+	.btn.dup {
+		padding: 6px 12px;
+		font-size: 13px;
+		border-radius: 6px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: inherit;
+		cursor: pointer;
+		flex-shrink: 0;
+	}
+	.btn.dup:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
 	}
 	.list a {
 		color: var(--color-accent, #3b82f6);

@@ -12,3 +12,12 @@ export function getPieceColorPaletteFromGameData(raw: unknown): string[] {
 		? [...gd.piece_color_palette]
 		: [...DEFAULT_PIECE_COLOR_PALETTE];
 }
+
+/** Drop `pieces` rows whose `bg` is the rendered path for this card instance (`cards/{id}.png`). */
+export function removeBoardPiecesForCard(gd: GameDataJson, cardId: string): GameDataJson {
+	const bg = `cards/${cardId}.png`;
+	return {
+		...gd,
+		pieces: gd.pieces.filter((p) => p.bg !== bg)
+	};
+}

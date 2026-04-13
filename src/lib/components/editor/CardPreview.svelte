@@ -75,8 +75,16 @@
 		return mediaUrls[id] ?? '';
 	}
 
-	function textStripeHeightPx(T: TextLayer): number {
-		return Math.max(4, T.fontSize * (T.lineHeight || 1.2));
+	function effectiveFontSizePx(T: TextLayer, fieldName: string | undefined): number {
+		const st = styleForField(fieldName);
+		if (st?.fontSize != null && Number.isFinite(st.fontSize) && st.fontSize > 0) {
+			return st.fontSize;
+		}
+		return T.fontSize;
+	}
+
+	function textStripeHeightPx(T: TextLayer, fontSizePx: number): number {
+		return Math.max(4, fontSizePx * (T.lineHeight || 1.2));
 	}
 
 	function styleForField(fieldName: string | undefined): PieceFieldStyle | undefined {
@@ -137,6 +145,7 @@
 				{@const multiline = T.fieldBinding?.fieldType === 'textarea'}
 				{@const showTextPh = showEmptyPlaceholders && !resolved.trim()}
 				{@const st = styleForField(T.fieldBinding?.fieldName)}
+				{@const fsPx = effectiveFontSizePx(T, T.fieldBinding?.fieldName)}
 				{@const textColor = showTextPh
 					? 'transparent'
 					: st?.textColor?.trim()
@@ -150,7 +159,7 @@
 					class:text-v-bottom={T.verticalAlign === 'bottom'}
 					style={layerStyle(T)}
 					style:font-family={T.fontFamily}
-					style:font-size="{T.fontSize}px"
+					style:font-size="{fsPx}px"
 					style:font-weight={T.fontWeight}
 					style:font-style={T.fontStyle ?? 'normal'}
 					style:color={textColor}
@@ -161,7 +170,7 @@
 					style:text-decoration={T.textDecoration ?? 'none'}
 					style:text-transform={T.textTransform ?? 'none'}
 					style:text-shadow={T.textShadow?.trim() ? T.textShadow : 'none'}
-					style:--text-stripe="{textStripeHeightPx(T)}px"
+					style:--text-stripe="{textStripeHeightPx(T, fsPx)}px"
 				>
 					{#if showTextPh}
 						<span class="text-ph-fill" aria-hidden="true"></span>

@@ -60,7 +60,7 @@
 
 <div class="page editor-page-scroll">
 	<h1>Board games</h1>
-	<p class="lead">Create and edit games, board layout, card templates, and media.</p>
+	<p class="lead">Create and edit games, board layout, piece templates, and media.</p>
 	{#if err}
 		<p class="err">{err}</p>
 	{/if}

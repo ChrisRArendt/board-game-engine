@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import CardPreview from '$lib/components/editor/CardPreview.svelte';
 	import ColorPicker from '$lib/components/editor/ColorPicker.svelte';
@@ -18,7 +18,11 @@
 	import type { Json } from '$lib/supabase/database.types';
 	import type { PageData } from './$types';
 	import { browser } from '$app/environment';
-	import { getPieceColorPaletteFromGameData, parseGameDataJson } from '$lib/editor/gameDataJson';
+	import {
+		getPieceColorPaletteFromGameData,
+		parseGameDataJson,
+		removeBoardPiecesForCard
+	} from '$lib/editor/gameDataJson';
 	import { persistPieceColorPalette } from '$lib/editor/persistPieceColorPalette';
 
 	let { data }: { data: PageData } = $props();
@@ -43,10 +47,23 @@
 			const s = styles[b.fieldName];
 			out[b.fieldName] = {
 				textColor: s?.textColor ?? '',
-				backgroundColor: s?.backgroundColor ?? ''
+				backgroundColor: s?.backgroundColor ?? '',
+				fontSize:
+					typeof s?.fontSize === 'number' && Number.isFinite(s.fontSize) && s.fontSize > 0
+						? s.fontSize
+						: undefined
 			};
 		}
 		return out;
+	}
+
+	function templateFontSize(fieldName: string): number {
+		for (const L of parseLayers(data.template.layers as Json)) {
+			if (L.type === 'text' && L.fieldBinding?.fieldName === fieldName) {
+				return (L as TextLayer).fontSize ?? 16;
+			}
+		}
+		return 16;
 	}
 
 	function templateTextColor(fieldName: string): string {
@@ -86,6 +103,16 @@
 		);
 	}
 
+	function showsFontSize(b: { fieldType: string; fieldName: string }): boolean {
+		if (bindingIsImageLayer(b.fieldName)) return false;
+		return (
+			b.fieldType === 'text' ||
+			b.fieldType === 'textarea' ||
+			b.fieldType === 'number' ||
+			b.fieldType === 'color'
+		);
+	}
+
 	let name = $state(data.card.name);
 	let fieldValues = $state<Record<string, string>>(mergeForCard());
 	let pieceStyles = $state<Record<string, PieceFieldStyle>>(mergePieceStyles());
@@ -106,10 +133,14 @@
 	let saveBtnState = $state<ActionPhase>('idle');
 	let renderBtnState = $state<ActionPhase>('idle');
 	let printBtnState = $state<ActionPhase>('idle');
+	let deleteBtnState = $state<ActionPhase>('idle');
 	let err = $state('');
 
 	const actionBusy = $derived(
-		saveBtnState === 'loading' || renderBtnState === 'loading' || printBtnState === 'loading'
+		saveBtnState === 'loading' ||
+			renderBtnState === 'loading' ||
+			printBtnState === 'loading' ||
+			deleteBtnState === 'loading'
 	);
 
 	const SUCCESS_MS = 2000;
@@ -224,6 +255,48 @@
 		}
 	}
 
+	async function deletePiece() {
+		if (
+			!confirm(
+				'Delete this piece from the game? Any copies on the board will be removed. This cannot be undone.'
+			)
+		)
+			return;
+		if (deleteBtnState === 'loading') return;
+		deleteBtnState = 'loading';
+		err = '';
+		try {
+			const gd = parseGameDataJson(data.game.game_data);
+			const nextGd = removeBoardPiecesForCard(gd, data.card.id);
+			const { error: gErr } = await supabase
+				.from('custom_board_games')
+				.update({
+					game_data: nextGd as unknown as Json,
+					updated_at: new Date().toISOString()
+				})
+				.eq('id', data.game.id);
+			if (gErr) throw gErr;
+
+			const path = data.card.rendered_image_path;
+			if (path) {
+				const { error: rmErr } = await supabase.storage.from('custom-game-assets').remove([path]);
+				if (rmErr) console.warn('[delete piece] storage remove', rmErr);
+			}
+
+			const { error: dErr } = await supabase
+				.from('card_instances')
+				.delete()
+				.eq('id', data.card.id)
+				.eq('game_id', data.game.id);
+			if (dErr) throw dErr;
+
+			await goto(`/editor/${data.game.id}/pieces`);
+		} catch (e) {
+			err = e instanceof Error ? e.message : 'Delete failed';
+			deleteBtnState = 'idle';
+		}
+	}
+
 	async function renderPrintPng() {
 		if (!previewEl) return;
 		if (printBtnState === 'loading') return;
@@ -321,6 +394,38 @@
 								/>
 							{/if}
 						</div>
+						{#if showsFontSize(b)}
+							<div class="field-font-size">
+								<label class="font-size-label">
+									<span>Size (px)</span>
+									<input
+										type="number"
+										min="4"
+										max="500"
+										step="0.5"
+										class="font-size-input"
+										placeholder={String(templateFontSize(b.fieldName))}
+										title="Leave empty to use the template size ({templateFontSize(b.fieldName)}px)"
+										value={pieceStyles[b.fieldName]?.fontSize != null &&
+										pieceStyles[b.fieldName]!.fontSize! > 0
+											? String(pieceStyles[b.fieldName]!.fontSize)
+											: ''}
+										oninput={(e) => {
+											const raw = (e.currentTarget as HTMLInputElement).value;
+											const n = parseFloat(raw);
+											pieceStyles = {
+												...pieceStyles,
+												[b.fieldName]: {
+													...pieceStyles[b.fieldName],
+													fontSize:
+														raw === '' || !Number.isFinite(n) || n <= 0 ? undefined : n
+												}
+											};
+										}}
+									/>
+								</label>
+							</div>
+						{/if}
 						{#if showsLayerBackground(b) || showsTextColor(b)}
 							<div class="field-swatches">
 								{#if showsLayerBackground(b)}
@@ -425,6 +530,15 @@
 					{:else}
 						Download print PNG (300 DPI)
 					{/if}
+				</button>
+				<button
+					type="button"
+					class="btn danger"
+					disabled={actionBusy}
+					aria-busy={deleteBtnState === 'loading'}
+					onclick={deletePiece}
+				>
+					{deleteBtnState === 'loading' ? 'Deleting…' : 'Delete piece'}
 				</button>
 			</div>
 		</div>
@@ -570,6 +684,30 @@
 		flex-direction: column;
 		gap: 6px;
 	}
+	.field-font-size {
+		flex: 0 0 auto;
+		display: flex;
+		align-items: flex-start;
+		padding-top: 2px;
+	}
+	.font-size-label {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		font-size: 11px;
+		color: var(--color-text-muted);
+		margin: 0;
+	}
+	.font-size-input {
+		width: 4.75rem;
+		padding: 6px 8px;
+		border-radius: 6px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: inherit;
+		font-size: 13px;
+		box-sizing: border-box;
+	}
 	.field-swatches {
 		display: flex;
 		flex-direction: row;
@@ -627,6 +765,14 @@
 		border-color: #22c55e;
 		color: #86efac;
 		background: rgba(34, 197, 94, 0.12);
+	}
+	.btn.danger {
+		border-color: rgba(248, 113, 113, 0.55);
+		color: #f87171;
+		background: rgba(248, 113, 113, 0.08);
+	}
+	.btn.danger:hover:not(:disabled) {
+		background: rgba(248, 113, 113, 0.16);
 	}
 	.btn:disabled {
 		opacity: 0.65;
