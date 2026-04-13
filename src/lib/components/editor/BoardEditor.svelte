@@ -10,8 +10,9 @@
 	import BoardMinimap from './BoardMinimap.svelte';
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
-	import type { GameDataJson } from '$lib/engine/types';
+	import type { GameDataJson, WidgetType } from '$lib/engine/types';
 	import type { PieceInstance } from '$lib/engine/types';
+	import { createDefaultBoardWidget, defaultWidgetSize } from '$lib/engine/boardWidgets';
 	import type { PlacementLayout } from '$lib/engine/types';
 	import { piecesToGameDataJson } from '$lib/editor/serializeBoard';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
@@ -39,6 +40,8 @@
 
 	/** `game_media.id` for current table background, if it matches a library row. */
 	let tableMediaId: string | null = null;
+	/** `game_media.id` for repeating environment background under the table. */
+	let envMediaId: string | null = null;
 	let mediaUrls: Record<string, string> = {};
 
 	let leftW = 280;
@@ -72,11 +75,15 @@
 		const s = get(game);
 		return {
 			pieces: s.pieces.map((p) => ({ ...p, attributes: [...p.attributes], initial_size: { ...p.initial_size } })),
+			widgets: s.widgets.map((w) => ({ ...w, config: { ...w.config } })),
 			table: { ...s.table },
 			tableBgFilename: s.tableBgFilename,
 			tableBgRev: s.tableBgRev,
+			envBgFilename: s.envBgFilename,
+			envBgRev: s.envBgRev,
 			pieceColorPalette: [...s.pieceColorPalette],
-			nextPieceId: s.nextPieceId
+			nextPieceId: s.nextPieceId,
+			nextWidgetId: s.nextWidgetId
 		};
 	}
 
@@ -148,6 +155,29 @@
 		commitHistory();
 	}
 
+	function maxZBoard(): number {
+		const st = get(game);
+		let z = maxZIndex(st.pieces);
+		for (const w of st.widgets) z = Math.max(z, w.zIndex);
+		return z;
+	}
+
+	function addWidget(type: WidgetType) {
+		const st = get(game);
+		const id = st.nextWidgetId;
+		const zi = maxZBoard() + 1;
+		const size = defaultWidgetSize(type);
+		const w = createDefaultBoardWidget(
+			type,
+			id,
+			st.table.w / 2 - size.w / 2,
+			st.table.h / 2 - size.h / 2,
+			zi
+		);
+		g.addWidgetInstance(w);
+		commitHistory();
+	}
+
 	function addPiecesFromCard(
 		card: CardForBoardPiece,
 		opts: {
@@ -175,7 +205,9 @@
 			cols: opts.layout === 'grid' ? opts.gridCols : undefined
 		});
 		let nextId = st.nextPieceId;
-		let z = maxZIndex(st.pieces) + 1;
+		let z = maxZIndex(st.pieces);
+		for (const w of st.widgets) z = Math.max(z, w.zIndex);
+		z += 1;
 		const newPieces: PieceInstance[] = [];
 		for (const pos of positions) {
 			const id = nextId++;
@@ -196,7 +228,8 @@
 			...s,
 			pieces: [...s.pieces, ...newPieces],
 			nextPieceId: nextId,
-			selectedIds: new Set(newPieces.map((p) => p.id))
+			selectedIds: new Set(newPieces.map((p) => p.id)),
+			selectedWidgetIds: new Set()
 		}));
 		commitHistory();
 	}
@@ -219,6 +252,20 @@
 		commitHistory();
 	}
 
+	function applyEnvMediaFromStoragePath(filePath: string, id: string) {
+		const prefix = `${userId}/${gameId}/`;
+		const rel = filePath.startsWith(prefix) ? filePath.slice(prefix.length) : filePath;
+		errMsg = '';
+		g.game.update((s) => ({
+			...s,
+			envBgFilename: rel,
+			envBgRev: s.envBgRev + 1
+		}));
+		envMediaId = id;
+		mediaUrls = { ...mediaUrls, [id]: publicStorageUrl(filePath) };
+		commitHistory();
+	}
+
 	async function loadGameMedia() {
 		const { data, error } = await supabase.from('game_media').select('id, file_path').eq('game_id', gameId);
 		if (error) {
@@ -229,14 +276,19 @@
 		const st = get(game);
 		const prefix = `${userId}/${gameId}/`;
 		let tid: string | null = null;
+		let eid: string | null = null;
 		for (const row of data ?? []) {
 			urls[row.id] = publicStorageUrl(row.file_path);
 			if (row.file_path === `${prefix}${st.tableBgFilename}`) {
 				tid = row.id;
 			}
+			if (st.envBgFilename && row.file_path === `${prefix}${st.envBgFilename}`) {
+				eid = row.id;
+			}
 		}
 		mediaUrls = urls;
 		tableMediaId = tid;
+		envMediaId = eid;
 	}
 
 	async function onTableMediaIdChange(id: string | null) {
@@ -259,6 +311,26 @@
 		applyTableMediaFromStoragePath(data.file_path, id);
 	}
 
+	async function onEnvMediaIdChange(id: string | null) {
+		if (id === null) {
+			errMsg = '';
+			g.game.update((s) => ({
+				...s,
+				envBgFilename: '',
+				envBgRev: s.envBgRev + 1
+			}));
+			envMediaId = null;
+			commitHistory();
+			return;
+		}
+		const { data, error } = await supabase.from('game_media').select('file_path').eq('id', id).single();
+		if (error || !data?.file_path) {
+			errMsg = error?.message ?? 'Could not load media';
+			return;
+		}
+		applyEnvMediaFromStoragePath(data.file_path, id);
+	}
+
 	function afterHistoryRestore() {
 		void loadGameMedia();
 	}
@@ -270,8 +342,11 @@
 			const st = get(game);
 			const json = piecesToGameDataJson(st.pieces, st.table, {
 				table_bg: st.assetBaseUrl ? st.tableBgFilename : undefined,
+				environment_bg:
+					st.assetBaseUrl && st.envBgFilename.trim() ? st.envBgFilename : undefined,
 				piece_color_palette: st.pieceColorPalette,
-				editor_view: { zoom: st.zoom, pan_x: st.panX, pan_y: st.panY }
+				editor_view: { zoom: st.zoom, pan_x: st.panX, pan_y: st.panY },
+				widgets: st.widgets
 			});
 			const { error } = await supabase
 				.from('custom_board_games')
@@ -335,9 +410,10 @@
 		}
 
 		if (meta && e.key.toLowerCase() === 'd') {
-			if (get(game).selectedIds.size === 0) return;
+			const st = get(game);
+			if (st.selectedIds.size === 0 && st.selectedWidgetIds.size === 0) return;
 			e.preventDefault();
-			g.duplicateSelectedForEditor();
+			g.duplicateSelectionForEditor();
 			commitHistory();
 			return;
 		}
@@ -349,9 +425,10 @@
 
 		if (e.key === 'Delete' || e.key === 'Backspace') {
 			const s = get(game);
-			if (s.selectedIds.size === 0) return;
+			if (s.selectedIds.size === 0 && s.selectedWidgetIds.size === 0) return;
 			e.preventDefault();
-			g.removePiecesForEditor([...s.selectedIds]);
+			if (s.selectedIds.size) g.removePiecesForEditor([...s.selectedIds]);
+			if (s.selectedWidgetIds.size) g.removeWidgetsForEditor([...s.selectedWidgetIds]);
 			commitHistory();
 			return;
 		}
@@ -469,10 +546,10 @@
 			<button
 				type="button"
 				class="secondary"
-				disabled={$game.selectedIds.size === 0}
-				title="Duplicate selected pieces (⌘D / Ctrl+D)"
+				disabled={$game.selectedIds.size === 0 && $game.selectedWidgetIds.size === 0}
+				title="Duplicate selected (⌘D / Ctrl+D)"
 				onclick={() => {
-					g.duplicateSelectedForEditor();
+					g.duplicateSelectionForEditor();
 					commitHistory();
 				}}
 			>
@@ -492,6 +569,7 @@
 			<PieceLibrary
 				{cardsForBoard}
 				onAddBlank={addPiece}
+				onAddWidget={addWidget}
 				{clientToWorld}
 				onDropCard={addPiecesFromCard}
 			/>
@@ -535,8 +613,10 @@
 				{gameId}
 				{userId}
 				{tableMediaId}
+				{envMediaId}
 				{mediaUrls}
 				onTableMediaIdChange={onTableMediaIdChange}
+				onEnvMediaIdChange={onEnvMediaIdChange}
 				onMergeTableMediaUrls={mergeTableMediaUrls}
 				onAfterTableMediaPick={() => void loadGameMedia()}
 				onAfterEdit={commitHistory}

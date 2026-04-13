@@ -3,6 +3,7 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { get } from 'svelte/store';
 	import Piece from './Piece.svelte';
+	import BoardWidgetRenderer from './BoardWidgetRenderer.svelte';
 	import SelectionBox from './SelectionBox.svelte';
 	import ResizeHandles from '$lib/components/editor/ResizeHandles.svelte';
 	import * as g from '$lib/stores/game';
@@ -12,7 +13,7 @@
 	import { users } from '$lib/stores/users';
 	import { emit, getLocalPlayerColor, playerColorOverrides, playerOrder } from '$lib/stores/network';
 	import { settings } from '$lib/stores/settings';
-	import type { PieceInstance } from '$lib/engine/types';
+	import type { BoardWidget, PieceInstance } from '$lib/engine/types';
 	import {
 		buildStashRoster,
 		canSelectPieceForViewer,
@@ -29,7 +30,7 @@
 	export let selfDisplayName = 'You';
 	/** Long-press on touch: open context menu at (x,y) in client coords */
 	export let onOpenContextMenu: ((clientX: number, clientY: number) => void) | undefined = undefined;
-	/** Board layout editor: no stash/textregions, all pieces selectable, no realtime emits */
+	/** Board layout editor: no stash, all pieces/widgets selectable, no realtime emits */
 	export let editorMode = false;
 	/** Editor: fill parent instead of 100vw/100vh */
 	export let embeddedEditor = false;
@@ -198,6 +199,21 @@
 				}
 				onViewerFollowPiece?.(piece.id);
 			},
+			onWidgetMouseDown: async (widgetId, e) => {
+				if (replayMode || !editorMode) return;
+				e.stopPropagation();
+				const st = get(game);
+				if (st.spacePanHeld) {
+					g.startPanPointer(e.clientX, e.clientY);
+					return;
+				}
+				g.selectWidgetForEditor(widgetId, st.shiftDown);
+				await tick();
+				const st2 = get(game);
+				const w = st2.widgets.find((x) => x.id === widgetId);
+				if (!w || w.locked) return;
+				g.beginMoveDrag(e.clientX, e.clientY, st2.panX, st2.panY);
+			},
 			onPieceTouchPressing: (pieceId, pressing) => {
 				pressingPieceId = pressing ? pieceId : null;
 			},
@@ -276,6 +292,7 @@
 			},
 			onSelectionBoxMove: (x, y) => {
 				const rects = new Map<number, { x: number; y: number; w: number; h: number }>();
+				const widgetRects = new Map<number, { x: number; y: number; w: number; h: number }>();
 				if (browser) {
 					document.querySelectorAll<HTMLElement>('[data-piece-id]').forEach((el) => {
 						const id = parseInt(el.dataset.pieceId ?? '', 10);
@@ -283,9 +300,16 @@
 						const r = el.getBoundingClientRect();
 						rects.set(id, { x: r.left, y: r.top, w: r.width, h: r.height });
 					});
+					document.querySelectorAll<HTMLElement>('[data-board-widget-id]').forEach((el) => {
+						const id = parseInt(el.dataset.boardWidgetId ?? '', 10);
+						if (Number.isNaN(id)) return;
+						const r = el.getBoundingClientRect();
+						widgetRects.set(id, { x: r.left, y: r.top, w: r.width, h: r.height });
+					});
 				}
 				g.updateSelectionBox(x, y, rects, {
-					canSelectPiece: canViewerSelectPiece
+					canSelectPiece: canViewerSelectPiece,
+					widgetRects
 				});
 			},
 			onSelectionBoxEnd: () => {
@@ -328,7 +352,7 @@
 		const target = e.target as HTMLElement;
 		if (target.closest('.table')) return;
 		if (target.closest('[data-piece-id]')) return;
-		if (target.closest('.textregion')) return;
+		if (target.closest('[data-board-widget-id]')) return;
 		if (target.closest('.zoom-hud')) return;
 		if (target.closest('.editor-resize-layer')) return;
 		if (e.pointerType === 'touch') {
@@ -425,18 +449,74 @@
 	$: bgTable = $game.assetBaseUrl
 		? `${$game.assetBaseUrl}${$game.tableBgFilename}?v=${$game.tableBgRev}`
 		: `/data/${$game.curGame}/images/table-bg.jpg`;
+	$: bgEnv =
+		$game.envBgFilename?.trim() &&
+		($game.assetBaseUrl
+			? `${$game.assetBaseUrl}${$game.envBgFilename}?v=${$game.envBgRev}`
+			: `/data/${$game.curGame}/images/${$game.envBgFilename}?v=${$game.envBgRev}`);
+	/** World-space bounds for the repeating env layer (under table + padding from content). */
+	$: envPlaneRect = (() => {
+		const tw = $game.table.w;
+		const th = $game.table.h;
+		let minX = 0;
+		let minY = 0;
+		let maxX = tw;
+		let maxY = th;
+		for (const p of $game.pieces) {
+			minX = Math.min(minX, p.x);
+			minY = Math.min(minY, p.y);
+			maxX = Math.max(maxX, p.x + p.initial_size.w);
+			maxY = Math.max(maxY, p.y + p.initial_size.h);
+		}
+		for (const w of $game.widgets) {
+			minX = Math.min(minX, w.x);
+			minY = Math.min(minY, w.y);
+			maxX = Math.max(maxX, w.x + w.w);
+			maxY = Math.max(maxY, w.y + w.h);
+		}
+		const pad = 8000;
+		return {
+			x: minX - pad,
+			y: minY - pad,
+			w: maxX - minX + pad * 2,
+			h: maxY - minY + pad * 2
+		};
+	})();
 	/** Single selected piece in board editor — show handles (disabled when locked so state is obvious). */
 	$: editorResizeTarget =
-		editorMode && $game.selectedIds.size === 1
+		editorMode && $game.selectedIds.size === 1 && $game.selectedWidgetIds.size === 0
 			? $game.pieces.find((p) => $game.selectedIds.has(p.id)) ?? null
 			: null;
+	$: editorResizeWidget =
+		editorMode && $game.selectedWidgetIds.size === 1 && $game.selectedIds.size === 0
+			? $game.widgets.find((w) => $game.selectedWidgetIds.has(w.id)) ?? null
+			: null;
+
+	function onWidgetValueChange(id: number, value: string | number | boolean) {
+		g.setWidgetValue(id, value);
+		if (!editorMode) {
+			emit('widget_value_change', { widgetId: id, value });
+		}
+	}
+
+	$: boardLayerItems = (() => {
+		type Row =
+			| { k: 'p'; piece: PieceInstance; z: number }
+			| { k: 'w'; widget: BoardWidget; z: number };
+		const rows: Row[] = [];
+		for (const p of $game.pieces) rows.push({ k: 'p', piece: p, z: p.zIndex });
+		for (const w of $game.widgets) rows.push({ k: 'w', widget: w, z: w.zIndex });
+		rows.sort((a, b) => a.z - b.z);
+		return rows;
+	})();
 	$: viewportCursor = replayMode
 		? 'default'
 		: $game.spacePanHeld
 			? 'grab'
 			: $game.handscroll
 				? 'grabbing'
-				: $game.moveDrag
+				: $game.moveDrag &&
+					  ($game.selectedIds.size > 0 || $game.selectedWidgetIds.size > 0)
 					? 'move'
 					: 'default';
 </script>
@@ -461,6 +541,17 @@
 			style:transform="scale({zm})"
 			style:transform-origin="0 0"
 		>
+			{#if bgEnv}
+				<div
+					class="env-plane"
+					style:left="{envPlaneRect.x}px"
+					style:top="{envPlaneRect.y}px"
+					style:width="{envPlaneRect.w}px"
+					style:height="{envPlaneRect.h}px"
+					style:background-image="url({bgEnv})"
+					aria-hidden="true"
+				></div>
+			{/if}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class="table"
@@ -516,29 +607,50 @@
 				</div>
 			{/if}
 
-			{#each $game.pieces as piece (piece.id)}
-				{#if !piece.hidden}
-					<Piece
-						{piece}
-						curGame={$game.curGame}
-						assetBaseUrl={$game.assetBaseUrl}
-						replayMode={replayMode}
-						editorMode={editorMode}
-						onEditorContextMenu={editorMode ? onEditorPieceContextMenu : undefined}
-						faceHidden={editorMode
-							? false
-							: isPieceFaceHiddenFromPeers(piece, stashRoster, selfUserId, replayMode)}
-						selected={$game.selectedIds.has(piece.id)}
-						dragging={$game.moveDrag != null && $game.selectedIds.has(piece.id) && piece.attributes.includes('move')}
-						pressing={pressingPieceId === piece.id}
-						remoteColor={$game.remoteSelection[piece.id]}
-						onpointerdown={(e) => onPiecePointerDown(piece, e)}
-						onpiecedblclick={(id) => {
-							const piece = get(game).pieces.find((p) => p.id === id);
-							if (!piece || !canViewerSelectPiece(piece)) return;
-							onOpenViewer?.(id);
-						}}
-					/>
+			{#each boardLayerItems as row (row.k === 'p' ? 'p' + row.piece.id : 'w' + row.widget.id)}
+				{#if row.k === 'p'}
+					{@const piece = row.piece}
+					{#if !piece.hidden}
+						<Piece
+							{piece}
+							curGame={$game.curGame}
+							assetBaseUrl={$game.assetBaseUrl}
+							replayMode={replayMode}
+							editorMode={editorMode}
+							onEditorContextMenu={editorMode ? onEditorPieceContextMenu : undefined}
+							faceHidden={editorMode
+								? false
+								: isPieceFaceHiddenFromPeers(piece, stashRoster, selfUserId, replayMode)}
+							selected={$game.selectedIds.has(piece.id)}
+							dragging={$game.moveDrag != null && $game.selectedIds.has(piece.id) && piece.attributes.includes('move')}
+							pressing={pressingPieceId === piece.id}
+							remoteColor={$game.remoteSelection[piece.id]}
+							onpointerdown={(e) => onPiecePointerDown(piece, e)}
+							onpiecedblclick={(id) => {
+								const piece = get(game).pieces.find((p) => p.id === id);
+								if (!piece || !canViewerSelectPiece(piece)) return;
+								onOpenViewer?.(id);
+							}}
+						/>
+					{/if}
+				{:else}
+					{@const widget = row.widget}
+					{#if !widget.hidden}
+						<BoardWidgetRenderer
+							{widget}
+							{editorMode}
+							{replayMode}
+							selected={$game.selectedWidgetIds.has(widget.id)}
+							dragging={$game.moveDrag != null && $game.selectedWidgetIds.has(widget.id)}
+							onpointerdown={editorMode
+								? (e) => {
+										e.stopPropagation();
+										pointerEngine?.handlePointerDown(e, { kind: 'widget', widgetId: widget.id });
+									}
+								: undefined}
+							onValueChange={onWidgetValueChange}
+						/>
+					{/if}
 				{/if}
 			{/each}
 
@@ -595,6 +707,32 @@
 						></button>
 					{/if}
 				</div>
+			{:else if editorMode && editorResizeWidget}
+				<div
+					class="editor-resize-layer"
+					class:piece-locked-handles={editorResizeWidget.locked === true}
+					style:z-index={editorResizeWidget.zIndex + 100000}
+				>
+					<ResizeHandles
+						x={editorResizeWidget.x}
+						y={editorResizeWidget.y}
+						w={editorResizeWidget.w}
+						h={editorResizeWidget.h}
+						zoomScale={zm}
+						disabled={editorResizeWidget.locked === true}
+						onResize={(next, _kind, _e) => {
+							const cur = get(game).widgets.find((x) => x.id === editorResizeWidget!.id);
+							if (!cur || cur.locked) return;
+							g.replaceWidgetInstance({
+								...cur,
+								x: next.x,
+								y: next.y,
+								w: next.w,
+								h: next.h
+							});
+						}}
+					/>
+				</div>
 			{/if}
 
 			{#if !editorMode}
@@ -613,23 +751,6 @@
 						{/if}
 					{/each}
 				</div>
-
-				{#each [0, 1, 2, 3] as i}
-					<div class="textregion" id="textregion_{i}" style:left="{1260 + i * 190}px" style:top="580px">
-						<input
-							type="text"
-							readonly={replayMode}
-							tabindex={replayMode ? -1 : 0}
-							value={$game.textRegions[`textregion_${i}`] ?? '00'}
-							oninput={(e) => {
-								if (replayMode) return;
-								const v = (e.currentTarget as HTMLInputElement).value;
-								g.setTextRegion(`textregion_${i}`, v);
-								emit('textregion_change', { winid: `textregion_${i}`, val: v });
-							}}
-						/>
-					</div>
-				{/each}
 			{/if}
 
 			<div
@@ -691,6 +812,15 @@
 	}
 	.pieces-layer {
 		position: relative;
+		z-index: 0;
+		isolation: isolate;
+	}
+	.env-plane {
+		position: absolute;
+		z-index: -1;
+		pointer-events: none;
+		background-repeat: repeat;
+		background-position: 0 0;
 	}
 	.grid-overlay {
 		position: absolute;
@@ -822,24 +952,6 @@
 		clip: rect(0, 0, 0, 0);
 		white-space: nowrap;
 		border: 0;
-	}
-	.textregion {
-		position: absolute;
-		width: 110px;
-		height: 60px;
-		z-index: 1000;
-		background: #fff;
-		box-shadow: 0 0 10px 5px #000;
-	}
-	.textregion input {
-		text-align: center;
-		width: 100%;
-		font-size: 50px;
-		padding: 0;
-		margin: 0;
-		border: 0;
-		height: 100%;
-		font-family: inherit;
 	}
 	.camera,
 	.mouse {

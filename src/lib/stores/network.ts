@@ -458,9 +458,10 @@ export async function connectGameChannel(
 		}
 	);
 
-	ch.on('broadcast', { event: 'textregion_change' }, ({ payload }) => {
-		const p = payload as { winid: string; val: string };
-		game.setTextRegion(p.winid, p.val);
+	ch.on('broadcast', { event: 'widget_value_change' }, ({ payload }) => {
+		const p = payload as { widgetId: number; value: string | number | boolean };
+		if (typeof p.widgetId !== 'number') return;
+		game.setWidgetValue(p.widgetId, p.value);
 	});
 
 	ch.on('broadcast', { event: 'turn_highlight' }, ({ payload }) => {

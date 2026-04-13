@@ -1,15 +1,19 @@
-import type { GameDataJson } from '$lib/engine/types';
+import type { BoardWidget, GameDataJson } from '$lib/engine/types';
 import type { PieceInstance } from '$lib/engine/types';
 
 const MAX = 50;
 
 export interface BoardEditorSnapshot {
 	pieces: PieceInstance[];
+	widgets: BoardWidget[];
 	table: { w: number; h: number };
 	tableBgFilename: string;
 	tableBgRev: number;
+	envBgFilename: string;
+	envBgRev: number;
 	pieceColorPalette: string[];
 	nextPieceId: number;
+	nextWidgetId: number;
 }
 
 function cloneSnapshot(s: BoardEditorSnapshot): BoardEditorSnapshot {
@@ -19,11 +23,15 @@ function cloneSnapshot(s: BoardEditorSnapshot): BoardEditorSnapshot {
 			attributes: [...p.attributes],
 			initial_size: { ...p.initial_size }
 		})),
+		widgets: s.widgets.map((w) => ({ ...w, config: { ...w.config } })),
 		table: { ...s.table },
 		tableBgFilename: s.tableBgFilename,
 		tableBgRev: s.tableBgRev,
+		envBgFilename: s.envBgFilename,
+		envBgRev: s.envBgRev,
 		pieceColorPalette: [...s.pieceColorPalette],
-		nextPieceId: s.nextPieceId
+		nextPieceId: s.nextPieceId,
+		nextWidgetId: s.nextWidgetId
 	};
 }
 
@@ -72,6 +80,13 @@ export class EditorHistory {
 /** Strip editor-only fields from game JSON for runtime play (optional). */
 export function stripEditorOnlyFromGameJson(json: GameDataJson): GameDataJson {
 	const { editor_view: _view, ...withoutView } = json;
+	const widgets = json.widgets?.map((row) => {
+		const { editor_hidden, editor_locked, ...rest } = row as typeof row & {
+			editor_hidden?: boolean;
+			editor_locked?: boolean;
+		};
+		return rest;
+	});
 	return {
 		...withoutView,
 		pieces: json.pieces.map((row) => {
@@ -80,6 +95,7 @@ export function stripEditorOnlyFromGameJson(json: GameDataJson): GameDataJson {
 				editor_locked?: boolean;
 			};
 			return rest;
-		})
+		}),
+		...(widgets ? { widgets } : {})
 	};
 }

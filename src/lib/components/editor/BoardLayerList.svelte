@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { get } from 'svelte/store';
-	import type { PieceInstance } from '$lib/engine/types';
+	import type { BoardWidget, PieceInstance, WidgetType } from '$lib/engine/types';
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
 
@@ -8,51 +8,75 @@
 	/** Called after edits from this panel so the board editor can record undo history. */
 	export let onAfterEdit: (() => void) | undefined = undefined;
 
+	type LayerRow =
+		| { kind: 'piece'; piece: PieceInstance }
+		| { kind: 'widget'; widget: BoardWidget };
+
 	function thumbUrl(p: PieceInstance) {
 		if (!assetBaseUrl) return '';
 		return `${assetBaseUrl}${p.bg}`;
 	}
 
-	function zSorted(pieces: PieceInstance[]): PieceInstance[] {
-		return [...pieces].sort((a, b) => a.zIndex - b.zIndex);
+	function zSortedLayers(pieces: PieceInstance[], widgets: BoardWidget[]): LayerRow[] {
+		const rows: LayerRow[] = [
+			...pieces.map((piece) => ({ kind: 'piece' as const, piece })),
+			...widgets.map((widget) => ({ kind: 'widget' as const, widget }))
+		];
+		rows.sort((a, b) => {
+			const za = a.kind === 'piece' ? a.piece.zIndex : a.widget.zIndex;
+			const zb = b.kind === 'piece' ? b.piece.zIndex : b.widget.zIndex;
+			return za - zb;
+		});
+		return rows;
 	}
 
-	let dragId: number | null = null;
+	function layerKey(row: LayerRow): string {
+		return row.kind === 'piece' ? `piece:${row.piece.id}` : `widget:${row.widget.id}`;
+	}
+
+	function reorderFromOrderedList(ordered: Array<{ kind: 'piece' | 'widget'; id: number }>) {
+		g.reorderBoardFromOrderedList(ordered);
+	}
+
+	let dragKey: string | null = null;
 	let insertAtIndex: number | null = null;
 	let activePointerId: number | null = null;
 	let dragPointerCaptureEl: HTMLElement | null = null;
 
-	function reorderFromOrderedList(ordered: PieceInstance[]) {
-		g.reorderPiecesFromOrderedList(ordered);
-	}
-
-	function applyReorderFromInsert(fromId: number, insertAt: number) {
-		const ord = zSorted($game.pieces);
+	function applyReorderFromInsert(fromKey: string, insertAt: number) {
+		const ord = zSortedLayers($game.pieces, $game.widgets);
 		const n = ord.length;
-		const fromIdx = ord.findIndex((x) => x.id === fromId);
+		const fromIdx = ord.findIndex((r) => layerKey(r) === fromKey);
 		if (fromIdx < 0) return;
 
+		const orderedIds = ord.map((r) =>
+			r.kind === 'piece'
+				? { kind: 'piece' as const, id: r.piece.id }
+				: { kind: 'widget' as const, id: r.widget.id }
+		);
+
 		let at = Math.max(0, Math.min(insertAt, n));
-		const cp = [...ord];
+		const cp = [...orderedIds];
 		const [item] = cp.splice(fromIdx, 1);
 		if (fromIdx < at) at -= 1;
 		at = Math.max(0, Math.min(at, cp.length));
 		cp.splice(at, 0, item);
 
-		const before = ord.map((x) => x.id).join('\0');
-		const after = cp.map((x) => x.id).join('\0');
+		const before = orderedIds.map((x) => `${x.kind}:${x.id}`).join('\0');
+		const after = cp.map((x) => `${x.kind}:${x.id}`).join('\0');
 		if (before === after) return;
 		reorderFromOrderedList(cp);
+		onAfterEdit?.();
 	}
 
 	function rowUnder(clientX: number, clientY: number): HTMLElement | null {
 		const stack = document.elementsFromPoint(clientX, clientY);
 		for (const el of stack) {
 			if (!(el instanceof HTMLElement)) continue;
-			const row = el.closest('[data-board-piece-id]');
+			const row = el.closest('[data-board-layer-id]');
 			if (row instanceof HTMLElement) {
-				const id = row.getAttribute('data-board-piece-id');
-				if (dragId !== null && id === String(dragId)) continue;
+				const id = row.getAttribute('data-board-layer-id');
+				if (dragKey !== null && id === dragKey) continue;
 				return row;
 			}
 		}
@@ -62,9 +86,9 @@
 	function computeInsertAt(clientX: number, clientY: number): number | null {
 		const row = rowUnder(clientX, clientY);
 		if (!row) return null;
-		const id = row.getAttribute('data-board-piece-id');
-		const ord = zSorted($game.pieces);
-		const idx = ord.findIndex((x) => String(x.id) === id);
+		const id = row.getAttribute('data-board-layer-id');
+		const ord = zSortedLayers($game.pieces, $game.widgets);
+		const idx = ord.findIndex((r) => layerKey(r) === id);
 		if (idx < 0) return null;
 		const rect = row.getBoundingClientRect();
 		const mid = rect.top + rect.height / 2;
@@ -87,7 +111,7 @@
 		}
 		dragPointerCaptureEl = null;
 		activePointerId = null;
-		dragId = null;
+		dragKey = null;
 		insertAtIndex = null;
 		removeGlobalListeners();
 	}
@@ -99,11 +123,11 @@
 
 	function onPointerUp(e: PointerEvent) {
 		if (e.pointerId !== activePointerId) return;
-		const fromId = dragId;
+		const fromKey = dragKey;
 		const insertAt = computeInsertAt(e.clientX, e.clientY);
 		endDrag();
-		if (fromId != null && insertAt != null) {
-			applyReorderFromInsert(fromId, insertAt);
+		if (fromKey != null && insertAt != null) {
+			applyReorderFromInsert(fromKey, insertAt);
 		}
 	}
 
@@ -112,12 +136,12 @@
 		endDrag();
 	}
 
-	function handleHandlePointerDown(fromId: number, e: PointerEvent) {
+	function handleHandlePointerDown(fromKey: string, e: PointerEvent) {
 		if (e.button !== 0) return;
 		e.preventDefault();
 		e.stopPropagation();
 		insertAtIndex = computeInsertAt(e.clientX, e.clientY);
-		dragId = fromId;
+		dragKey = fromKey;
 		activePointerId = e.pointerId;
 		dragPointerCaptureEl = e.currentTarget as HTMLElement;
 		try {
@@ -130,19 +154,40 @@
 		document.addEventListener('pointercancel', onPointerCancel, true);
 	}
 
-	let menu: { id: number; x: number; y: number } | null = null;
+	let menu: { key: string; x: number; y: number } | null = null;
 
 	function closeMenu() {
 		menu = null;
 	}
 
-	function onRowContextMenu(e: MouseEvent, id: number) {
+	function onRowContextMenu(e: MouseEvent, key: string) {
 		e.preventDefault();
 		const s = get(game);
-		if (!s.selectedIds.has(id)) {
-			g.selectPieceForEditor(id, false);
+		if (key.startsWith('piece:')) {
+			const id = parseInt(key.slice(6), 10);
+			if (!s.selectedIds.has(id)) g.selectPieceForEditor(id, false);
+		} else if (key.startsWith('widget:')) {
+			const id = parseInt(key.slice(7), 10);
+			if (!s.selectedWidgetIds.has(id)) g.selectWidgetForEditor(id, false);
 		}
-		menu = { id, x: e.clientX, y: e.clientY };
+		menu = { key, x: e.clientX, y: e.clientY };
+	}
+
+	function widgetLabel(t: WidgetType): string {
+		switch (t) {
+			case 'counter':
+				return 'Counter';
+			case 'label':
+				return 'Label';
+			case 'textbox':
+				return 'Text box';
+			case 'dice':
+				return 'Dice';
+			case 'toggle':
+				return 'Toggle';
+			default:
+				return 'Widget';
+		}
 	}
 </script>
 
@@ -150,108 +195,192 @@
 
 <section class="layer-panel" aria-labelledby="board-layers-heading">
 	<h3 id="board-layers-heading" class="layers-title">Layers</h3>
-	<ul class="layers" class:dnd-active={dragId !== null}>
-		{#each zSorted($game.pieces) as L, i (L.id)}
+	<ul class="layers" class:dnd-active={dragKey !== null}>
+		{#each zSortedLayers($game.pieces, $game.widgets) as L, i (layerKey(L))}
+			{@const key = layerKey(L)}
 			<li
 				class="row"
-				data-board-piece-id={L.id}
-				class:sel={$game.selectedIds.has(L.id)}
-				class:dragging={dragId === L.id}
-				class:insert-before={dragId !== null && insertAtIndex === i}
-				class:insert-after={dragId !== null &&
+				data-board-layer-id={key}
+				class:sel={L.kind === 'piece'
+					? $game.selectedIds.has(L.piece.id)
+					: $game.selectedWidgetIds.has(L.widget.id)}
+				class:dragging={dragKey === key}
+				class:insert-before={dragKey !== null && insertAtIndex === i}
+				class:insert-after={dragKey !== null &&
 					insertAtIndex !== null &&
 					insertAtIndex === i + 1 &&
-					i === $game.pieces.length - 1}
-				oncontextmenu={(e) => onRowContextMenu(e, L.id)}
+					i === zSortedLayers($game.pieces, $game.widgets).length - 1}
+				oncontextmenu={(e) => onRowContextMenu(e, key)}
 			>
 				<button
 					type="button"
 					class="drag-handle"
 					aria-label="Drag to reorder"
-					onpointerdown={(e) => handleHandlePointerDown(L.id, e)}
+					onpointerdown={(e) => handleHandlePointerDown(key, e)}
 				>⠿</button>
-				<button
-					type="button"
-					class="eye"
-					class:eye-off={L.hidden}
-					title={L.hidden ? 'Show on board' : 'Hide on board'}
-					aria-pressed={!L.hidden}
-					onclick={(e) => {
-						e.stopPropagation();
-						g.togglePieceHidden(L.id);
-					}}
-				>
-					{#if !L.hidden}
-						<svg class="eye-icon" viewBox="0 0 24 24" aria-hidden="true">
-							<path
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M1 12s4-8 11-8 11 8-4 8-11 8-11-8-11-8z"
-							/>
-							<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" />
-						</svg>
-					{:else}
-						<svg class="eye-icon" viewBox="0 0 24 24" aria-hidden="true">
-							<path
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
-							/>
-							<line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" stroke-width="2" />
-						</svg>
-					{/if}
-				</button>
-				<div class="thumb-wrap">
-					{#if assetBaseUrl}
-						<img class="thumb" src={thumbUrl(L)} alt="" />
-					{:else}
-						<div class="thumb-fallback"></div>
-					{/if}
-				</div>
-				<button type="button" class="name" onclick={() => g.selectPieceForEditor(L.id, false)}>
-					<span class="cls">{L.classes || 'piece'}</span>
-					<span class="muted">z:{L.zIndex}</span>
-				</button>
-				<button
-					type="button"
-					class="lock"
-					class:lock-on={L.locked === true}
-					title={L.locked === true ? 'Unlock piece' : 'Lock piece'}
-					aria-pressed={L.locked === true}
-					onclick={(e) => {
-						e.stopPropagation();
-						e.preventDefault();
-						g.togglePieceLocked(L.id);
-					}}
-				>
-					{#if L.locked === true}
-						<svg class="lock-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-							<path
-								stroke="currentColor"
-								stroke-width="1.75"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 4.5h10.5a2.25 2.25 0 012.25 2.25v6.75a2.25 2.25 0 01-2.25 2.25H3.75a2.25 2.25 0 01-2.25-2.25v-6.75a2.25 2.25 0 012.25-2.25z"
-							/>
-						</svg>
-					{:else}
-						<svg class="lock-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-							<path
-								stroke="currentColor"
-								stroke-width="1.75"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
-							/>
-						</svg>
-					{/if}
-				</button>
+				{#if L.kind === 'piece'}
+					<button
+						type="button"
+						class="eye"
+						class:eye-off={L.piece.hidden}
+						title={L.piece.hidden ? 'Show on board' : 'Hide on board'}
+						aria-pressed={!L.piece.hidden}
+						onclick={(e) => {
+							e.stopPropagation();
+							g.togglePieceHidden(L.piece.id);
+						}}
+					>
+						{#if !L.piece.hidden}
+							<svg class="eye-icon" viewBox="0 0 24 24" aria-hidden="true">
+								<path
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M1 12s4-8 11-8 11 8-4 8-11 8-11-8-11-8z"
+								/>
+								<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" />
+							</svg>
+						{:else}
+							<svg class="eye-icon" viewBox="0 0 24 24" aria-hidden="true">
+								<path
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+								/>
+								<line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" stroke-width="2" />
+							</svg>
+						{/if}
+					</button>
+					<div class="thumb-wrap">
+						{#if assetBaseUrl}
+							<img class="thumb" src={thumbUrl(L.piece)} alt="" />
+						{:else}
+							<div class="thumb-fallback"></div>
+						{/if}
+					</div>
+					<button type="button" class="name" onclick={() => g.selectPieceForEditor(L.piece.id, false)}>
+						<span class="cls">{L.piece.classes || 'piece'}</span>
+						<span class="muted">z:{L.piece.zIndex}</span>
+					</button>
+					<button
+						type="button"
+						class="lock"
+						class:lock-on={L.piece.locked === true}
+						title={L.piece.locked === true ? 'Unlock piece' : 'Lock piece'}
+						aria-pressed={L.piece.locked === true}
+						onclick={(e) => {
+							e.stopPropagation();
+							e.preventDefault();
+							g.togglePieceLocked(L.piece.id);
+						}}
+					>
+						{#if L.piece.locked === true}
+							<svg class="lock-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+								<path
+									stroke="currentColor"
+									stroke-width="1.75"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 4.5h10.5a2.25 2.25 0 012.25 2.25v6.75a2.25 2.25 0 01-2.25 2.25H3.75a2.25 2.25 0 01-2.25-2.25v-6.75a2.25 2.25 0 012.25-2.25z"
+								/>
+							</svg>
+						{:else}
+							<svg class="lock-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+								<path
+									stroke="currentColor"
+									stroke-width="1.75"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
+								/>
+							</svg>
+						{/if}
+					</button>
+				{:else}
+					<button
+						type="button"
+						class="eye"
+						class:eye-off={L.widget.hidden}
+						title={L.widget.hidden ? 'Show on board' : 'Hide on board'}
+						aria-pressed={!L.widget.hidden}
+						onclick={(e) => {
+							e.stopPropagation();
+							g.toggleWidgetHidden(L.widget.id);
+						}}
+					>
+						{#if !L.widget.hidden}
+							<svg class="eye-icon" viewBox="0 0 24 24" aria-hidden="true">
+								<path
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M1 12s4-8 11-8 11 8-4 8-11 8-11-8-11-8z"
+								/>
+								<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" />
+							</svg>
+						{:else}
+							<svg class="eye-icon" viewBox="0 0 24 24" aria-hidden="true">
+								<path
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+								/>
+								<line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" stroke-width="2" />
+							</svg>
+						{/if}
+					</button>
+					<div class="thumb-wrap widget-thumb" aria-hidden="true">
+						<span class="w-icon">{widgetLabel(L.widget.type).slice(0, 1)}</span>
+					</div>
+					<button type="button" class="name" onclick={() => g.selectWidgetForEditor(L.widget.id, false)}>
+						<span class="cls">{widgetLabel(L.widget.type)}</span>
+						<span class="muted">z:{L.widget.zIndex}</span>
+					</button>
+					<button
+						type="button"
+						class="lock"
+						class:lock-on={L.widget.locked === true}
+						title={L.widget.locked === true ? 'Unlock widget' : 'Lock widget'}
+						aria-pressed={L.widget.locked === true}
+						onclick={(e) => {
+							e.stopPropagation();
+							e.preventDefault();
+							g.toggleWidgetLocked(L.widget.id);
+						}}
+					>
+						{#if L.widget.locked === true}
+							<svg class="lock-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+								<path
+									stroke="currentColor"
+									stroke-width="1.75"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 4.5h10.5a2.25 2.25 0 012.25 2.25v6.75a2.25 2.25 0 01-2.25 2.25H3.75a2.25 2.25 0 01-2.25-2.25v-6.75a2.25 2.25 0 012.25-2.25z"
+								/>
+							</svg>
+						{:else}
+							<svg class="lock-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+								<path
+									stroke="currentColor"
+									stroke-width="1.75"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
+								/>
+							</svg>
+						{/if}
+					</button>
+				{/if}
 			</li>
 		{/each}
 	</ul>
@@ -267,48 +396,101 @@
 		role="menu"
 		tabindex="-1"
 	>
-		<button
-			type="button"
-			onclick={() => {
-				g.duplicatePieceForEditor(menu!.id);
-				closeMenu();
-				onAfterEdit?.();
-			}}>Duplicate</button
-		>
-		{#if $game.selectedIds.size > 1 && $game.selectedIds.has(menu.id)}
+		{#if menu.key.startsWith('piece:')}
 			<button
 				type="button"
 				onclick={() => {
-					g.removePiecesForEditor([...$game.selectedIds]);
+					const id = parseInt(menu!.key.slice(6), 10);
+					g.duplicatePieceForEditor(id);
 					closeMenu();
 					onAfterEdit?.();
-				}}>Delete all ({$game.selectedIds.size})</button
+				}}>Duplicate</button
+			>
+			{#if $game.selectedIds.size > 1 && $game.selectedIds.has(parseInt(menu.key.slice(6), 10))}
+				<button
+					type="button"
+					onclick={() => {
+						g.removePiecesForEditor([...$game.selectedIds]);
+						closeMenu();
+						onAfterEdit?.();
+					}}>Delete all ({$game.selectedIds.size})</button
+				>
+			{/if}
+			<button
+				type="button"
+				onclick={() => {
+					const id = parseInt(menu!.key.slice(6), 10);
+					g.removePiecesForEditor([id]);
+					closeMenu();
+					onAfterEdit?.();
+				}}>{$game.selectedIds.size > 1 ? 'Delete this piece' : 'Delete'}</button
+			>
+			<button
+				type="button"
+				onclick={() => {
+					const id = parseInt(menu!.key.slice(6), 10);
+					g.bringToFront(id);
+					closeMenu();
+					onAfterEdit?.();
+				}}>Bring to front</button
+			>
+			<button
+				type="button"
+				onclick={() => {
+					const id = parseInt(menu!.key.slice(6), 10);
+					g.sendToBack(id);
+					closeMenu();
+					onAfterEdit?.();
+				}}>Send to back</button
+			>
+		{:else}
+			<button
+				type="button"
+				onclick={() => {
+					const id = parseInt(menu!.key.slice(7), 10);
+					g.duplicateWidgetForEditor(id);
+					closeMenu();
+					onAfterEdit?.();
+				}}>Duplicate</button
+			>
+			{#if $game.selectedWidgetIds.size > 1 && $game.selectedWidgetIds.has(parseInt(menu.key.slice(7), 10))}
+				<button
+					type="button"
+					onclick={() => {
+						g.removeWidgetsForEditor([...$game.selectedWidgetIds]);
+						closeMenu();
+						onAfterEdit?.();
+					}}>Delete all ({$game.selectedWidgetIds.size})</button
+				>
+			{/if}
+			<button
+				type="button"
+				onclick={() => {
+					const id = parseInt(menu!.key.slice(7), 10);
+					g.removeWidgetsForEditor([id]);
+					closeMenu();
+					onAfterEdit?.();
+				}}>{$game.selectedWidgetIds.size > 1 ? 'Delete this widget' : 'Delete'}</button
+			>
+			<button
+				type="button"
+				onclick={() => {
+					const id = parseInt(menu!.key.slice(7), 10);
+					g.bringWidgetToFront(id);
+					closeMenu();
+					onAfterEdit?.();
+				}}>Bring to front</button
+			>
+			<button
+				type="button"
+				onclick={() => {
+					const id = parseInt(menu!.key.slice(7), 10);
+					g.sendWidgetToBack(id);
+					closeMenu();
+					onAfterEdit?.();
+				}}>Send to back</button
 			>
 		{/if}
-		<button
-			type="button"
-			onclick={() => {
-				g.removePiecesForEditor([menu!.id]);
-				closeMenu();
-				onAfterEdit?.();
-			}}>{$game.selectedIds.size > 1 ? 'Delete this piece' : 'Delete'}</button
-		>
-		<button
-			type="button"
-			onclick={() => {
-				g.bringToFront(menu!.id);
-				closeMenu();
-				onAfterEdit?.();
-			}}>Bring to front</button
-		>
-		<button
-			type="button"
-			onclick={() => {
-				g.sendToBack(menu!.id);
-				closeMenu();
-				onAfterEdit?.();
-			}}>Send to back</button
-		>
 	</div>
 {/if}
 
@@ -392,6 +574,18 @@
 		border-radius: 4px;
 		overflow: hidden;
 		background: #111;
+	}
+	.thumb-wrap.widget-thumb {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: #1e293b;
+		border: 1px solid var(--color-border);
+	}
+	.w-icon {
+		font-size: 14px;
+		font-weight: 700;
+		color: var(--color-accent, #3b82f6);
 	}
 	.thumb {
 		width: 100%;

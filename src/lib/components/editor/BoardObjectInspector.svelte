@@ -1,14 +1,18 @@
 <script lang="ts">
 	import GameMediaImageTools from './GameMediaImageTools.svelte';
+	import LabelWidgetInspector from './LabelWidgetInspector.svelte';
 	import PieceProperties from './PieceProperties.svelte';
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
+	import type { BoardWidget } from '$lib/engine/types';
 
 	export let gameId: string;
 	export let userId: string;
 	export let tableMediaId: string | null;
+	export let envMediaId: string | null;
 	export let mediaUrls: Record<string, string>;
 	export let onTableMediaIdChange: (id: string | null) => void | Promise<void>;
+	export let onEnvMediaIdChange: (id: string | null) => void | Promise<void>;
 	export let onMergeTableMediaUrls: (urls: Record<string, string>) => void;
 	export let onAfterTableMediaPick: () => void;
 	export let onPalettePersist: ((cols: string[]) => void) | undefined = undefined;
@@ -28,21 +32,35 @@
 	}
 
 	$: pieceSel =
-		$game.selectedIds.size === 1
+		$game.selectedIds.size === 1 && $game.selectedWidgetIds.size === 0
 			? ($game.pieces.find((p) => $game.selectedIds.has(p.id)) ?? null)
 			: null;
 	$: pieceCardId = pieceSel ? cardInstanceIdFromPieceBg(pieceSel.bg) : null;
-	$: multiSel = $game.selectedIds.size > 1;
+	$: multiPiece = $game.selectedIds.size > 1 && $game.selectedWidgetIds.size === 0;
+	$: widgetSel =
+		$game.selectedWidgetIds.size === 1 && $game.selectedIds.size === 0
+			? ($game.widgets.find((w) => $game.selectedWidgetIds.has(w.id)) ?? null)
+			: null;
+
+	function patchWidget(next: BoardWidget) {
+		g.replaceWidgetInstance(next);
+		onAfterEdit?.();
+	}
 
 	/** Legacy table image not linked to `game_media` — still show preview. */
 	$: tableFallbackThumb =
 		tableMediaId == null && $game.assetBaseUrl && $game.tableBgFilename
 			? `${$game.assetBaseUrl}${$game.tableBgFilename}?v=${$game.tableBgRev}`
 			: null;
+	/** Legacy env image not linked to `game_media` — still show preview. */
+	$: envFallbackThumb =
+		envMediaId == null && $game.assetBaseUrl && $game.envBgFilename
+			? `${$game.assetBaseUrl}${$game.envBgFilename}?v=${$game.envBgRev}`
+			: null;
 </script>
 
 <div class="inspector">
-	{#if $game.selectedIds.size === 0}
+	{#if $game.selectedIds.size === 0 && $game.selectedWidgetIds.size === 0}
 		<h4>Table &amp; board</h4>
 		<div class="props">
 			<label class="row">
@@ -85,8 +103,24 @@
 					onAfterPick={onAfterTableMediaPick}
 				/>
 			</div>
+			<div class="row table-bg-tools">
+				<span>Environment (repeating)</span>
+				<p class="subhint">
+					Tiles under the table and everything on it; moves and zooms with the board. Clear to remove.
+				</p>
+				<GameMediaImageTools
+					compact
+					{gameId}
+					mediaId={envMediaId}
+					{mediaUrls}
+					fallbackThumbUrl={envFallbackThumb}
+					onMediaIdChange={onEnvMediaIdChange}
+					onMergeUrls={onMergeTableMediaUrls}
+					onAfterPick={onAfterTableMediaPick}
+				/>
+			</div>
 		</div>
-	{:else if multiSel}
+	{:else if multiPiece}
 		<h4>Pieces ({$game.selectedIds.size})</h4>
 		<p class="hint">Use the toolbar to align and distribute. Toggle attributes for all selected:</p>
 		<div class="props">
@@ -131,8 +165,267 @@
 				onAfterEdit?.();
 			}}
 		/>
+	{:else if $game.selectedWidgetIds.size > 1 && $game.selectedIds.size === 0}
+		<h4>Widgets ({$game.selectedWidgetIds.size})</h4>
+		<p class="hint">Use the layers list to reorder, hide, or lock.</p>
+	{:else if widgetSel}
+		<h4>Widget ({widgetSel.type})</h4>
+		<div class="props">
+			<label class="row">
+				<span>Caption</span>
+				<input
+					type="text"
+					value={widgetSel.label ?? ''}
+					placeholder="Optional label above widget"
+					oninput={(e) =>
+						patchWidget({
+							...widgetSel!,
+							label: (e.currentTarget as HTMLInputElement).value || undefined
+						})}
+				/>
+			</label>
+			<div class="row grid2">
+				<label>
+					<span>X</span>
+					<input
+						type="number"
+						value={Math.round(widgetSel.x)}
+						oninput={(e) =>
+							patchWidget({
+								...widgetSel!,
+								x: parseFloat((e.currentTarget as HTMLInputElement).value) || 0
+							})}
+					/>
+				</label>
+				<label>
+					<span>Y</span>
+					<input
+						type="number"
+						value={Math.round(widgetSel.y)}
+						oninput={(e) =>
+							patchWidget({
+								...widgetSel!,
+								y: parseFloat((e.currentTarget as HTMLInputElement).value) || 0
+							})}
+					/>
+				</label>
+			</div>
+			<div class="row grid2">
+				<label>
+					<span>Width</span>
+					<input
+						type="number"
+						min="40"
+						value={Math.round(widgetSel.w)}
+						oninput={(e) =>
+							patchWidget({
+								...widgetSel!,
+								w: Math.max(40, parseFloat((e.currentTarget as HTMLInputElement).value) || 40)
+							})}
+					/>
+				</label>
+				<label>
+					<span>Height</span>
+					<input
+						type="number"
+						min="24"
+						value={Math.round(widgetSel.h)}
+						oninput={(e) =>
+							patchWidget({
+								...widgetSel!,
+								h: Math.max(24, parseFloat((e.currentTarget as HTMLInputElement).value) || 24)
+							})}
+					/>
+				</label>
+			</div>
+			{#if widgetSel.type === 'counter'}
+				<div class="row grid3">
+					<label>
+						<span>Min</span>
+						<input
+							type="number"
+							value={Number(widgetSel.config.min ?? 0)}
+							oninput={(e) =>
+								patchWidget({
+									...widgetSel!,
+									config: {
+										...widgetSel!.config,
+										min: parseFloat((e.currentTarget as HTMLInputElement).value) || 0
+									}
+								})}
+						/>
+					</label>
+					<label>
+						<span>Max</span>
+						<input
+							type="number"
+							value={Number(widgetSel.config.max ?? 999)}
+							oninput={(e) =>
+								patchWidget({
+									...widgetSel!,
+									config: {
+										...widgetSel!.config,
+										max: parseFloat((e.currentTarget as HTMLInputElement).value) || 999
+									}
+								})}
+						/>
+					</label>
+					<label>
+						<span>Step</span>
+						<input
+							type="number"
+							min="1"
+							value={Number(widgetSel.config.step ?? 1)}
+							oninput={(e) =>
+								patchWidget({
+									...widgetSel!,
+									config: {
+										...widgetSel!.config,
+										step: Math.max(1, parseFloat((e.currentTarget as HTMLInputElement).value) || 1)
+									}
+								})}
+						/>
+					</label>
+				</div>
+				<label class="row">
+					<span>Default value</span>
+					<input
+						type="number"
+						value={typeof widgetSel.value === 'number' ? widgetSel.value : 0}
+						oninput={(e) =>
+							patchWidget({
+								...widgetSel!,
+								value: parseFloat((e.currentTarget as HTMLInputElement).value) || 0
+							})}
+					/>
+				</label>
+			{:else if widgetSel.type === 'label'}
+				<LabelWidgetInspector
+					widget={widgetSel}
+					{patchWidget}
+					{onPalettePersist}
+				/>
+			{:else if widgetSel.type === 'textbox'}
+				<label class="row">
+					<span>Placeholder</span>
+					<input
+						type="text"
+						value={String(widgetSel.config.placeholder ?? '')}
+						oninput={(e) =>
+							patchWidget({
+								...widgetSel!,
+								config: {
+									...widgetSel!.config,
+									placeholder: (e.currentTarget as HTMLInputElement).value
+								}
+							})}
+					/>
+				</label>
+				<label class="row">
+					<span>Max length</span>
+					<input
+						type="number"
+						min="1"
+						value={Number(widgetSel.config.maxLength ?? 4000)}
+						oninput={(e) =>
+							patchWidget({
+								...widgetSel!,
+								config: {
+									...widgetSel!.config,
+									maxLength: Math.max(
+										1,
+										parseInt((e.currentTarget as HTMLInputElement).value, 10) || 4000
+									)
+								}
+							})}
+					/>
+				</label>
+			{:else if widgetSel.type === 'dice'}
+				<div class="row grid2">
+					<label>
+						<span>Sides</span>
+						<input
+							type="number"
+							min="2"
+							value={Number(widgetSel.config.sides ?? 6)}
+							oninput={(e) =>
+								patchWidget({
+									...widgetSel!,
+									config: {
+										...widgetSel!.config,
+										sides: Math.max(2, parseInt((e.currentTarget as HTMLInputElement).value, 10) || 6)
+									}
+								})}
+						/>
+					</label>
+					<label>
+						<span>Dice count</span>
+						<input
+							type="number"
+							min="1"
+							max="20"
+							value={Number(widgetSel.config.count ?? 1)}
+							oninput={(e) =>
+								patchWidget({
+									...widgetSel!,
+									config: {
+										...widgetSel!.config,
+										count: Math.min(
+											20,
+											Math.max(1, parseInt((e.currentTarget as HTMLInputElement).value, 10) || 1)
+										)
+									}
+								})}
+						/>
+					</label>
+				</div>
+			{:else if widgetSel.type === 'toggle'}
+				<label class="row">
+					<span>On label</span>
+					<input
+						type="text"
+						value={String(widgetSel.config.onText ?? 'On')}
+						oninput={(e) =>
+							patchWidget({
+								...widgetSel!,
+								config: {
+									...widgetSel!.config,
+									onText: (e.currentTarget as HTMLInputElement).value
+								}
+							})}
+					/>
+				</label>
+				<label class="row">
+					<span>Off label</span>
+					<input
+						type="text"
+						value={String(widgetSel.config.offText ?? 'Off')}
+						oninput={(e) =>
+							patchWidget({
+								...widgetSel!,
+								config: {
+									...widgetSel!.config,
+									offText: (e.currentTarget as HTMLInputElement).value
+								}
+							})}
+					/>
+				</label>
+				<label class="row">
+					<span>Default on</span>
+					<input
+						type="checkbox"
+						checked={widgetSel.value === true}
+						onchange={(e) =>
+							patchWidget({
+								...widgetSel!,
+								value: (e.currentTarget as HTMLInputElement).checked
+							})}
+					/>
+				</label>
+			{/if}
+		</div>
 	{:else}
-		<p class="muted">Clear selection (click empty space or Escape) for table settings, or pick a piece.</p>
+		<p class="muted">Clear selection (click empty space or Escape) for table settings, or pick a piece or widget.</p>
 	{/if}
 </div>
 
@@ -160,12 +453,23 @@
 		flex-direction: column;
 		gap: 4px;
 	}
-	.row input[type='number'] {
+	.row input[type='number'],
+	.row input[type='text'] {
 		padding: 6px 8px;
 		border-radius: 4px;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
 		color: inherit;
+	}
+	.grid2 {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
+	}
+	.grid3 {
+		display: grid;
+		grid-template-columns: 1fr 1fr 1fr;
+		gap: 8px;
 	}
 	.table-bg-tools .subhint {
 		margin: 0 0 6px;

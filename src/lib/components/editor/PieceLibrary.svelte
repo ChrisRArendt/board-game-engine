@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { publicStorageUrl } from '$lib/editor/mediaUrls';
 	import type { CardForBoardPiece } from '$lib/editor/types';
-	import type { PlacementLayout } from '$lib/engine/types';
+	import type { PlacementLayout, WidgetType } from '$lib/engine/types';
 	import type { PlacementSpacingMode } from '$lib/editor/placementLayouts';
 
 	export let cardsForBoard: CardForBoardPiece[] = [];
@@ -9,6 +9,7 @@
 	/** Viewport client coords → table world coords (px). */
 	export let clientToWorld: (clientX: number, clientY: number) => { x: number; y: number };
 	/** World table coords + placement args */
+	export let onAddWidget: ((type: WidgetType) => void) | undefined = undefined;
 	export let onDropCard: (
 		card: CardForBoardPiece,
 		opts: {
@@ -91,6 +92,20 @@
 <div class="lib">
 	<button type="button" class="add primary" onclick={onAddBlank}>Add image piece</button>
 
+	{#if onAddWidget}
+		<div class="widgets-block">
+			<p class="widgets-title">Board widgets</p>
+			<p class="hint">Place counters, labels, notes, dice, and toggles on the table.</p>
+			<div class="widget-btns">
+				<button type="button" class="wbtn" onclick={() => onAddWidget?.('counter')}>Counter</button>
+				<button type="button" class="wbtn" onclick={() => onAddWidget?.('label')}>Label</button>
+				<button type="button" class="wbtn" onclick={() => onAddWidget?.('textbox')}>Text box</button>
+				<button type="button" class="wbtn" onclick={() => onAddWidget?.('dice')}>Dice</button>
+				<button type="button" class="wbtn" onclick={() => onAddWidget?.('toggle')}>Toggle</button>
+			</div>
+		</div>
+	{/if}
+
 	<div class="defaults">
 		<label>
 			<span>Quantity</span>
@@ -168,6 +183,39 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
+	}
+	.widgets-block {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding-top: 12px;
+		border-top: 1px solid var(--color-border);
+	}
+	.widgets-title {
+		margin: 0;
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--color-text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+	.widget-btns {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.wbtn {
+		padding: 6px 10px;
+		font-size: 12px;
+		border-radius: 6px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: inherit;
+		cursor: pointer;
+	}
+	.wbtn:hover {
+		border-color: var(--color-accent, #3b82f6);
+		color: var(--color-accent, #3b82f6);
 	}
 	.add.primary {
 		padding: 8px 12px;

@@ -11,6 +11,7 @@ export const INERTIA_MIN_V = 0.5;
 
 export type BoardHit =
 	| { kind: 'piece'; pieceId: number }
+	| { kind: 'widget'; widgetId: number }
 	| { kind: 'table'; direct: boolean }
 	| { kind: 'viewport' }
 	| { kind: 'blocked' };
@@ -32,6 +33,8 @@ export interface PointerEngineOptions {
 		pinchStart: { zoom: number; panX: number; panY: number; midX: number; midY: number }
 	) => void;
 	onPieceMouseDown: (pieceId: number, e: PointerEvent) => void | Promise<void>;
+	/** Board editor: drag/select board widgets (optional). */
+	onWidgetMouseDown?: (widgetId: number, e: PointerEvent) => void | Promise<void>;
 	onPieceTouchPressing: (pieceId: number, pressing: boolean) => void;
 	onPieceTouchTap: (pieceId: number, shift: boolean) => void;
 	onPieceTouchDragStart: (pieceId: number, clientX: number, clientY: number) => void;
@@ -315,6 +318,12 @@ export class PointerEngine {
 
 		if (e.pointerType === 'touch') {
 			if (hit.kind === 'blocked') return;
+			if (hit.kind === 'widget' && this.opts.onWidgetMouseDown) {
+				this.pointers.set(e.pointerId, e);
+				void this.opts.onWidgetMouseDown(hit.widgetId, e);
+				this.pushSample(e.clientX, e.clientY);
+				return;
+			}
 			if (hit.kind === 'piece') {
 				this.longPressFired = false;
 				this.touchEmptyStart = { x: e.clientX, y: e.clientY, t: performance.now() };
@@ -347,6 +356,11 @@ export class PointerEngine {
 		}
 
 		// mouse / pen
+		if (hit.kind === 'widget' && this.opts.onWidgetMouseDown) {
+			void this.opts.onWidgetMouseDown(hit.widgetId, e);
+			this.pushSample(e.clientX, e.clientY);
+			return;
+		}
 		if (hit.kind === 'piece') {
 			void this.opts.onPieceMouseDown(hit.pieceId, e);
 			this.pushSample(e.clientX, e.clientY);

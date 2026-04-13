@@ -43,11 +43,49 @@ export interface EditorViewJson {
 	pan_y: number;
 }
 
+export type WidgetType = 'counter' | 'label' | 'textbox' | 'dice' | 'toggle';
+
+/** Persisted widget in game_data JSON (no runtime id — assigned on load). */
+export interface WidgetData {
+	type: WidgetType;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	z_index?: number;
+	label?: string;
+	config: Record<string, unknown>;
+	default_value?: string | number | boolean;
+	editor_hidden?: boolean;
+	editor_locked?: boolean;
+}
+
+/** Runtime board widget (editor + play). */
+export interface BoardWidget {
+	id: number;
+	type: WidgetType;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	zIndex: number;
+	label?: string;
+	config: Record<string, unknown>;
+	/** Runtime value (counter/dice number, textbox string, toggle boolean). */
+	value: string | number | boolean;
+	hidden?: boolean;
+	locked?: boolean;
+}
+
 export interface GameDataJson {
 	table: { size: TableSize };
 	pieces: PieceData[];
+	/** Board UI widgets (counters, labels, etc.). */
+	widgets?: WidgetData[];
 	/** Filename under custom-game-assets `/{userId}/{gameId}/` for the full-table background (default `table-bg.jpg`). */
 	table_bg?: string;
+	/** Optional tiling image under the table (world space, repeats); same asset pipeline as `table_bg`. */
+	environment_bg?: string;
 	/** Shared swatches for piece background colors in the editor (and optional quick-pick in play). */
 	piece_color_palette?: string[];
 	/** Board editor: restore zoom/pan when reopening the editor. Omitted in play exports. */
