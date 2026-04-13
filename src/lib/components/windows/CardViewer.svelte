@@ -1,12 +1,41 @@
 <script lang="ts">
 	import { game } from '$lib/stores/game';
+	import { activeUserId, playerColorOverrides, playerOrder } from '$lib/stores/network';
+	import { getLocalPlayerColor } from '$lib/stores/network';
+	import { users } from '$lib/stores/users';
+	import { settings } from '$lib/stores/settings';
+	import { isHistoryReplayActive } from '$lib/stores/history';
+	import { buildStashRoster, isPieceFaceHiddenFromPeers } from '$lib/engine/stash';
 
 	export let targetPieceId: number | null = null;
 	/** Two-way: when true, board clicks do not change `targetPieceId`. */
 	export let viewerLocked = false;
+	export let selfDisplayName = 'You';
 
 	$: piece =
 		targetPieceId === null ? null : ($game.pieces.find((p) => p.id === targetPieceId) ?? null);
+
+	$: stashRoster = (() => {
+		$settings;
+		$users;
+		$playerOrder;
+		$playerColorOverrides;
+		if (!$activeUserId) return [];
+		return buildStashRoster({
+			selfUserId: $activeUserId,
+			selfDisplayName,
+			selfColor: getLocalPlayerColor(),
+			users: $users,
+			playerOrder: $playerOrder,
+			playerColorOverrides: $playerColorOverrides
+		});
+	})();
+
+	$: viewerFaceHidden =
+		piece != null &&
+		$activeUserId !== '' &&
+		isPieceFaceHiddenFromPeers(piece, stashRoster, $activeUserId, $isHistoryReplayActive);
+
 	$: bg = piece && piece.bg ? `/data/${$game.curGame}/images/${piece.bg}` : '';
 	$: w = piece ? piece.initial_size.w * 2 : 0;
 	$: h = piece ? piece.initial_size.h * 2 : 0;
@@ -26,7 +55,13 @@
 	</div>
 
 	<div class="viewer" style:width="{w}px" style:min-height="{h}px">
-		{#if piece}
+		{#if piece && viewerFaceHidden}
+			<div class="img face-hidden-viewer" style:height="{h}px">
+				<p class="hidden-msg">
+					This piece is in another player’s private area — the face isn’t shown to you here either.
+				</p>
+			</div>
+		{:else if piece}
 			<div
 				class="img"
 				style:width="100%"
@@ -93,6 +128,31 @@
 	}
 	.img {
 		background-repeat: no-repeat;
+	}
+	.face-hidden-viewer {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-sizing: border-box;
+		padding: 12px;
+		min-height: 80px;
+		border-radius: 8px;
+		background: repeating-linear-gradient(
+			135deg,
+			#2a2d3a,
+			#2a2d3a 5px,
+			#1e2129 5px,
+			#1e2129 10px
+		);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+	}
+	.hidden-msg {
+		margin: 0;
+		font-size: 13px;
+		line-height: 1.4;
+		color: #cbd5e1;
+		text-align: center;
+		max-width: 260px;
 	}
 	.empty {
 		padding: 8px;

@@ -5,6 +5,8 @@
 	export let piece: PieceInstance;
 	export let curGame: string;
 	export let replayMode = false;
+	/** True when this piece is in another player's private zone — show card back only. */
+	export let faceHidden = false;
 	export let selected = false;
 	export let dragging = false;
 	export let pressing = false;
@@ -15,6 +17,7 @@
 
 	$: canFlip = hasAttr(piece, 'flip');
 	$: bgUrl = `/data/${curGame}/images/${piece.bg}`;
+	$: showFace = !faceHidden;
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -24,22 +27,24 @@
 	class:dragging
 	class:pressing
 	class:replay={replayMode}
+	class:face-hidden={faceHidden}
 	data-piece-id={piece.id}
+	title={faceHidden ? 'Hidden — private area' : undefined}
 	style:z-index={piece.zIndex}
 	style:width="{piece.initial_size.w}px"
 	style:height="{piece.initial_size.h}px"
 	style:transform={dragging
 		? `translate3d(${piece.x}px, ${piece.y}px, 0) scale(1.05)`
 		: `translate3d(${piece.x}px, ${piece.y}px, 0)`}
-	style:background-image="url({bgUrl})"
+	style:background-image={showFace ? `url(${bgUrl})` : undefined}
 	/* outline (not border): border shrinks content with border-box + background-clip: content-box */
 	style:outline={remoteColor ? `3px dashed ${remoteColor}` : undefined}
-	style:background-position={canFlip
+	style:background-position={showFace && canFlip
 		? piece.flipped
 			? '0px 0px'
 			: `${-piece.initial_size.w}px 0px`
 		: '0 0'}
-	style:background-size={canFlip ? '200% 100%' : '100% 100%'}
+	style:background-size={showFace && canFlip ? '200% 100%' : '100% 100%'}
 	style:border-radius={hasAttr(piece, 'roundcorners') ? '8px' : undefined}
 	onpointerdown={(e) => {
 		if (replayMode) return;
@@ -77,5 +82,15 @@
 	}
 	.piece.replay {
 		pointer-events: none;
+	}
+	.piece.face-hidden {
+		background-image: repeating-linear-gradient(
+			135deg,
+			#2a2d3a,
+			#2a2d3a 5px,
+			#1e2129 5px,
+			#1e2129 10px
+		) !important;
+		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 	}
 </style>

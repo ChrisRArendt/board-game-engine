@@ -672,7 +672,12 @@ export function startSelectionBox(x: number, y: number) {
 	}));
 }
 
-export function updateSelectionBox(x: number, y: number, pieceRects: Map<number, Rect>) {
+export function updateSelectionBox(
+	x: number,
+	y: number,
+	pieceRects: Map<number, Rect>,
+	opts?: { canSelectPiece?: (p: PieceInstance) => boolean }
+) {
 	game.update((s) => {
 		if (!s.selectingBox || !s.selectionBox) return s;
 		const start = { x: s.selectionBox.x, y: s.selectionBox.y };
@@ -687,6 +692,7 @@ export function updateSelectionBox(x: number, y: number, pieceRects: Map<number,
 
 		for (const p of s.pieces) {
 			if (!hasAttr(p, 'select')) continue;
+			if (opts?.canSelectPiece && !opts.canSelectPiece(p)) continue;
 			const prect = pieceRects.get(p.id);
 			if (!prect) continue;
 			const wasSelected = s.selectBoxStartItems.has(p.id);

@@ -22,7 +22,8 @@
 		emit,
 		connectGameChannel,
 		disconnectGame,
-		getLocalPlayerColor
+		getLocalPlayerColor,
+		requestStateSyncFromPeers
 	} from '$lib/stores/network';
 	import {
 		configureHistoryRecording,
@@ -398,6 +399,10 @@
 				void persistSnapshot();
 			});
 
+			/** Catch up with live board after refresh — DB snapshot can lag Realtime; peers hold truth. */
+			setTimeout(() => requestStateSyncFromPeers(), 400);
+			setTimeout(() => requestStateSyncFromPeers(), 2000);
+
 			configureHistoryRecording({
 				lobbyId: data.lobby.id,
 				userId: data.session.user.id,
@@ -565,7 +570,11 @@
 				viewerLocked = false;
 			}}
 		>
-			<CardViewer bind:targetPieceId={viewerPieceId} bind:viewerLocked />
+			<CardViewer
+					bind:targetPieceId={viewerPieceId}
+					bind:viewerLocked
+					selfDisplayName={data.profile?.display_name ?? 'You'}
+				/>
 		</BottomSheet>
 	{:else}
 		<WindowFrame title="Dice Roller" visible={winRoller} requestClose={() => (winRoller = false)}>
@@ -589,7 +598,11 @@
 				viewerLocked = false;
 			}}
 		>
-			<CardViewer bind:targetPieceId={viewerPieceId} bind:viewerLocked />
+			<CardViewer
+					bind:targetPieceId={viewerPieceId}
+					bind:viewerLocked
+					selfDisplayName={data.profile?.display_name ?? 'You'}
+				/>
 		</WindowFrame>
 	{/if}
 </div>

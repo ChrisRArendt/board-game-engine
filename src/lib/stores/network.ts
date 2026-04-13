@@ -131,6 +131,24 @@ export function emit(type: string, data: Record<string, unknown>) {
 	return true;
 }
 
+/**
+ * After refresh/rejoin, ask peers for the live board — DB snapshot can lag behind Realtime deltas.
+ * The peer with the lowest user id among those present (excluding the requester) sends full state.
+ */
+export function requestStateSyncFromPeers(): void {
+	if (!browser) return;
+	const uid = get(activeUserId);
+	if (!uid) return;
+	emit('sync_state_request', { requesterId: uid });
+}
+
+/** Deterministic “who answers” so only one peer broadcasts `sync_state`. */
+function isSyncResponder(requesterId: string, myId: string): boolean {
+	const ids = [myId, ...get(users).map((u) => u.id)].sort((a, b) => a.localeCompare(b));
+	const candidates = ids.filter((id) => id !== requesterId);
+	return candidates.length > 0 && candidates[0] === myId;
+}
+
 /** Broadcast on lobby channel (waiting room), e.g. game_start. Await so messages flush before DB deletes / navigation. */
 export async function emitLobby(type: string, data: Record<string, unknown>) {
 	if (!browser || !lobbyChannel) return false;
@@ -500,6 +518,28 @@ export async function connectGameChannel(
 				new CustomEvent('bge:history_restore', { detail: { historyId: p.historyId } })
 			);
 		}
+	});
+
+	ch.on('broadcast', { event: 'sync_state_request' }, ({ payload }) => {
+		const p = payload as { requesterId?: string };
+		if (typeof p.requesterId !== 'string') return;
+		const myId = get(activeUserId);
+		if (!myId || p.requesterId === myId) return;
+		if (!get(game.game).loaded) return;
+		if (!isSyncResponder(p.requesterId, myId)) return;
+		const snapshot = game.serializeGameState();
+		emit('sync_state', {
+			forUserId: p.requesterId,
+			snapshot: snapshot as unknown as Record<string, unknown>
+		});
+	});
+
+	ch.on('broadcast', { event: 'sync_state' }, ({ payload }) => {
+		const p = payload as { forUserId?: string; snapshot?: unknown };
+		const myId = get(activeUserId);
+		if (!myId || p.forUserId !== myId) return;
+		if (!game.isStoredGameSnapshot(p.snapshot)) return;
+		game.applyStoredGameSnapshot(p.snapshot);
 	});
 
 	ch.on('presence', { event: 'sync' }, () => applyPresenceToUsers(ch, presence.userId));

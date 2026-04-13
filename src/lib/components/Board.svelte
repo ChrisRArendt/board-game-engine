@@ -12,6 +12,12 @@
 	import { emit, getLocalPlayerColor, playerColorOverrides, playerOrder } from '$lib/stores/network';
 	import { settings } from '$lib/stores/settings';
 	import type { PieceInstance } from '$lib/engine/types';
+	import {
+		buildStashRoster,
+		canSelectPieceForViewer,
+		isPieceFaceHiddenFromPeers,
+		stashPos
+	} from '$lib/engine/stash';
 
 	export let zoomWithScroll = false;
 	export let panScreenEdge = false;
@@ -53,11 +59,19 @@
 		};
 	}
 
-	function stashPos(i: number) {
-		return {
-			x: 50 + (i % 6) * 720,
-			y: 2300 + Math.floor(i / 6) * 800
-		};
+	function stashRosterNow() {
+		return buildStashRoster({
+			selfUserId,
+			selfDisplayName,
+			selfColor: getLocalPlayerColor(),
+			users: get(users),
+			playerOrder: get(playerOrder),
+			playerColorOverrides: get(playerColorOverrides)
+		});
+	}
+
+	function canViewerSelectPiece(piece: PieceInstance): boolean {
+		return canSelectPieceForViewer(piece, stashRosterNow(), selfUserId, replayMode);
 	}
 
 	function onPointerMoveGlobal(e: PointerEvent) {
@@ -114,6 +128,7 @@
 				}
 				const piece = st.pieces.find((p) => p.id === pieceId);
 				if (!piece) return;
+				if (!canViewerSelectPiece(piece)) return;
 				if (piece.attributes.includes('select')) {
 					g.clickSelect(piece.id, st.shiftDown);
 					await tick();
@@ -129,7 +144,9 @@
 			},
 			onPieceTouchTap: (pieceId, shift) => {
 				const p = get(game).pieces.find((x) => x.id === pieceId);
-				if (p?.attributes.includes('select')) {
+				if (!p) return;
+				if (!canViewerSelectPiece(p)) return;
+				if (p.attributes.includes('select')) {
 					g.clickSelect(pieceId, shift);
 				}
 				onViewerFollowPiece?.(pieceId);
@@ -138,6 +155,7 @@
 				const st = get(game);
 				const piece = st.pieces.find((p) => p.id === pieceId);
 				if (!piece?.attributes.includes('move')) return;
+				if (!canViewerSelectPiece(piece)) return;
 				const st2 = get(game);
 				g.startMoveDrag(pieceId, clientX, clientY, st2.panX, st2.panY);
 				onViewerFollowPiece?.(pieceId);
@@ -146,6 +164,7 @@
 				const st = get(game);
 				const piece = st.pieces.find((p) => p.id === pieceId);
 				if (!piece?.attributes.includes('move')) return false;
+				if (!canViewerSelectPiece(piece)) return false;
 				if (!piece.attributes.includes('select')) return true;
 				return st.selectedIds.has(pieceId);
 			},
@@ -165,6 +184,8 @@
 				g.cancelMoveDrag();
 			},
 			onLongPress: (pieceId, x, y) => {
+				const piece = get(game).pieces.find((p) => p.id === pieceId);
+				if (!piece || !canViewerSelectPiece(piece)) return;
 				onOpenContextMenu?.(x, y);
 			},
 			onTapEmpty: () => {
@@ -194,7 +215,9 @@
 						rects.set(id, { x: r.left, y: r.top, w: r.width, h: r.height });
 					});
 				}
-				g.updateSelectionBox(x, y, rects);
+				g.updateSelectionBox(x, y, rects, {
+					canSelectPiece: canViewerSelectPiece
+				});
 			},
 			onSelectionBoxEnd: () => {
 				g.endSelectionBox();
@@ -311,31 +334,14 @@
 		$playerOrder;
 		$playerColorOverrides;
 		$settings;
-		const me = {
-			id: selfUserId,
-			name: selfDisplayName,
-			color: getLocalPlayerColor()
-		};
-		const others = $users.map((u) => ({
-			id: u.id,
-			name: u.name,
-			color: $playerColorOverrides[u.id] ?? u.color
-		}));
-		const roster = [...others, me];
-		const order = $playerOrder;
-		if (!order.length) return roster.sort((a, b) => a.id.localeCompare(b.id));
-		const byId = new Map(roster.map((r) => [r.id, r]));
-		const present = new Set(roster.map((r) => r.id));
-		const out: typeof roster = [];
-		for (const id of order) {
-			if (!present.has(id)) continue;
-			const r = byId.get(id);
-			if (r) out.push(r);
-		}
-		for (const r of roster) {
-			if (!order.includes(r.id)) out.push(r);
-		}
-		return out;
+		return buildStashRoster({
+			selfUserId,
+			selfDisplayName,
+			selfColor: getLocalPlayerColor(),
+			users: $users,
+			playerOrder: $playerOrder,
+			playerColorOverrides: $playerColorOverrides
+		});
 	})();
 
 	$: zm = $game.zoom;
@@ -379,28 +385,20 @@
 				onpointerdown={onTablePointerDown}
 			></div>
 
-			<div class="user-stashes">
+			<!-- Your private zone: under pieces so you see your own tokens clearly on top. -->
+			<div class="user-stashes user-stashes-mine" aria-hidden="true">
 				{#each stashRoster as user, i (user.id)}
-					{@const pos = stashPos(i)}
-					{@const isSelf = user.id === selfUserId}
-					<div class="stash-slot" style:transform="translate3d({pos.x}px, {pos.y}px, 0)">
-						<div
-							class="stash footprint"
-							class:mine={isSelf}
-							class:theirs={!isSelf}
-							style:background-color={user.color}
-						>
-							{#if isSelf}
+					{#if user.id === selfUserId}
+						{@const pos = stashPos(i)}
+						<div class="stash-slot" style:transform="translate3d({pos.x}px, {pos.y}px, 0)">
+							<div
+								class="stash footprint mine"
+								style:background-color={user.color}
+							>
 								<span class="sr-only">Your private area</span>
-							{/if}
-						</div>
-						{#if !isSelf}
-							<div class="stash top" style:background-color={user.color}>
-								{user.name}
 							</div>
-							<div class="stash-private-label" aria-hidden="true">PRIVATE</div>
-						{/if}
-					</div>
+						</div>
+					{/if}
 				{/each}
 			</div>
 
@@ -409,14 +407,35 @@
 					{piece}
 					curGame={$game.curGame}
 					replayMode={replayMode}
+					faceHidden={isPieceFaceHiddenFromPeers(piece, stashRoster, selfUserId, replayMode)}
 					selected={$game.selectedIds.has(piece.id)}
 					dragging={$game.moveDrag != null && $game.selectedIds.has(piece.id) && piece.attributes.includes('move')}
 					pressing={pressingPieceId === piece.id}
 					remoteColor={$game.remoteSelection[piece.id]}
 					onpointerdown={(e) => onPiecePointerDown(piece, e)}
-					onpiecedblclick={onOpenViewer}
+					onpiecedblclick={(id) => {
+						const piece = get(game).pieces.find((p) => p.id === id);
+						if (!piece || !canViewerSelectPiece(piece)) return;
+						onOpenViewer?.(id);
+					}}
 				/>
 			{/each}
+
+			<!-- Other players’ zones: on top of pieces so their area obscures hidden tokens for everyone else. -->
+			<div class="user-stashes user-stashes-others" aria-hidden="true">
+				{#each stashRoster as user, i (user.id)}
+					{#if user.id !== selfUserId}
+						{@const pos = stashPos(i)}
+						<div class="stash-slot" style:transform="translate3d({pos.x}px, {pos.y}px, 0)">
+							<div class="stash footprint theirs" style:background-color={user.color}></div>
+							<div class="stash top" style:background-color={user.color}>
+								{user.name}
+							</div>
+							<div class="stash-private-label" aria-hidden="true">PRIVATE</div>
+						</div>
+					{/if}
+				{/each}
+			</div>
 
 			{#each [0, 1, 2, 3] as i}
 				<div class="textregion" id="textregion_{i}" style:left="{1260 + i * 190}px" style:top="580px">
@@ -499,6 +518,13 @@
 		inset: 0;
 		pointer-events: none;
 	}
+	.user-stashes-mine {
+		z-index: 0;
+	}
+	.user-stashes-others {
+		z-index: 90000;
+		isolation: isolate;
+	}
 	.stash-slot {
 		position: absolute;
 		top: 0;
@@ -519,21 +545,22 @@
 		align-items: center;
 		justify-content: center;
 	}
+	/* Owner sees their zone as a floor under their pieces — not a cover. */
 	.stash.footprint.mine {
-		z-index: 0;
 		color: #000;
 		box-shadow:
 			inset 0 0 0 2px rgba(0, 0, 0, 0.2),
 			inset 0 6px 28px rgba(0, 0, 0, 0.45),
 			inset 0 2px 8px rgba(0, 0, 0, 0.35);
 	}
+	/* Other players’ zones: mat on top to obscure what’s in their hand. */
 	.stash.footprint.theirs {
-		z-index: 0;
 		color: #000;
-		box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.15);
+		box-shadow:
+			inset 0 0 0 2px rgba(0, 0, 0, 0.2),
+			inset 0 4px 24px rgba(0, 0, 0, 0.35);
 	}
 	.stash.top {
-		z-index: 10000;
 		color: #fff;
 		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
 		text-shadow: 0 1px 5px rgb(0 0 0);
