@@ -1173,6 +1173,16 @@ export function updateSelectionBox(
 			}
 		}
 
+		/* Marquee never keeps locked layers selected. */
+		for (const id of [...selectedIds]) {
+			const p = s.pieces.find((x) => x.id === id);
+			if (p?.locked) selectedIds.delete(id);
+		}
+		for (const id of [...selectedWidgetIds]) {
+			const w = s.widgets.find((x) => x.id === id);
+			if (w?.locked) selectedWidgetIds.delete(id);
+		}
+
 		return { ...s, selectionBox: selrect, selectedIds, selectedWidgetIds };
 	});
 }

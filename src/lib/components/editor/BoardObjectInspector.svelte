@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { get } from 'svelte/store';
 	import GameMediaImageTools from './GameMediaImageTools.svelte';
 	import LabelWidgetInspector from './LabelWidgetInspector.svelte';
 	import PieceProperties from './PieceProperties.svelte';
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
-	import type { BoardWidget } from '$lib/engine/types';
+	import { computePlacementPositions, type PlacementSpacingMode } from '$lib/editor/placementLayouts';
+	import type { BoardWidget, PieceInstance, PlacementLayout } from '$lib/engine/types';
 
 	export let gameId: string;
 	export let userId: string;
@@ -46,6 +48,58 @@
 		g.replaceWidgetInstance(next);
 		onAfterEdit?.();
 	}
+
+	/** Same defaults as the piece library drop controls (quantity omitted — uses selection). */
+	let arrangeLayout: PlacementLayout = 'grid';
+	let arrangeSpacing: PlacementSpacingMode = 'overlap';
+	let arrangeCols = 3;
+	let arrangeOffset = 32;
+
+	function applyArrangementToSelection() {
+		const st = get(game);
+		const pieces: PieceInstance[] = [...st.selectedIds]
+			.map((id) => st.pieces.find((p) => p.id === id))
+			.filter((p): p is PieceInstance => p != null && !p.locked)
+			.sort((a, b) => a.zIndex - b.zIndex || a.id - b.id);
+		if (pieces.length < 2) return;
+
+		const count = pieces.length;
+		const maxW = Math.max(...pieces.map((p) => p.initial_size.w), 1);
+		const maxH = Math.max(...pieces.map((p) => p.initial_size.h), 1);
+		const minX = Math.min(...pieces.map((p) => p.x));
+		const minY = Math.min(...pieces.map((p) => p.y));
+
+		const off =
+			arrangeSpacing === 'separate'
+				? Math.max(0, Math.min(500, Number(arrangeOffset) || 0))
+				: Math.max(1, Math.min(500, Math.floor(Number(arrangeOffset)) || 32));
+		const cols = Math.max(1, Math.min(99, Math.floor(arrangeCols) || 3));
+
+		const positions = computePlacementPositions({
+			layout: arrangeLayout,
+			count,
+			baseX: minX,
+			baseY: minY,
+			offset: off,
+			spacingMode: arrangeSpacing,
+			pieceW: maxW,
+			pieceH: maxH,
+			cols:
+				arrangeLayout === 'grid' || arrangeLayout === 'honeycomb' ? cols : undefined
+		});
+
+		for (let i = 0; i < pieces.length; i++) {
+			const pos = positions[i];
+			if (!pos) continue;
+			g.replacePieceInstance({ ...pieces[i], x: pos.x, y: pos.y });
+		}
+		onAfterEdit?.();
+	}
+
+	$: arrangeUnlockedCount = [...$game.selectedIds].filter((id) => {
+		const p = $game.pieces.find((x) => x.id === id);
+		return p != null && !p.locked;
+	}).length;
 
 	/** Legacy table image not linked to `game_media` — still show preview. */
 	$: tableFallbackThumb =
@@ -147,6 +201,66 @@
 					<span>{a}</span>
 				</label>
 			{/each}
+		</div>
+		<div class="arrange-block">
+			<h5 class="arrange-title">Arrange selection</h5>
+			<p class="subhint">
+				Reposition selected pieces like library placement. Order follows layer order (back → front). Locked
+				pieces are skipped.
+			</p>
+			<label class="row">
+				<span>Layout</span>
+				<select bind:value={arrangeLayout}>
+					<option value="stack">Stack</option>
+					<option value="grid">Grid</option>
+					<option value="honeycomb">Honeycomb</option>
+				</select>
+			</label>
+			{#if arrangeLayout === 'grid' || arrangeLayout === 'honeycomb'}
+				<label class="row">
+					<span>Columns</span>
+					<input type="number" min="1" max="99" bind:value={arrangeCols} />
+				</label>
+			{/if}
+			<label class="row toggle-row">
+				<span>Spacing</span>
+				<div class="segmented" role="group" aria-label="Arrangement spacing">
+					<button
+						type="button"
+						class:active={arrangeSpacing === 'overlap'}
+						onclick={() => (arrangeSpacing = 'overlap')}
+					>
+						Overlap
+					</button>
+					<button
+						type="button"
+						class:active={arrangeSpacing === 'separate'}
+						onclick={() => (arrangeSpacing = 'separate')}
+					>
+						Separate
+					</button>
+				</div>
+			</label>
+			<label class="row">
+				<span>{arrangeSpacing === 'separate' ? 'Gap (px)' : 'Offset (px)'}</span>
+				<input
+					type="number"
+					min={arrangeSpacing === 'separate' ? 0 : 1}
+					max="500"
+					bind:value={arrangeOffset}
+				/>
+			</label>
+			<button
+				type="button"
+				class="arrange-apply"
+				disabled={arrangeUnlockedCount < 2}
+				onclick={applyArrangementToSelection}
+			>
+				Apply arrangement
+			</button>
+			{#if arrangeUnlockedCount < 2 && $game.selectedIds.size >= 2}
+				<p class="subhint warn">Select at least two unlocked pieces to arrange.</p>
+			{/if}
 		</div>
 	{:else if pieceSel}
 		<h4>Piece</h4>
@@ -454,7 +568,8 @@
 		gap: 4px;
 	}
 	.row input[type='number'],
-	.row input[type='text'] {
+	.row input[type='text'],
+	.row select {
 		padding: 6px 8px;
 		border-radius: 4px;
 		border: 1px solid var(--color-border);
@@ -501,5 +616,64 @@
 	.muted {
 		color: var(--color-text-muted);
 		font-size: 0.95em;
+	}
+	.arrange-block {
+		margin-top: 12px;
+		padding-top: 12px;
+		border-top: 1px solid var(--color-border);
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.arrange-title {
+		margin: 0;
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-text-muted);
+	}
+	.arrange-block .subhint {
+		margin: 0;
+		font-size: 11px;
+		color: var(--color-text-muted);
+		line-height: 1.35;
+	}
+	.subhint.warn {
+		color: #f87171;
+	}
+	.toggle-row .segmented {
+		display: flex;
+		border-radius: 6px;
+		border: 1px solid var(--color-border);
+		overflow: hidden;
+	}
+	.segmented button {
+		flex: 1;
+		padding: 6px 8px;
+		border: none;
+		background: var(--color-surface);
+		color: var(--color-text-muted);
+		font-size: 12px;
+		cursor: pointer;
+	}
+	.segmented button + button {
+		border-left: 1px solid var(--color-border);
+	}
+	.segmented button.active {
+		background: var(--color-accent, #3b82f6);
+		color: #fff;
+	}
+	.arrange-apply {
+		padding: 8px 12px;
+		border-radius: 6px;
+		border: none;
+		background: var(--color-accent, #3b82f6);
+		color: #fff;
+		font-size: 13px;
+		cursor: pointer;
+	}
+	.arrange-apply:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
 	}
 </style>
