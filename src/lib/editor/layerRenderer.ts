@@ -31,8 +31,9 @@ export function cardFaceBackgroundCss(bg: CardBackground, mediaUrls: Record<stri
 	}
 	const fit = bg.objectFit ?? 'cover';
 	const size = fit === 'contain' ? 'contain' : fit === 'fill' ? '100% 100%' : 'cover';
+	const pos = (bg.objectPosition && bg.objectPosition.trim()) || 'center';
 	const safe = JSON.stringify(url);
-	return `${fb} url(${safe}) center / ${size} no-repeat`;
+	return `${fb} url(${safe}) ${pos} / ${size} no-repeat`;
 }
 
 export function shapeFillStyle(fill: ShapeLayer['fill']): string {

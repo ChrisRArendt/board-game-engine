@@ -143,6 +143,7 @@
 							style:width="100%"
 							style:height="100%"
 							style:object-fit={I.objectFit}
+							style:object-position={I.objectPosition?.trim() ? I.objectPosition : 'center'}
 						/>
 					{:else if showImgPh}
 						<div class="img-ph-inner" aria-hidden="true"></div>

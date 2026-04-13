@@ -6,6 +6,7 @@
 	import LayerPanel from '$lib/components/editor/LayerPanel.svelte';
 	import LayerProperties from '$lib/components/editor/LayerProperties.svelte';
 	import GameMediaImageTools from '$lib/components/editor/GameMediaImageTools.svelte';
+	import ImageLayoutControls from '$lib/components/editor/ImageLayoutControls.svelte';
 	import ColorPicker from '$lib/components/editor/ColorPicker.svelte';
 	import GradientEditor from '$lib/components/editor/GradientEditor.svelte';
 	import UnitInput from '$lib/components/editor/UnitInput.svelte';
@@ -183,108 +184,125 @@
 		{/if}
 	</header>
 
-	<div class="bg-row">
-		<span>Background</span>
-		<select
-			value={background.type}
-			onchange={(e) => {
-				const t = (e.currentTarget as HTMLSelectElement).value;
-				if (t === 'solid') background = { type: 'solid', color: '#1e293b' };
-				else if (t === 'gradient') {
-					background = {
-						type: 'gradient',
-						stops: [
-							{ offset: 0, color: '#1e293b' },
-							{ offset: 1, color: '#0f172a' }
-						],
-						angle: 135
-					};
-				} else {
-					background = {
-						type: 'image',
-						mediaId: null,
-						objectFit: 'cover',
-						fallbackColor: '#1e293b'
-					};
-				}
-			}}
-		>
-			<option value="solid">Solid</option>
-			<option value="gradient">Gradient</option>
-			<option value="image">Image</option>
-		</select>
-		{#if background.type === 'solid'}
-			<ColorPicker
-				value={background.color}
-				onValueChange={(c) => (background = { type: 'solid', color: c })}
-			/>
-		{:else if background.type === 'gradient'}
-			<GradientEditor
-				stops={background.stops}
-				angle={background.angle}
-				onChange={(next) => (background = { type: 'gradient', stops: next.stops, angle: next.angle })}
-			/>
-		{:else if background.type === 'image'}
-			{@const bg = background}
-			<div class="bg-image-tools">
-				<GameMediaImageTools
-					compact
-					gameId={data.game.id}
-					mediaId={bg.mediaId}
-					{mediaUrls}
-					onMediaIdChange={(id) => {
-						background = {
-							type: 'image',
-							mediaId: id,
-							objectFit: bg.objectFit ?? 'cover',
-							fallbackColor: bg.fallbackColor ?? '#1e293b'
-						};
-					}}
-					onMergeUrls={(m) => {
-						mediaUrls = { ...mediaUrls, ...m };
-					}}
-					onAfterPick={() => {
-						void loadMedia();
-					}}
-				/>
-				<label class="bg-fallback">
-					<span>Color behind image</span>
-					<ColorPicker
-						value={bg.fallbackColor ?? '#1e293b'}
-						onValueChange={(c) =>
-							(background = {
-								type: 'image',
-								mediaId: bg.mediaId,
-								objectFit: bg.objectFit ?? 'cover',
-								fallbackColor: c
-							})}
-					/>
-				</label>
-				<label class="bg-fit">
-					<span>Fit</span>
-					<select
-						value={bg.objectFit ?? 'cover'}
-						onchange={(e) => {
-							const fit = (e.currentTarget as HTMLSelectElement).value as 'cover' | 'contain' | 'fill';
-							background = {
-								type: 'image',
-								mediaId: bg.mediaId,
-								objectFit: fit,
-								fallbackColor: bg.fallbackColor ?? '#1e293b'
-							};
-						}}
-					>
-						<option value="cover">cover</option>
-						<option value="contain">contain</option>
-						<option value="fill">fill</option>
-					</select>
-				</label>
-			</div>
-		{/if}
-	</div>
-
 	<div class="main" class:resizing={resizeKind !== null}>
 		<aside class="left" style:width="{leftPanelW}px">
+			<section class="card-bg-panel" aria-labelledby="card-bg-heading">
+				<h3 id="card-bg-heading" class="card-bg-heading">Card background</h3>
+				<p class="card-bg-desc">Same for every piece using this template (not a per-piece field).</p>
+				<label class="card-bg-type">
+					<span>Type</span>
+					<select
+						value={background.type}
+						onchange={(e) => {
+							const t = (e.currentTarget as HTMLSelectElement).value;
+							if (t === 'solid') background = { type: 'solid', color: '#1e293b' };
+							else if (t === 'gradient') {
+								background = {
+									type: 'gradient',
+									stops: [
+										{ offset: 0, color: '#1e293b' },
+										{ offset: 1, color: '#0f172a' }
+									],
+									angle: 135
+								};
+							} else {
+								background = {
+									type: 'image',
+									mediaId: null,
+									objectFit: 'cover',
+									objectPosition: 'center',
+									fallbackColor: '#1e293b'
+								};
+							}
+						}}
+					>
+						<option value="solid">Solid color</option>
+						<option value="gradient">Gradient</option>
+						<option value="image">Image (library or AI)</option>
+					</select>
+				</label>
+				{#if background.type === 'solid'}
+					<div class="card-bg-block">
+						<span class="mini-label">Color</span>
+						<ColorPicker
+							value={background.color}
+							onValueChange={(c) => (background = { type: 'solid', color: c })}
+						/>
+					</div>
+				{:else if background.type === 'gradient'}
+					<div class="card-bg-block">
+						<GradientEditor
+							stops={background.stops}
+							angle={background.angle}
+							onChange={(next) => (background = { type: 'gradient', stops: next.stops, angle: next.angle })}
+						/>
+					</div>
+				{:else if background.type === 'image'}
+					{@const bg = background}
+					<div class="card-bg-block">
+						<span class="mini-label">Photo</span>
+						<GameMediaImageTools
+							compact
+							gameId={data.game.id}
+							mediaId={bg.mediaId}
+							{mediaUrls}
+							onMediaIdChange={(id) => {
+								background = {
+									type: 'image',
+									mediaId: id,
+									objectFit: bg.objectFit ?? 'cover',
+									objectPosition: bg.objectPosition ?? 'center',
+									fallbackColor: bg.fallbackColor ?? '#1e293b'
+								};
+							}}
+							onMergeUrls={(m) => {
+								mediaUrls = { ...mediaUrls, ...m };
+							}}
+							onAfterPick={() => {
+								void loadMedia();
+							}}
+						/>
+					</div>
+					<div class="card-bg-block">
+						<span class="mini-label">Color behind image</span>
+						<ColorPicker
+							value={bg.fallbackColor ?? '#1e293b'}
+							onValueChange={(c) =>
+								(background = {
+									type: 'image',
+									mediaId: bg.mediaId,
+									objectFit: bg.objectFit ?? 'cover',
+									objectPosition: bg.objectPosition ?? 'center',
+									fallbackColor: c
+								})}
+						/>
+					</div>
+					<div class="card-bg-block">
+						<ImageLayoutControls
+							objectFit={bg.objectFit ?? 'cover'}
+							objectPosition={bg.objectPosition ?? 'center'}
+							fitLabel="Size"
+							onFitChange={(fit) =>
+								(background = {
+									type: 'image',
+									mediaId: bg.mediaId,
+									objectFit: fit,
+									objectPosition: bg.objectPosition ?? 'center',
+									fallbackColor: bg.fallbackColor ?? '#1e293b'
+								})}
+							onPositionChange={(pos) =>
+								(background = {
+									type: 'image',
+									mediaId: bg.mediaId,
+									objectFit: bg.objectFit ?? 'cover',
+									objectPosition: pos,
+									fallbackColor: bg.fallbackColor ?? '#1e293b'
+								})}
+						/>
+					</div>
+				{/if}
+			</section>
+
 			<div class="add">
 				<span>Add layer</span>
 				<button type="button" onclick={() => addLayer('text')}>Text</button>
@@ -425,35 +443,52 @@
 		color: #f87171;
 		font-size: 13px;
 	}
-	.bg-row {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 12px;
-		align-items: flex-start;
-		padding: 10px 16px;
+	.card-bg-panel {
+		padding-bottom: 14px;
+		margin-bottom: 14px;
 		border-bottom: 1px solid var(--color-border);
-		font-size: 14px;
 	}
-	.bg-image-tools {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 12px 16px;
-		align-items: flex-end;
+	.card-bg-heading {
+		margin: 0 0 4px;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--color-text);
 	}
-	.bg-fallback,
-	.bg-fit {
+	.card-bg-desc {
+		margin: 0 0 12px;
+		font-size: 12px;
+		line-height: 1.45;
+		color: var(--color-text-muted);
+	}
+	.card-bg-type {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 6px;
+		margin-bottom: 12px;
 		font-size: 12px;
 		color: var(--color-text-muted);
 	}
-	.bg-fit select {
-		padding: 6px 8px;
-		border-radius: 4px;
+	.card-bg-type select {
+		padding: 8px 10px;
+		border-radius: 6px;
 		border: 1px solid var(--color-border);
 		background: var(--color-bg);
 		color: inherit;
+		font-size: 13px;
+	}
+	.card-bg-block {
+		margin-bottom: 12px;
+	}
+	.card-bg-block:last-child {
+		margin-bottom: 0;
+	}
+	.mini-label {
+		display: block;
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-text-muted);
+		margin-bottom: 6px;
 	}
 	.main {
 		flex: 1;

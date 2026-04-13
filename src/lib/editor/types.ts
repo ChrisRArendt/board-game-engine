@@ -55,6 +55,8 @@ export interface ImageLayer extends LayerBase {
 	type: 'image';
 	mediaId: string | null;
 	objectFit: 'cover' | 'contain' | 'fill';
+	/** CSS `object-position` (e.g. `center`, `left top`). */
+	objectPosition?: string;
 }
 
 export type CardLayer = ShapeLayer | TextLayer | ImageLayer;
@@ -70,6 +72,8 @@ export type CardBackground =
 			type: 'image';
 			mediaId: string | null;
 			objectFit?: 'cover' | 'contain' | 'fill';
+			/** CSS `background-position` for the image (e.g. `center`, `left top`). */
+			objectPosition?: string;
 			/** Shown behind the image or when the asset URL is not loaded. */
 			fallbackColor?: string;
 	  };
@@ -127,7 +131,8 @@ export function defaultImageLayer(): ImageLayer {
 		opacity: 1,
 		fieldBinding: null,
 		mediaId: null,
-		objectFit: 'cover'
+		objectFit: 'cover',
+		objectPosition: 'center'
 	};
 }
 
@@ -157,7 +162,16 @@ export function parseLayers(raw: unknown): CardLayer[] {
 		if (typeof item !== 'object' || item === null) continue;
 		const o = item as Record<string, unknown>;
 		if (o.type === 'text' || o.type === 'image' || o.type === 'shape') {
-			out.push(item as CardLayer);
+			let L = item as CardLayer;
+			if (o.type === 'image') {
+				const img = L as ImageLayer;
+				const p = img.objectPosition;
+				L = {
+					...img,
+					objectPosition: typeof p === 'string' && p.trim() !== '' ? p.trim() : 'center'
+				};
+			}
+			out.push(L);
 		}
 	}
 	return out;
@@ -174,10 +188,14 @@ export function parseBackground(raw: unknown): CardBackground {
 	if (o.type === 'image') {
 		const fit = o.objectFit;
 		const mid = typeof o.mediaId === 'string' ? o.mediaId.trim() : '';
+		const posRaw = o.objectPosition;
+		const objectPosition =
+			typeof posRaw === 'string' && posRaw.trim() !== '' ? posRaw.trim() : 'center';
 		return {
 			type: 'image',
 			mediaId: mid !== '' ? mid : null,
 			objectFit: fit === 'contain' || fit === 'fill' ? fit : 'cover',
+			objectPosition,
 			fallbackColor: typeof o.fallbackColor === 'string' ? o.fallbackColor : '#1a1a1a'
 		};
 	}

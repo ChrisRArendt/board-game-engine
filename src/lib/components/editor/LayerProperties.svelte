@@ -3,6 +3,7 @@
 	import ColorPicker from './ColorPicker.svelte';
 	import GameMediaImageTools from './GameMediaImageTools.svelte';
 	import GradientEditor from './GradientEditor.svelte';
+	import ImageLayoutControls from './ImageLayoutControls.svelte';
 
 	export let layer: CardLayer | null;
 	export let onChange: (next: CardLayer) => void;
@@ -144,6 +145,7 @@
 					<option value="image">image</option>
 				</select>
 			</label>
+			{#if !(layer.type === 'image' && layer.fieldBinding.fieldType === 'image')}
 			<label class="row">
 				<span>Default</span>
 				{#if layer.fieldBinding.fieldType === 'textarea'}
@@ -197,6 +199,7 @@
 					/>
 				{/if}
 			</label>
+			{/if}
 		{/if}
 
 		{#if layer.type === 'shape'}
@@ -287,7 +290,49 @@
 		{#if layer.type === 'image'}
 			{@const I = layer as ImageLayer}
 			<h4>Image</h4>
-			{#if !I.fieldBinding}
+			{#if I.fieldBinding?.fieldType === 'image' || !I.fieldBinding}
+				<p class="field-hint">
+					{#if I.fieldBinding?.fieldType === 'image'}
+						Default artwork for new pieces (each piece can override in the piece editor).
+					{:else}
+						Static artwork — same on every piece using this template.
+					{/if}
+				</p>
+			{/if}
+			{#if I.fieldBinding?.fieldType === 'image'}
+				{#if gameMedia}
+					<div class="row">
+						<span>Default artwork</span>
+						<GameMediaImageTools
+							gameId={gameMedia.gameId}
+							mediaId={I.fieldBinding!.defaultValue?.trim() || null}
+							mediaUrls={gameMedia.mediaUrls}
+							onMediaIdChange={(id) =>
+								patch({
+									fieldBinding: { ...I.fieldBinding!, defaultValue: id ?? '' }
+								})}
+							onMergeUrls={gameMedia.onMergeUrls}
+							onAfterPick={gameMedia.onAfterPick}
+						/>
+					</div>
+				{:else}
+					<label class="row">
+						<span>Default (media id)</span>
+						<input
+							type="text"
+							placeholder="game_media id"
+							value={I.fieldBinding?.defaultValue ?? ''}
+							oninput={(e) =>
+								patch({
+									fieldBinding: {
+										...I.fieldBinding!,
+										defaultValue: (e.currentTarget as HTMLInputElement).value
+									}
+								})}
+						/>
+					</label>
+				{/if}
+			{:else if !I.fieldBinding}
 				{#if gameMedia}
 					<div class="row">
 						<span>Artwork</span>
@@ -312,17 +357,14 @@
 					</label>
 				{/if}
 			{/if}
-			<label class="row">
-				<span>Object fit</span>
-				<select
-					value={I.objectFit}
-					onchange={(e) => patch({ objectFit: (e.currentTarget as HTMLSelectElement).value as ImageLayer['objectFit'] })}
-				>
-					<option value="cover">cover</option>
-					<option value="contain">contain</option>
-					<option value="fill">fill</option>
-				</select>
-			</label>
+			<div class="layout-block">
+				<ImageLayoutControls
+					objectFit={I.objectFit}
+					objectPosition={I.objectPosition?.trim() ? I.objectPosition : 'center'}
+					onFitChange={(fit) => patch({ objectFit: fit })}
+					onPositionChange={(pos) => patch({ objectPosition: pos })}
+				/>
+			</div>
 		{/if}
 	</div>
 {:else}
@@ -371,5 +413,14 @@
 	}
 	.muted {
 		color: var(--color-text-muted);
+	}
+	.field-hint {
+		margin: 0 0 8px;
+		font-size: 12px;
+		line-height: 1.45;
+		color: var(--color-text-muted);
+	}
+	.layout-block {
+		margin-top: 4px;
 	}
 </style>
