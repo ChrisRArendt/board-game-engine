@@ -15,6 +15,8 @@
 	export let borderRadius: number;
 	export let frameBorderWidth = 0;
 	export let frameBorderColor = '#000000';
+	/** null = auto (outer radius − frame width) */
+	export let frameInnerRadius: number | null = null;
 	export let background: CardBackground;
 	export let layers: CardLayer[];
 	export let selectedId: string | null;
@@ -157,6 +159,7 @@
 						borderRadius={borderRadius}
 						frameBorderWidth={frameBorderWidth}
 						frameBorderColor={frameBorderColor}
+						frameInnerRadius={frameInnerRadius}
 						{background}
 						{layers}
 						fieldValues={fieldPreview}

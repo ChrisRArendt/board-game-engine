@@ -6,6 +6,7 @@
 	export let gameId: string;
 	export let userId: string;
 	export let onUploadTableBg: (file: File) => Promise<void>;
+	export let onPalettePersist: ((cols: string[]) => void) | undefined = undefined;
 
 	function cardInstanceIdFromPieceBg(bg: string): string | null {
 		const m = /^cards\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.png$/i.exec(bg);
@@ -79,6 +80,7 @@
 			piece={pieceSel}
 			{gameId}
 			{userId}
+			{onPalettePersist}
 			onChange={(p) => g.replacePieceInstance(p)}
 		/>
 	{/if}

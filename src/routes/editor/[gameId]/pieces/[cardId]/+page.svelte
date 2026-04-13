@@ -19,6 +19,7 @@
 	import type { PageData } from './$types';
 	import { browser } from '$app/environment';
 	import { getPieceColorPaletteFromGameData, parseGameDataJson } from '$lib/editor/gameDataJson';
+	import { persistPieceColorPalette } from '$lib/editor/persistPieceColorPalette';
 
 	let { data }: { data: PageData } = $props();
 
@@ -116,6 +117,21 @@
 	let mediaUrls = $state<Record<string, string>>({});
 
 	let pieceColorPalette = $state(getPieceColorPaletteFromGameData(data.game.game_data));
+
+	let palettePersistTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function setPieceColorPaletteLocal(cols: string[]) {
+		pieceColorPalette = cols;
+		const gid = data.game.id;
+		if (palettePersistTimer) clearTimeout(palettePersistTimer);
+		palettePersistTimer = setTimeout(() => {
+			palettePersistTimer = null;
+			void (async () => {
+				const { error } = await persistPieceColorPalette(supabase, gid, cols);
+				if (error) console.error('save palette', error);
+			})();
+		}, 450);
+	}
 
 	async function loadMedia() {
 		const gid = data.game.id;
@@ -312,7 +328,7 @@
 										ariaLabel="Background color for {b.fieldLabel}"
 										value={pieceStyles[b.fieldName]?.backgroundColor?.trim() || '#ffffff'}
 										palette={pieceColorPalette}
-										onPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
+										onPaletteChange={setPieceColorPaletteLocal}
 										onValueChange={(v: string) => {
 											pieceStyles = {
 												...pieceStyles,
@@ -335,7 +351,7 @@
 											? pieceStyles[b.fieldName].textColor
 											: templateTextColor(b.fieldName)}
 										palette={pieceColorPalette}
-										onPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
+										onPaletteChange={setPieceColorPaletteLocal}
 										onValueChange={(v: string) => {
 											pieceStyles = {
 												...pieceStyles,
@@ -423,6 +439,7 @@
 						borderRadius={data.template.border_radius}
 						frameBorderWidth={data.template.frame_border_width ?? 0}
 						frameBorderColor={data.template.frame_border_color ?? '#000000'}
+						frameInnerRadius={data.template.frame_inner_radius ?? null}
 						background={parseBackground(data.template.background as Json)}
 						layers={parsedLayers}
 						{fieldValues}

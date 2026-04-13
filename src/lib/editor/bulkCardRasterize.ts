@@ -18,6 +18,8 @@ export type TemplateRow = {
 	/** Inset frame; omitted treated as 0 / #000000 */
 	frame_border_width?: number;
 	frame_border_color?: string;
+	/** null = auto inner clip radius */
+	frame_inner_radius?: number | null;
 };
 
 export async function rasterizeCardInstanceToBlob(
@@ -46,6 +48,7 @@ export async function rasterizeCardInstanceToBlob(
 			borderRadius: template.border_radius,
 			frameBorderWidth: template.frame_border_width ?? 0,
 			frameBorderColor: template.frame_border_color ?? '#000000',
+			frameInnerRadius: template.frame_inner_radius ?? null,
 			background: parseBackground(template.background),
 			layers: parsedLayers,
 			fieldValues,

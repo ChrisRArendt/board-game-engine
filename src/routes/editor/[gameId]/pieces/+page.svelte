@@ -92,6 +92,7 @@
 						border_radius: tmpl.border_radius,
 						frame_border_width: tmpl.frame_border_width,
 						frame_border_color: tmpl.frame_border_color,
+						frame_inner_radius: tmpl.frame_inner_radius ?? null,
 						background: tmpl.background,
 						layers: tmpl.layers
 					},
@@ -142,6 +143,7 @@
 						border_radius: tmpl.border_radius,
 						frame_border_width: tmpl.frame_border_width,
 						frame_border_color: tmpl.frame_border_color,
+						frame_inner_radius: tmpl.frame_inner_radius ?? null,
 						background: tmpl.background,
 						layers: tmpl.layers
 					},

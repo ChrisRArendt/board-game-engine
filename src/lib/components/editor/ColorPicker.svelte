@@ -5,7 +5,7 @@
 	export let value = '#ffffff';
 	export let onValueChange: ((v: string) => void) | undefined = undefined;
 
-	/** When both are set, the popover shows palette swatches; picking a color adds it (deduped). */
+	/** Game palette swatches; optional `onPaletteChange`. */
 	export let palette: string[] | undefined = undefined;
 	export let onPaletteChange: ((next: string[]) => void) | undefined = undefined;
 
@@ -19,6 +19,8 @@
 	let triggerEl: HTMLButtonElement;
 	let popEl: HTMLDivElement;
 	let hexText = '';
+	/** Last color emitted while this dialog is open; flushed to the palette once on close. */
+	let sessionColorHex = '';
 
 	$: if (!open) hexText = normalizeHex(value || '#ffffff');
 
@@ -31,20 +33,18 @@
 		onPaletteChange([...palette, n]);
 	}
 
-	function applyFromPicker(hex: string) {
+	function setColor(hex: string) {
 		const n = normalizeHex(hex);
 		if (!/^#[0-9a-f]{6}$/.test(n)) return;
 		onValueChange?.(n);
-		addToPalette(n);
+		sessionColorHex = n;
 		hexText = n;
 	}
 
 	function commitHexInput() {
 		const n = normalizeHex(hexText.trim());
 		if (/^#[0-9a-f]{6}$/.test(n)) {
-			onValueChange?.(n);
-			addToPalette(n);
-			hexText = n;
+			setColor(n);
 		} else {
 			hexText = normalizeHex(value || '#ffffff');
 		}
@@ -59,22 +59,32 @@
 	}
 
 	function selectPaletteSwatch(hex: string) {
-		applyFromPicker(hex);
+		setColor(hex);
 	}
 
 	async function toggle() {
 		if (open) {
-			open = false;
+			close();
 			return;
 		}
 		open = true;
 		hexText = normalizeHex(value || '#ffffff');
+		sessionColorHex = hexText;
 		await tick();
 		queueMicrotask(placePopover);
 	}
 
 	function close() {
+		if (!open) return;
+		addToPalette(sessionColorHex);
 		open = false;
+	}
+
+	async function resetAndClose() {
+		onReset?.();
+		await tick();
+		sessionColorHex = normalizeHex(value || '#ffffff');
+		close();
 	}
 
 	function placePopover() {
@@ -144,7 +154,7 @@
 						type="color"
 						value={pickerHex}
 						class="native-input"
-						oninput={(e) => applyFromPicker((e.currentTarget as HTMLInputElement).value)}
+						oninput={(e) => setColor((e.currentTarget as HTMLInputElement).value)}
 					/>
 				</label>
 				<label class="hex-wrap">
@@ -165,32 +175,27 @@
 				</label>
 			</div>
 
-			{#if palette != null && onPaletteChange}
+			{#if palette != null && onPaletteChange && palette.length > 0}
 				<div class="pal-section">
-					<div class="pal-hint">Click to use · right-click to remove</div>
-					{#if palette.length === 0}
-						<p class="pal-empty">Pick a color above to add swatches to this game palette.</p>
-					{:else}
-						<div class="pal-swatches">
-							{#each palette as c (c)}
-								<button
-									type="button"
-									class="pal-dot"
-									style:--c={normalizeHex(c)}
-									title={normalizeHex(c)}
-									aria-label="Use {normalizeHex(c)}"
-									onclick={() => selectPaletteSwatch(c)}
-									oncontextmenu={(e) => removeFromPalette(c, e)}
-								></button>
-							{/each}
-						</div>
-					{/if}
+					<div class="pal-swatches">
+						{#each palette as c (c)}
+							<button
+								type="button"
+								class="pal-dot"
+								style:--c={normalizeHex(c)}
+								title={normalizeHex(c)}
+								aria-label="Use {normalizeHex(c)}"
+								onclick={() => selectPaletteSwatch(c)}
+								oncontextmenu={(e) => removeFromPalette(c, e)}
+							></button>
+						{/each}
+					</div>
 				</div>
 			{/if}
 
 			{#if resetLabel && onReset}
 				<div class="pop-footer">
-					<button type="button" class="link-reset" onclick={() => { onReset(); close(); }}>
+					<button type="button" class="link-reset" onclick={resetAndClose}>
 						{resetLabel}
 					</button>
 				</div>
@@ -289,18 +294,6 @@
 		margin-top: 12px;
 		padding-top: 10px;
 		border-top: 1px solid var(--color-border);
-	}
-	.pal-hint {
-		font-size: 11px;
-		color: var(--color-text-muted);
-		margin-bottom: 8px;
-		line-height: 1.3;
-	}
-	.pal-empty {
-		margin: 0;
-		font-size: 12px;
-		line-height: 1.4;
-		color: var(--color-text-muted);
 	}
 	.pal-swatches {
 		display: flex;

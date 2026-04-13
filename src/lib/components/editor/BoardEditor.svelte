@@ -8,6 +8,7 @@
 	import type { GameDataJson } from '$lib/engine/types';
 	import type { PieceInstance } from '$lib/engine/types';
 	import { piecesToGameDataJson } from '$lib/editor/serializeBoard';
+	import { debouncePalettePersist, persistPieceColorPalette } from '$lib/editor/persistPieceColorPalette';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import type { CardForBoardPiece } from '$lib/editor/types';
 
@@ -20,6 +21,14 @@
 	export let onSaved: (() => void) | undefined = undefined;
 
 	const supabase = createSupabaseBrowserClient();
+
+	const schedulePalettePersist = debouncePalettePersist(
+		async (cols: string[]) => {
+			const { error } = await persistPieceColorPalette(supabase, gameId, cols);
+			if (error) console.error('save palette', error);
+		},
+		450
+	);
 
 	let saving = false;
 	let errMsg = '';
@@ -171,7 +180,12 @@
 		</div>
 		<aside class="right">
 			<h3>Properties</h3>
-			<BoardObjectInspector {gameId} {userId} onUploadTableBg={uploadTableBg} />
+			<BoardObjectInspector
+				{gameId}
+				{userId}
+				onUploadTableBg={uploadTableBg}
+				onPalettePersist={schedulePalettePersist}
+			/>
 		</aside>
 	</div>
 </div>

@@ -8,6 +8,8 @@
 	export let gameId: string;
 	export let userId: string;
 	export let onChange: (next: PieceInstance) => void;
+	/** Persist palette to game_data (e.g. debounced Supabase merge). */
+	export let onPalettePersist: ((cols: string[]) => void) | undefined = undefined;
 
 	const attrs = ['select', 'move', 'flip', 'shuffle', 'roundcorners'] as const;
 
@@ -87,7 +89,10 @@
 			<ColorPicker
 				value={piece.bg_color || '#94a3b8'}
 				palette={$game.pieceColorPalette}
-				onPaletteChange={(cols: string[]) => setPieceColorPalette(cols)}
+				onPaletteChange={(cols: string[]) => {
+					setPieceColorPalette(cols);
+					onPalettePersist?.(cols);
+				}}
 				onValueChange={(c: string) => patch({ bg_color: c })}
 				resetLabel="Clear"
 				onReset={() => patch({ bg_color: undefined })}

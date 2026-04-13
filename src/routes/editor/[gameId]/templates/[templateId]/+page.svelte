@@ -24,6 +24,7 @@
 	import type { Json } from '$lib/supabase/database.types';
 	import { publicStorageUrl } from '$lib/editor/mediaUrls';
 	import { getPieceColorPaletteFromGameData, parseGameDataJson } from '$lib/editor/gameDataJson';
+	import { persistPieceColorPalette } from '$lib/editor/persistPieceColorPalette';
 
 	function collapsibleStorageKey(templateId: string, section: 'cardBg' | 'frame') {
 		return `bge:template-editor:${templateId}:details:${section}`;
@@ -59,6 +60,7 @@
 	let borderR = $state(data.template.border_radius);
 	let frameW = $state(data.template.frame_border_width ?? 0);
 	let frameColor = $state(data.template.frame_border_color ?? '#000000');
+	let frameInnerR = $state<number | null>(data.template.frame_inner_radius ?? null);
 	const initialLayers = parseLayers(data.template.layers as Json);
 	let background = $state(parseBackground(data.template.background as Json));
 	let layers = $state(initialLayers);
@@ -74,6 +76,21 @@
 	let layerCtxMenu = $state<{ id: string; x: number; y: number } | null>(null);
 
 	let pieceColorPalette = $state(getPieceColorPaletteFromGameData(data.game.game_data));
+
+	let palettePersistTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function setPieceColorPaletteLocal(cols: string[]) {
+		pieceColorPalette = cols;
+		const gid = data.game.id;
+		if (palettePersistTimer) clearTimeout(palettePersistTimer);
+		palettePersistTimer = setTimeout(() => {
+			palettePersistTimer = null;
+			void (async () => {
+				const { error } = await persistPieceColorPalette(supabase, gid, cols);
+				if (error) console.error('save palette', error);
+			})();
+		}, 450);
+	}
 
 	function clipLayerCtxPos(clientX: number, clientY: number) {
 		const mw = 168;
@@ -122,6 +139,7 @@
 		borderR = data.template.border_radius;
 		frameW = data.template.frame_border_width ?? 0;
 		frameColor = data.template.frame_border_color ?? '#000000';
+		frameInnerR = data.template.frame_inner_radius ?? null;
 		const parsed = parseLayers(data.template.layers as Json);
 		layers = parsed;
 		background = parseBackground(data.template.background as Json);
@@ -170,6 +188,7 @@
 					border_radius: borderR,
 					frame_border_width: Math.max(0, Math.min(64, Math.round(frameW))),
 					frame_border_color: frameColor.trim() || '#000000',
+					frame_inner_radius: frameInnerR,
 					background: background as unknown as Json,
 					layers: layers as unknown as Json,
 					updated_at: new Date().toISOString()
@@ -303,10 +322,6 @@
 			<UnitInput label="Width" bind:pxValue={canvasW} />
 			<UnitInput label="Height" bind:pxValue={canvasH} />
 		</div>
-		<label class="br">
-			Corner radius (px)
-			<input type="number" bind:value={borderR} min="0" />
-		</label>
 		<button type="button" class="primary" disabled={saving} onclick={save}>{saving ? 'Saving…' : 'Save template'}</button>
 		{#if err}
 			<span class="err">{err}</span>
@@ -320,7 +335,6 @@
 					<h3 id="card-bg-heading" class="card-bg-heading">Card background</h3>
 				</summary>
 				<div class="collapsible-inner">
-				<p class="card-bg-desc">Same for every piece using this template (not a per-piece field).</p>
 				<label class="card-bg-type">
 					<span>Type</span>
 					<select
@@ -359,7 +373,7 @@
 						<ColorPicker
 							value={background.color}
 							palette={pieceColorPalette}
-							onPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
+							onPaletteChange={setPieceColorPaletteLocal}
 							onValueChange={(c: string) => (background = { type: 'solid', color: c })}
 						/>
 					</div>
@@ -369,7 +383,7 @@
 							stops={background.stops}
 							angle={background.angle}
 							palette={pieceColorPalette}
-							onPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
+							onPaletteChange={setPieceColorPaletteLocal}
 							onChange={(next) => (background = { type: 'gradient', stops: next.stops, angle: next.angle })}
 						/>
 					</div>
@@ -404,7 +418,7 @@
 						<ColorPicker
 							value={bg.fallbackColor ?? '#1e293b'}
 							palette={pieceColorPalette}
-							onPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
+							onPaletteChange={setPieceColorPaletteLocal}
 							onValueChange={(c: string) =>
 								(background = {
 									type: 'image',
@@ -447,35 +461,10 @@
 					<h3 id="frame-heading" class="card-bg-heading">Frame border</h3>
 				</summary>
 				<div class="collapsible-inner">
-				<p class="card-bg-desc">
-					Drawn inside the card size (content area shrinks). Uses the same corner radius as the card.
-				</p>
-				<div class="frame-presets">
-					<button
-						type="button"
-						class="preset"
-						onclick={() => {
-							frameW = 0;
-							frameColor = '#000000';
-						}}>None</button
-					>
-					<button
-						type="button"
-						class="preset"
-						onclick={() => {
-							frameW = 8;
-							frameColor = '#000000';
-						}}>MTG (black)</button
-					>
-					<button
-						type="button"
-						class="preset"
-						onclick={() => {
-							frameW = 8;
-							frameColor = '#ffcb05';
-						}}>Pokémon (yellow)</button
-					>
-				</div>
+				<label class="frame-row">
+					<span>Outer radius (px)</span>
+					<input type="number" bind:value={borderR} min="0" max="512" step="1" />
+				</label>
 				<label class="frame-row">
 					<span>Thickness (px)</span>
 					<input type="number" bind:value={frameW} min="0" max="64" step="1" />
@@ -485,9 +474,33 @@
 					<ColorPicker
 						value={frameColor}
 						palette={pieceColorPalette}
-						onPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
+						onPaletteChange={setPieceColorPaletteLocal}
 						onValueChange={(c: string) => (frameColor = c)}
 					/>
+				</div>
+				<div class="frame-row">
+					<span>Inner radius (px)</span>
+					<div class="frame-inner-inputs">
+						<input
+							type="number"
+							min="0"
+							max="512"
+							step="1"
+							placeholder="Auto"
+							value={frameInnerR ?? ''}
+							oninput={(e) => {
+								const raw = (e.currentTarget as HTMLInputElement).value;
+								frameInnerR = raw.trim() === '' ? null : Math.max(0, parseInt(raw, 10) || 0);
+							}}
+						/>
+						<button
+							type="button"
+							class="frame-inner-clear"
+							onclick={() => {
+								frameInnerR = null;
+							}}>Use auto</button
+						>
+					</div>
 				</div>
 				</div>
 			</details>
@@ -527,6 +540,7 @@
 			borderRadius={borderR}
 			frameBorderWidth={frameW}
 			frameBorderColor={frameColor}
+			frameInnerRadius={frameInnerR}
 			{background}
 			{layers}
 			{selectedId}
@@ -572,7 +586,7 @@
 				layer={selectedLayer()}
 				onChange={patchLayer}
 				pieceColorPalette={pieceColorPalette}
-				onPieceColorPaletteChange={(cols: string[]) => (pieceColorPalette = cols)}
+				onPieceColorPaletteChange={setPieceColorPaletteLocal}
 				gameMedia={{
 					gameId: data.game.id,
 					mediaUrls,
@@ -619,11 +633,6 @@
 	.size {
 		display: flex;
 		gap: 12px;
-	}
-	.br input {
-		width: 72px;
-		margin-left: 8px;
-		padding: 6px;
 	}
 	.primary {
 		padding: 8px 16px;
@@ -679,12 +688,6 @@
 		font-weight: 600;
 		color: var(--color-text);
 	}
-	.card-bg-desc {
-		margin: 0 0 12px;
-		font-size: 12px;
-		line-height: 1.45;
-		color: var(--color-text-muted);
-	}
 	.card-bg-type {
 		display: flex;
 		flex-direction: column;
@@ -715,21 +718,6 @@
 		color: var(--color-text-muted);
 		margin-bottom: 6px;
 	}
-	.frame-presets {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		margin-bottom: 12px;
-	}
-	.frame-presets .preset {
-		padding: 6px 8px;
-		border-radius: 4px;
-		border: 1px solid var(--color-border);
-		background: var(--color-bg);
-		color: inherit;
-		cursor: pointer;
-		font-size: 11px;
-	}
 	.frame-row {
 		display: flex;
 		flex-direction: column;
@@ -745,6 +733,21 @@
 		border: 1px solid var(--color-border);
 		background: var(--color-bg);
 		color: inherit;
+	}
+	.frame-inner-inputs {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+	}
+	.frame-inner-clear {
+		padding: 5px 10px;
+		font-size: 11px;
+		border-radius: 6px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: inherit;
+		cursor: pointer;
 	}
 	.main {
 		flex: 1;

@@ -18,6 +18,11 @@
 		/** Inset frame border (px); drawn inside width×height (box-sizing border-box). */
 		frameBorderWidth?: number;
 		frameBorderColor?: string;
+		/**
+		 * Corner radius (px) for clipping layers inside the frame.
+		 * Omit/null = max(0, borderRadius − frameBorderWidth). Set explicitly for a custom inner curve.
+		 */
+		frameInnerRadius?: number | null;
 		background: CardBackground;
 		layers: CardLayer[];
 		/** fieldName -> string value for bound fields */
@@ -40,6 +45,7 @@
 		borderRadius = 0,
 		frameBorderWidth = 0,
 		frameBorderColor = '#000000',
+		frameInnerRadius = null,
 		background,
 		layers,
 		fieldValues = {},
@@ -80,6 +86,13 @@
 
 	const sorted = $derived(sortLayers(layers.filter((l) => l.visible)));
 
+	/** Border is on `.card-face` (border-box); padding box is already inside the frame — do not inset again. */
+	const contentClipRadius = $derived(
+		frameInnerRadius != null && Number.isFinite(frameInnerRadius)
+			? Math.max(0, Math.min(frameInnerRadius, borderRadius ?? 0))
+			: Math.max(0, (borderRadius ?? 0) - (frameBorderWidth ?? 0))
+	);
+
 	$effect(() => {
 		if (!browser) return;
 		ensureGoogleFontsForLayers(layers);
@@ -104,6 +117,11 @@
 			: 'none'}
 		style:background={cardFaceBackgroundCss(background, mediaUrls)}
 	>
+		<div
+			class="card-content"
+			style:inset="0"
+			style:border-radius="{contentClipRadius}px"
+		>
 		{#each sorted as L (L.id)}
 			{#if L.type === 'shape'}
 				{@const S = L as ShapeLayer}
@@ -177,6 +195,7 @@
 				</div>
 			{/if}
 		{/each}
+		</div>
 	</div>
 </div>
 
@@ -193,6 +212,13 @@
 		position: relative;
 		overflow: hidden;
 		box-sizing: border-box;
+	}
+	.card-content {
+		position: absolute;
+		z-index: 1;
+		box-sizing: border-box;
+		overflow: hidden;
+		pointer-events: auto;
 	}
 	.layer {
 		position: absolute;
