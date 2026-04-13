@@ -4,15 +4,48 @@
 	import * as g from '$lib/stores/game';
 	import { hasAttr } from '$lib/engine/pieces';
 	import SpreadCustomDialog from '$lib/components/SpreadCustomDialog.svelte';
+	import DealToDialog from '$lib/components/DealToDialog.svelte';
+	import { users } from '$lib/stores/users';
+	import { settings } from '$lib/stores/settings';
+	import {
+		activeUserId,
+		getLocalPlayerColor,
+		playerColorOverrides,
+		playerOrder
+	} from '$lib/stores/network';
+	import { buildStashRoster } from '$lib/engine/stash';
 
 	export let open = false;
 	export let x = 0;
 	export let y = 0;
+	export let selfDisplayName = 'You';
 
 	const MENU_W = 220;
-	const MENU_H = 420;
+	const MENU_H = 480;
 
 	let spreadCustomOpen = false;
+	let dealOpen = false;
+
+	function prefersReducedMotion(): boolean {
+		if (!browser || typeof matchMedia === 'undefined') return false;
+		return matchMedia('(prefers-reduced-motion: reduce)').matches;
+	}
+
+	$: stashRoster = (() => {
+		$settings;
+		$users;
+		$playerOrder;
+		$playerColorOverrides;
+		if (!$activeUserId) return [];
+		return buildStashRoster({
+			selfUserId: $activeUserId,
+			selfDisplayName,
+			selfColor: getLocalPlayerColor(),
+			users: $users,
+			playerOrder: $playerOrder,
+			playerColorOverrides: $playerColorOverrides
+		});
+	})();
 
 	$: clip = (() => {
 		if (!browser) return { left: x, top: y };
@@ -31,9 +64,12 @@
 	$: showFan = sel.length > 1;
 	$: showStack = sel.length > 1;
 	$: showSpread = sel.length > 1 && sel.every((p) => hasAttr(p, 'move'));
-	$: showSpacer =
-		(showFlip || showShuf) && (showFan || showStack || showSpread);
+	$: showDeal =
+		sel.length >= 1 && sel.every((p) => hasAttr(p, 'move')) && stashRoster.length > 0;
+	$: showSpacer = (showFlip || showShuf) && (showFan || showStack || showSpread);
 	$: showSpacer2 = showSpread && (showFan || showStack);
+	$: showSpacerBeforeDeal =
+		showDeal && (showFlip || showShuf || showSpread || showFan || showStack);
 </script>
 
 <SpreadCustomDialog
@@ -42,7 +78,20 @@
 	onClose={() => (spreadCustomOpen = false)}
 />
 
-{#if open && (showFlip || showShuf || showFan || showStack || showSpread)}
+<DealToDialog
+	open={dealOpen}
+	roster={stashRoster}
+	maxCards={sel.filter((p) => hasAttr(p, 'move')).length}
+	reducedMotion={prefersReducedMotion()}
+	onConfirm={(cardCount, rosterIndices) => {
+		void g.runDealCardsToRoster(rosterIndices, cardCount, {
+			reducedMotion: prefersReducedMotion()
+		});
+	}}
+	onClose={() => (dealOpen = false)}
+/>
+
+{#if open && (showFlip || showShuf || showFan || showStack || showSpread || showDeal)}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<ul class="ctx" style:top="{clip.top}px" style:left="{clip.left}px">
 		{#if showFlip}
@@ -115,6 +164,19 @@
 				}}
 			>
 				Arrange Stacked
+			</li>
+		{/if}
+		{#if showSpacerBeforeDeal}
+			<li class="spacer"></li>
+		{/if}
+		{#if showDeal}
+			<li
+				on:pointerdown={() => {
+					open = false;
+					dealOpen = true;
+				}}
+			>
+				Deal to…
 			</li>
 		{/if}
 	</ul>

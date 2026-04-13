@@ -34,7 +34,13 @@
 	$: viewerFaceHidden =
 		piece != null &&
 		$activeUserId !== '' &&
-		isPieceFaceHiddenFromPeers(piece, stashRoster, $activeUserId, $isHistoryReplayActive);
+		isPieceFaceHiddenFromPeers(
+			piece,
+			stashRoster,
+			$activeUserId,
+			$isHistoryReplayActive,
+			$game.playerSlots
+		);
 
 	$: bg =
 		piece && piece.bg

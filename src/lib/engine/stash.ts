@@ -1,8 +1,31 @@
-import type { PieceInstance, UserEntry } from '$lib/engine/types';
+import type { Rect } from '$lib/engine/geometry';
+import type { PieceInstance, PlayerSlotZones, UserEntry } from '$lib/engine/types';
 
 /** Must match `Board.svelte` stash layout (`.stash` footprint). */
 export const STASH_W = 700;
 export const STASH_H = 600;
+
+/** Max configurable player zone slots (expand in one place). */
+export const PLAYER_SLOT_MAX = 8;
+
+/**
+ * RTS-style player slot colors (editor zone preview, labels): red → blue → teal → purple → gold → orange → green → pink.
+ * Order matches common WC/SC-style player color lists.
+ */
+export const PLAYER_SLOT_COLORS: readonly string[] = [
+	'#e53e3e',
+	'#3182ce',
+	'#319795',
+	'#805ad5',
+	'#d69e2e',
+	'#dd6b20',
+	'#38a169',
+	'#d53f8c'
+];
+
+export function playerSlotColor(slotIndex: number): string {
+	return PLAYER_SLOT_COLORS[slotIndex % PLAYER_SLOT_COLORS.length] ?? '#94a3b8';
+}
 
 export type StashRosterEntry = { id: string; name: string; color: string };
 
@@ -14,9 +37,63 @@ export function stashPos(i: number): { x: number; y: number } {
 	};
 }
 
-export function stashRectForIndex(i: number): { x: number; y: number; w: number; h: number } {
+export function stashRectForIndex(i: number): Rect {
 	const p = stashPos(i);
 	return { x: p.x, y: p.y, w: STASH_W, h: STASH_H };
+}
+
+function isValidRect(r: unknown): r is Rect {
+	if (!r || typeof r !== 'object') return false;
+	const o = r as Record<string, unknown>;
+	if (![o.x, o.y, o.w, o.h].every((n) => typeof n === 'number' && Number.isFinite(n as number))) {
+		return false;
+	}
+	return (o.w as number) > 0 && (o.h as number) > 0;
+}
+
+/** Parse `game_data.player_slots`; invalid entries skipped. */
+export function parsePlayerSlotsFromJson(raw: unknown): PlayerSlotZones[] | null {
+	if (!Array.isArray(raw) || raw.length === 0) return null;
+	const out: PlayerSlotZones[] = [];
+	for (let i = 0; i < Math.min(raw.length, PLAYER_SLOT_MAX); i++) {
+		const row = raw[i];
+		if (!row || typeof row !== 'object') continue;
+		const o = row as Record<string, unknown>;
+		if (!isValidRect(o.safe) || !isValidRect(o.deal)) continue;
+		const safe = o.safe as Rect;
+		const deal = o.deal as Rect;
+		out.push({
+			safe: { x: safe.x, y: safe.y, w: safe.w, h: safe.h },
+			deal: { x: deal.x, y: deal.y, w: deal.w, h: deal.h }
+		});
+	}
+	return out.length > 0 ? out : null;
+}
+
+/** Default 8 slots from legacy stash positions (safe = deal = stash rect). */
+export function defaultPlayerSlotsFromLegacyGrid(): PlayerSlotZones[] {
+	const slots: PlayerSlotZones[] = [];
+	for (let i = 0; i < PLAYER_SLOT_MAX; i++) {
+		const r = stashRectForIndex(i);
+		slots.push({ safe: { ...r }, deal: { ...r } });
+	}
+	return slots;
+}
+
+/** Private hand rect for roster index `i`. */
+export function safeRectForRosterIndex(i: number, playerSlots: PlayerSlotZones[] | null): Rect {
+	if (playerSlots && playerSlots.length > 0 && i < playerSlots.length) {
+		return { ...playerSlots[i].safe };
+	}
+	return stashRectForIndex(i);
+}
+
+/** Deal target rect for roster index `i`. */
+export function dealRectForRosterIndex(i: number, playerSlots: PlayerSlotZones[] | null): Rect {
+	if (playerSlots && playerSlots.length > 0 && i < playerSlots.length) {
+		return { ...playerSlots[i].deal };
+	}
+	return stashRectForIndex(i);
 }
 
 function pieceCenter(p: PieceInstance): { x: number; y: number } {
@@ -37,11 +114,12 @@ function pointInRect(
 /** Which player's private zone contains the piece center, if any. */
 export function ownerStashUserIdForPiece(
 	piece: PieceInstance,
-	roster: StashRosterEntry[]
+	roster: StashRosterEntry[],
+	playerSlots: PlayerSlotZones[] | null = null
 ): string | null {
 	const c = pieceCenter(piece);
 	for (let i = 0; i < roster.length; i++) {
-		const r = stashRectForIndex(i);
+		const r = safeRectForRosterIndex(i, playerSlots);
 		if (pointInRect(c.x, c.y, r)) return roster[i].id;
 	}
 	return null;
@@ -55,10 +133,11 @@ export function isPieceFaceHiddenFromPeers(
 	piece: PieceInstance,
 	roster: StashRosterEntry[],
 	selfUserId: string,
-	replayMode: boolean
+	replayMode: boolean,
+	playerSlots: PlayerSlotZones[] | null = null
 ): boolean {
 	if (replayMode) return false;
-	const owner = ownerStashUserIdForPiece(piece, roster);
+	const owner = ownerStashUserIdForPiece(piece, roster, playerSlots);
 	return owner !== null && owner !== selfUserId;
 }
 
@@ -70,10 +149,11 @@ export function canSelectPieceForViewer(
 	piece: PieceInstance,
 	roster: StashRosterEntry[],
 	selfUserId: string,
-	replayMode: boolean
+	replayMode: boolean,
+	playerSlots: PlayerSlotZones[] | null = null
 ): boolean {
 	if (replayMode) return true;
-	const owner = ownerStashUserIdForPiece(piece, roster);
+	const owner = ownerStashUserIdForPiece(piece, roster, playerSlots);
 	if (owner === null) return true;
 	return owner === selfUserId;
 }

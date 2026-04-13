@@ -490,7 +490,12 @@
 	selfAvatarUrl={data.profile?.avatar_url}
 />
 
-<ContextMenu bind:open={ctxOpen} x={ctxX} y={ctxY} />
+<ContextMenu
+	bind:open={ctxOpen}
+	x={ctxX}
+	y={ctxY}
+	selfDisplayName={data.profile?.display_name ?? 'You'}
+/>
 
 <!-- Fixed layer above the board; pointer-events none so table still receives drags except on windows/sheets. -->
 <div class="play-overlay-root">

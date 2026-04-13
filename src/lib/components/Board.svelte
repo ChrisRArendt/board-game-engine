@@ -6,6 +6,7 @@
 	import BoardWidgetRenderer from './BoardWidgetRenderer.svelte';
 	import SelectionBox from './SelectionBox.svelte';
 	import ResizeHandles from '$lib/components/editor/ResizeHandles.svelte';
+	import PlayerZonesEditorOverlay from '$lib/components/editor/PlayerZonesEditorOverlay.svelte';
 	import * as g from '$lib/stores/game';
 	import { game } from '$lib/stores/game';
 	import { ZOOM_DEFAULT } from '$lib/engine/geometry';
@@ -17,8 +18,11 @@
 	import {
 		buildStashRoster,
 		canSelectPieceForViewer,
+		dealRectForRosterIndex,
 		isPieceFaceHiddenFromPeers,
-		stashPos
+		playerSlotColor,
+		PLAYER_SLOT_MAX,
+		safeRectForRosterIndex
 	} from '$lib/engine/stash';
 
 	export let zoomWithScroll = false;
@@ -38,6 +42,10 @@
 	export let gridSize = 20;
 	/** Board editor: right-click on a piece (supplies client coords + piece id). */
 	export let onEditorPieceContextMenu: ((e: MouseEvent, pieceId: number) => void) | undefined = undefined;
+	/** Board editor: interactive safe/deal rects when `playerSlots` is set. */
+	export let showEditorPlayerZonesPreview = false;
+	/** Called after drag/resize of player zones (e.g. commit undo history). */
+	export let onPlayerZonesEdited: (() => void) | undefined = undefined;
 
 	let viewportEl: HTMLDivElement | undefined;
 	let cameraEl: HTMLDivElement | undefined;
@@ -131,7 +139,13 @@
 
 	function canViewerSelectPiece(piece: PieceInstance): boolean {
 		if (editorMode) return true;
-		return canSelectPieceForViewer(piece, stashRosterNow(), selfUserId, replayMode);
+		return canSelectPieceForViewer(
+			piece,
+			stashRosterNow(),
+			selfUserId,
+			replayMode,
+			get(game).playerSlots
+		);
 	}
 
 	function onPointerMoveGlobal(e: PointerEvent) {
@@ -593,10 +607,16 @@
 				<div class="user-stashes user-stashes-mine" aria-hidden="true">
 					{#each stashRoster as user, i (user.id)}
 						{#if user.id === selfUserId}
-							{@const pos = stashPos(i)}
-							<div class="stash-slot" style:transform="translate3d({pos.x}px, {pos.y}px, 0)">
+							{@const safe = safeRectForRosterIndex(i, $game.playerSlots)}
+							<div
+								class="stash-slot"
+								style:transform="translate3d({safe.x}px, {safe.y}px, 0)"
+								style:width="{safe.w}px"
+							>
 								<div
 									class="stash footprint mine"
+									style:width="{safe.w}px"
+									style:height="{safe.h}px"
 									style:background-color={user.color}
 								>
 									<span class="sr-only">Your private area</span>
@@ -604,6 +624,40 @@
 							</div>
 						{/if}
 					{/each}
+				</div>
+
+				<!-- Deal targets: under pieces; dashed outline + flag -->
+				<div class="user-deal-zones" aria-hidden="true">
+					{#each stashRoster as user, i (user.id)}
+						{@const deal = dealRectForRosterIndex(i, $game.playerSlots)}
+						{@const dealAccent = user.color || playerSlotColor(i)}
+						<div
+							class="deal-zone"
+							style:transform="translate3d({deal.x}px, {deal.y}px, 0)"
+							style:width="{deal.w}px"
+							style:height="{deal.h}px"
+							style:border-color={dealAccent}
+						>
+							<span class="deal-flag" aria-hidden="true">🚩</span>
+							<span class="deal-label">{user.name}</span>
+						</div>
+					{/each}
+					{#if $game.playerSlots && $game.playerSlots.length > stashRoster.length}
+						{#each Array.from({ length: Math.min($game.playerSlots.length, PLAYER_SLOT_MAX) - stashRoster.length }) as _, j}
+							{@const idx = stashRoster.length + j}
+							{@const deal = dealRectForRosterIndex(idx, $game.playerSlots)}
+							<div
+								class="deal-zone deal-zone-unused"
+								style:transform="translate3d({deal.x}px, {deal.y}px, 0)"
+								style:width="{deal.w}px"
+								style:height="{deal.h}px"
+								style:border-color={playerSlotColor(idx)}
+							>
+								<span class="deal-flag" aria-hidden="true">🚩</span>
+								<span class="deal-label">Slot {idx + 1}</span>
+							</div>
+						{/each}
+					{/if}
 				</div>
 			{/if}
 
@@ -620,7 +674,13 @@
 							onEditorContextMenu={editorMode ? onEditorPieceContextMenu : undefined}
 							faceHidden={editorMode
 								? false
-								: isPieceFaceHiddenFromPeers(piece, stashRoster, selfUserId, replayMode)}
+								: isPieceFaceHiddenFromPeers(
+										piece,
+										stashRoster,
+										selfUserId,
+										replayMode,
+										$game.playerSlots
+									)}
 							selected={$game.selectedIds.has(piece.id)}
 							dragging={$game.moveDrag != null && $game.selectedIds.has(piece.id) && piece.attributes.includes('move')}
 							pressing={pressingPieceId === piece.id}
@@ -735,15 +795,33 @@
 				</div>
 			{/if}
 
+			{#if editorMode && showEditorPlayerZonesPreview && $game.playerSlots}
+				<PlayerZonesEditorOverlay zoomScale={zm} onEdited={onPlayerZonesEdited} />
+			{/if}
+
 			{#if !editorMode}
 				<!-- Other players’ zones: on top of pieces so their area obscures hidden tokens for everyone else. -->
 				<div class="user-stashes user-stashes-others" aria-hidden="true">
 					{#each stashRoster as user, i (user.id)}
 						{#if user.id !== selfUserId}
-							{@const pos = stashPos(i)}
-							<div class="stash-slot" style:transform="translate3d({pos.x}px, {pos.y}px, 0)">
-								<div class="stash footprint theirs" style:background-color={user.color}></div>
-								<div class="stash top" style:background-color={user.color}>
+							{@const safe = safeRectForRosterIndex(i, $game.playerSlots)}
+							<div
+								class="stash-slot"
+								style:transform="translate3d({safe.x}px, {safe.y}px, 0)"
+								style:width="{safe.w}px"
+							>
+								<div
+									class="stash footprint theirs"
+									style:width="{safe.w}px"
+									style:height="{safe.h}px"
+									style:background-color={user.color}
+								></div>
+								<div
+									class="stash top"
+									style:width="{safe.w}px"
+									style:height="{safe.h}px"
+									style:background-color={user.color}
+								>
 									{user.name}
 								</div>
 								<div class="stash-private-label" aria-hidden="true">PRIVATE</div>
@@ -853,6 +931,46 @@
 	.user-stashes-others {
 		z-index: 90000;
 		isolation: isolate;
+	}
+	.user-deal-zones {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		z-index: 0;
+	}
+	.deal-zone {
+		position: absolute;
+		top: 0;
+		left: 0;
+		box-sizing: border-box;
+		border: 2px dashed rgba(255, 255, 255, 0.42);
+		background: rgba(0, 0, 0, 0.12);
+		border-radius: 8px;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		justify-content: flex-start;
+		padding: 6px 8px;
+		gap: 2px;
+	}
+	.deal-zone-unused {
+		opacity: 0.38;
+		border-style: dotted;
+	}
+	.deal-flag {
+		font-size: 18px;
+		line-height: 1;
+		filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+	}
+	.deal-label {
+		font-size: 12px;
+		font-weight: 600;
+		color: rgba(255, 255, 255, 0.95);
+		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.stash-slot {
 		position: absolute;

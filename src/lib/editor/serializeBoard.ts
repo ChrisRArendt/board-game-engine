@@ -1,4 +1,4 @@
-import type { EditorViewJson, GameDataJson } from '$lib/engine/types';
+import type { EditorViewJson, GameDataJson, PlayerSlotZones } from '$lib/engine/types';
 import type { BoardWidget, PieceInstance } from '$lib/engine/types';
 import { widgetDataFromInstance } from '$lib/engine/boardWidgets';
 
@@ -12,6 +12,7 @@ export function piecesToGameDataJson(
 		piece_color_palette?: string[];
 		editor_view?: EditorViewJson;
 		widgets?: BoardWidget[];
+		player_slots?: PlayerSlotZones[] | null;
 	}
 ): GameDataJson {
 	const out: GameDataJson = {
@@ -39,5 +40,11 @@ export function piecesToGameDataJson(
 	if (opts?.environment_bg) out.environment_bg = opts.environment_bg;
 	if (opts?.piece_color_palette?.length) out.piece_color_palette = [...opts.piece_color_palette];
 	if (opts?.editor_view) out.editor_view = { ...opts.editor_view };
+	if (opts?.player_slots && opts.player_slots.length > 0) {
+		out.player_slots = opts.player_slots.map((z) => ({
+			safe: { ...z.safe },
+			deal: { ...z.deal }
+		}));
+	}
 	return out;
 }

@@ -6,7 +6,14 @@ let emitGame: ((type: string, data: Record<string, unknown>) => void) | null = n
 export function registerGameEmit(fn: (type: string, data: Record<string, unknown>) => void) {
 	emitGame = fn;
 }
-import type { BoardWidget, GameDataJson, PieceData, PieceInstance, WidgetData } from '$lib/engine/types';
+import type {
+	BoardWidget,
+	GameDataJson,
+	PieceData,
+	PieceInstance,
+	PlayerSlotZones,
+	WidgetData
+} from '$lib/engine/types';
 import { boardWidgetFromData } from '$lib/engine/boardWidgets';
 import { DEFAULT_PIECE_COLOR_PALETTE } from '$lib/engine/types';
 import {
@@ -35,6 +42,7 @@ import {
 	type BoardSnapGuides,
 	EMPTY_BOARD_GUIDES
 } from '$lib/editor/boardSnapGeometry';
+import { dealRectForRosterIndex, parsePlayerSlotsFromJson } from '$lib/engine/stash';
 
 export interface GameState {
 	curGame: string;
@@ -98,6 +106,8 @@ export interface GameState {
 	/** Board editor: snap positions to grid when dragging. */
 	editorSnapToGrid: boolean;
 	editorGridSize: number;
+	/** Custom safe/deal rects per roster slot; null uses legacy `stashPos` grid. */
+	playerSlots: PlayerSlotZones[] | null;
 }
 
 function initialState(): GameState {
@@ -140,7 +150,8 @@ function initialState(): GameState {
 		editorSnapThreshold: 8,
 		editorSnapGuides: null,
 		editorSnapToGrid: false,
-		editorGridSize: 20
+		editorGridSize: 20,
+		playerSlots: null
 	};
 }
 
@@ -268,9 +279,22 @@ export function loadGameData(
 			editorSnapThreshold: 8,
 			editorSnapGuides: null,
 			editorSnapToGrid: false,
-			editorGridSize: 20
+			editorGridSize: 20,
+			playerSlots: parsePlayerSlotsFromJson(json.player_slots) ?? null
 		};
 	});
+}
+
+export function setPlayerSlots(slots: PlayerSlotZones[] | null) {
+	game.update((s) => ({
+		...s,
+		playerSlots: slots
+			? slots.map((z) => ({
+					safe: { ...z.safe },
+					deal: { ...z.deal }
+				}))
+			: null
+	}));
 }
 
 let zoomAnimRaf: number | null = null;
@@ -1679,6 +1703,7 @@ export function restoreBoardEditorSnapshot(snapshot: {
 	pieceColorPalette: string[];
 	nextPieceId: number;
 	nextWidgetId: number;
+	playerSlots?: PlayerSlotZones[] | null;
 }) {
 	game.update((s) => ({
 		...s,
@@ -1695,6 +1720,11 @@ export function restoreBoardEditorSnapshot(snapshot: {
 		pieceColorPalette: [...snapshot.pieceColorPalette],
 		nextPieceId: snapshot.nextPieceId,
 		nextWidgetId: snapshot.nextWidgetId,
+		playerSlots: snapshot.playerSlots
+			? snapshot.playerSlots.map((z) => ({ safe: { ...z.safe }, deal: { ...z.deal } }))
+			: snapshot.playerSlots === undefined
+				? s.playerSlots
+				: null,
 		selectedWidgetIds: new Set(),
 		editorSnapGuides: null,
 		moveDrag: null
@@ -1805,6 +1835,52 @@ export function applyStoredGameSnapshot(
 		editorGridSize: 20
 	}));
 	if (!opts?.skipCenter) centerCamToVP();
+}
+
+const DEAL_ANIM_DELAY_MS = 72;
+
+/**
+ * Deal selected movable pieces (highest z first) round-robin to stash roster indices.
+ * Emits `piece_move` and `piece_zindexchange` per card.
+ */
+export async function runDealCardsToRoster(
+	rosterIndices: number[],
+	cardCount: number,
+	opts?: { delayMs?: number; reducedMotion?: boolean }
+): Promise<void> {
+	const uniq = [...new Set(rosterIndices)].filter((i) => Number.isInteger(i) && i >= 0);
+	if (uniq.length === 0) return;
+	const delayMs = opts?.reducedMotion ? 0 : (opts?.delayMs ?? DEAL_ANIM_DELAY_MS);
+
+	const s0 = get(game);
+	const sel = s0.selectedIds;
+	const pieces = s0.pieces
+		.filter((p) => sel.has(p.id) && hasAttr(p, 'move'))
+		.sort((a, b) => b.zIndex - a.zIndex)
+		.slice(0, Math.max(0, Math.floor(cardCount)));
+	if (pieces.length === 0) return;
+
+	let zNext = maxZIndex(s0.pieces) + 1;
+	const perTarget = new Map<number, number>();
+	const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+	for (let step = 0; step < pieces.length; step++) {
+		const p = pieces[step];
+		const ri = uniq[step % uniq.length];
+		const playerSlots = get(game).playerSlots;
+		const rect = dealRectForRosterIndex(ri, playerSlots);
+		const stackN = perTarget.get(ri) ?? 0;
+		perTarget.set(ri, stackN + 1);
+		const ox = (stackN % 12) * 2;
+		const oy = (stackN % 12) * 2;
+		const x = rect.x + rect.w / 2 - p.initial_size.w / 2 + ox;
+		const y = rect.y + rect.h / 2 - p.initial_size.h / 2 + oy;
+		const np = { ...p, x, y, zIndex: zNext++ };
+		replacePieceInstance(np);
+		emitGame?.('piece_move', { id: np.id, x: np.x, y: np.y });
+		emitGame?.('piece_zindexchange', { id: np.id, zindex: np.zIndex });
+		if (delayMs > 0 && step < pieces.length - 1) await wait(delayMs);
+	}
 }
 
 /**

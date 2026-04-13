@@ -1,5 +1,7 @@
 /** JSON schema from pieces.json */
 
+import type { Rect } from '$lib/engine/geometry';
+
 export interface TableSize {
 	w: number;
 	h: number;
@@ -34,6 +36,12 @@ export interface PieceData {
 	editor_hidden?: boolean;
 	/** Editor-only: cannot move/resize on canvas (can still edit in list/properties). */
 	editor_locked?: boolean;
+}
+
+/** Per-player areas: private hand (safe) and deal pile target (deal). Editor-placed; up to `PLAYER_SLOT_MAX` slots. */
+export interface PlayerSlotZones {
+	safe: Rect;
+	deal: Rect;
 }
 
 /** Board editor only: last canvas zoom/pan (CSS px in viewport space). Not used in play. */
@@ -90,6 +98,11 @@ export interface GameDataJson {
 	piece_color_palette?: string[];
 	/** Board editor: restore zoom/pan when reopening the editor. Omitted in play exports. */
 	editor_view?: EditorViewJson;
+	/**
+	 * Optional player zones (safe = private hand, deal = cards dealt here). Up to 8 slots by default.
+	 * If omitted, runtime uses legacy fixed stash grid (`stashPos`).
+	 */
+	player_slots?: PlayerSlotZones[];
 }
 
 /** Default palette when `piece_color_palette` is missing from game data. */

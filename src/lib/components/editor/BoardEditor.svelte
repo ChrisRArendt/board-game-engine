@@ -8,6 +8,7 @@
 	import BoardObjectInspector from './BoardObjectInspector.svelte';
 	import BoardToolbar from './BoardToolbar.svelte';
 	import BoardMinimap from './BoardMinimap.svelte';
+	import PlayerZonesPanel from './PlayerZonesPanel.svelte';
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
 	import type { GameDataJson, WidgetType } from '$lib/engine/types';
@@ -83,7 +84,10 @@
 			envBgRev: s.envBgRev,
 			pieceColorPalette: [...s.pieceColorPalette],
 			nextPieceId: s.nextPieceId,
-			nextWidgetId: s.nextWidgetId
+			nextWidgetId: s.nextWidgetId,
+			playerSlots: s.playerSlots
+				? s.playerSlots.map((z) => ({ safe: { ...z.safe }, deal: { ...z.deal } }))
+				: null
 		};
 	}
 
@@ -346,7 +350,8 @@
 					st.assetBaseUrl && st.envBgFilename.trim() ? st.envBgFilename : undefined,
 				piece_color_palette: st.pieceColorPalette,
 				editor_view: { zoom: st.zoom, pan_x: st.panX, pan_y: st.panY },
-				widgets: st.widgets
+				widgets: st.widgets,
+				player_slots: st.playerSlots
 			});
 			const { error } = await supabase
 				.from('custom_board_games')
@@ -595,6 +600,8 @@
 					replayMode={false}
 					showGridOverlay={false}
 					gridSize={20}
+					showEditorPlayerZonesPreview={true}
+					onPlayerZonesEdited={commitHistory}
 					onEditorPieceContextMenu={onEditorPieceContextMenu}
 				/>
 				<BoardMinimap viewportW={canvasW} viewportH={canvasH} />
@@ -621,6 +628,7 @@
 				onAfterTableMediaPick={() => void loadGameMedia()}
 				onAfterEdit={commitHistory}
 			/>
+			<PlayerZonesPanel onAfterEdit={commitHistory} />
 		</aside>
 	</div>
 
