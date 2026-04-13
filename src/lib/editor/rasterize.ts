@@ -1,6 +1,9 @@
 export interface RasterizeOptions {
-	/** Background color for transparent areas (default: white) */
-	backgroundColor?: string;
+	/**
+	 * Canvas background behind the DOM snapshot. Default `#ffffff`.
+	 * Pass `null` for a transparent PNG (e.g. export with alpha around the card).
+	 */
+	backgroundColor?: string | null;
 	/** Pixel ratio for sharper output (default 2 for ~150 DPI feel on retina) */
 	scale?: number;
 }
@@ -14,11 +17,13 @@ export async function rasterizeElementToPng(
 	opts?: RasterizeOptions
 ): Promise<Blob> {
 	const { default: html2canvas } = await import('html2canvas');
+	const bg =
+		opts?.backgroundColor === undefined ? '#ffffff' : opts.backgroundColor;
 	const canvas = await html2canvas(el, {
 		scale: opts?.scale ?? 2,
 		useCORS: true,
 		allowTaint: true,
-		backgroundColor: opts?.backgroundColor ?? '#ffffff',
+		backgroundColor: bg,
 		logging: false
 	});
 	return new Promise((resolve, reject) => {

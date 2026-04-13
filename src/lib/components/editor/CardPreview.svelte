@@ -26,6 +26,8 @@
 		fieldStyles?: Record<string, PieceFieldStyle>;
 		/** Optional: scale entire card for display (1 = actual px size) */
 		displayScale?: number;
+		/** When true, no CSS transform scale on the root (better for html2canvas: frame border + crisp edges). */
+		flattenLayout?: boolean;
 		/** Template editor only: show bounds + filler when text/image content is empty (not used for export). */
 		showEmptyPlaceholders?: boolean;
 		/** game_media.id -> public URL */
@@ -44,7 +46,8 @@
 		fieldStyles = {},
 		displayScale = 1,
 		showEmptyPlaceholders = false,
-		mediaUrls = {}
+		mediaUrls = {},
+		flattenLayout = false
 	}: Props = $props();
 
 	function layerStyle(L: CardLayer): string {
@@ -85,9 +88,10 @@
 
 <div
 	class="card-root"
-	style:width="{width * displayScale}px"
-	style:height="{height * displayScale}px"
-	style:transform="scale({displayScale})"
+	class:card-root--flat={flattenLayout}
+	style:width="{flattenLayout ? width : width * displayScale}px"
+	style:height="{flattenLayout ? height : height * displayScale}px"
+	style:transform={flattenLayout ? 'none' : `scale(${displayScale})`}
 	style:transform-origin="top left"
 >
 	<div
@@ -180,6 +184,10 @@
 	.card-root {
 		position: relative;
 		overflow: visible;
+	}
+	.card-root--flat {
+		display: inline-block;
+		vertical-align: top;
 	}
 	.card-face {
 		position: relative;

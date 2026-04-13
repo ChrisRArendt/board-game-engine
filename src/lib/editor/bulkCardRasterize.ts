@@ -51,7 +51,8 @@ export async function rasterizeCardInstanceToBlob(
 			fieldValues,
 			fieldStyles,
 			mediaUrls,
-			displayScale: 1
+			displayScale: 1,
+			flattenLayout: true
 		}
 	});
 
@@ -68,7 +69,7 @@ export async function rasterizeCardInstanceToBlob(
 	try {
 		return await rasterizeElementToPng(wrap, {
 			scale: opts?.scale ?? 2,
-			backgroundColor: '#ffffff'
+			backgroundColor: null
 		});
 	} finally {
 		unmount(app);

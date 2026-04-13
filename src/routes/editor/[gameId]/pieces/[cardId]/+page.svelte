@@ -101,8 +101,17 @@
 	});
 
 	let previewEl: HTMLDivElement | undefined;
-	let saving = $state(false);
+	type ActionPhase = 'idle' | 'loading' | 'success';
+	let saveBtnState = $state<ActionPhase>('idle');
+	let renderBtnState = $state<ActionPhase>('idle');
+	let printBtnState = $state<ActionPhase>('idle');
 	let err = $state('');
+
+	const actionBusy = $derived(
+		saveBtnState === 'loading' || renderBtnState === 'loading' || printBtnState === 'loading'
+	);
+
+	const SUCCESS_MS = 2000;
 
 	let mediaUrls = $state<Record<string, string>>({});
 
@@ -129,7 +138,8 @@
 	}
 
 	async function save() {
-		saving = true;
+		if (saveBtnState === 'loading') return;
+		saveBtnState = 'loading';
 		err = '';
 		try {
 			const pl = parseLayers(data.template.layers as Json);
@@ -155,18 +165,23 @@
 				.eq('id', data.game.id);
 			if (gErr) throw gErr;
 			await invalidateAll();
+			saveBtnState = 'success';
+			window.setTimeout(() => {
+				saveBtnState = 'idle';
+			}, SUCCESS_MS);
 		} catch (e) {
 			err = e instanceof Error ? e.message : 'Save failed';
+			saveBtnState = 'idle';
 		}
-		saving = false;
 	}
 
 	async function renderPng() {
 		if (!previewEl || !data.session?.user) return;
-		saving = true;
+		if (renderBtnState === 'loading') return;
+		renderBtnState = 'loading';
 		err = '';
 		try {
-			const blob = await rasterizeElementToPng(previewEl, { scale: 2, backgroundColor: '#ffffff' });
+			const blob = await rasterizeElementToPng(previewEl, { scale: 2, backgroundColor: null });
 			const path = `${data.session.user.id}/${data.game.id}/cards/${data.card.id}.png`;
 			const { error: upErr } = await supabase.storage.from('custom-game-assets').upload(path, blob, {
 				upsert: true,
@@ -183,24 +198,33 @@
 				.eq('id', data.card.id);
 			if (uErr) throw uErr;
 			await invalidateAll();
+			renderBtnState = 'success';
+			window.setTimeout(() => {
+				renderBtnState = 'idle';
+			}, SUCCESS_MS);
 		} catch (e) {
 			err = e instanceof Error ? e.message : 'Render failed';
+			renderBtnState = 'idle';
 		}
-		saving = false;
 	}
 
 	async function renderPrintPng() {
 		if (!previewEl) return;
-		saving = true;
+		if (printBtnState === 'loading') return;
+		printBtnState = 'loading';
 		err = '';
 		try {
 			/** 150 DPI design → 300 DPI: 2× supersampling on design-sized DOM */
-			const blob = await rasterizeElementToPng(previewEl, { scale: 2, backgroundColor: '#ffffff' });
+			const blob = await rasterizeElementToPng(previewEl, { scale: 2, backgroundColor: null });
 			downloadBlob(blob, `${(name || 'piece').replace(/\s+/g, '-')}-print-300dpi.png`);
+			printBtnState = 'success';
+			window.setTimeout(() => {
+				printBtnState = 'idle';
+			}, SUCCESS_MS);
 		} catch (e) {
 			err = e instanceof Error ? e.message : 'Export failed';
+			printBtnState = 'idle';
 		}
-		saving = false;
 	}
 </script>
 
@@ -337,28 +361,76 @@
 				<p class="err">{err}</p>
 			{/if}
 
-			<div class="actions">
-				<button type="button" class="btn primary" disabled={saving} onclick={save}>Save piece</button>
-				<button type="button" class="btn" disabled={saving} onclick={renderPng}>Render piece image (game)</button>
-				<button type="button" class="btn" disabled={saving} onclick={renderPrintPng}>Download print PNG (300 DPI)</button>
+			<div class="actions" aria-live="polite">
+				<button
+					type="button"
+					class="btn primary"
+					class:btn-done={saveBtnState === 'success'}
+					disabled={actionBusy}
+					aria-busy={saveBtnState === 'loading'}
+					onclick={save}
+				>
+					{#if saveBtnState === 'loading'}
+						Saving…
+					{:else if saveBtnState === 'success'}
+						Saved
+					{:else}
+						Save piece
+					{/if}
+				</button>
+				<button
+					type="button"
+					class="btn"
+					class:btn-done={renderBtnState === 'success'}
+					disabled={actionBusy || !data.session?.user}
+					aria-busy={renderBtnState === 'loading'}
+					onclick={renderPng}
+				>
+					{#if renderBtnState === 'loading'}
+						Rendering…
+					{:else if renderBtnState === 'success'}
+						Rendered
+					{:else}
+						Render piece image (game)
+					{/if}
+				</button>
+				<button
+					type="button"
+					class="btn"
+					class:btn-done={printBtnState === 'success'}
+					disabled={actionBusy}
+					aria-busy={printBtnState === 'loading'}
+					onclick={renderPrintPng}
+				>
+					{#if printBtnState === 'loading'}
+						Preparing…
+					{:else if printBtnState === 'success'}
+						Downloaded
+					{:else}
+						Download print PNG (300 DPI)
+					{/if}
+				</button>
 			</div>
 		</div>
 
 		<div class="preview-col">
 			<h2>Preview</h2>
-			<div class="preview-wrap" bind:this={previewEl}>
-				<CardPreview
-					width={data.template.canvas_width}
-					height={data.template.canvas_height}
-					borderRadius={data.template.border_radius}
-					frameBorderWidth={data.template.frame_border_width ?? 0}
-					frameBorderColor={data.template.frame_border_color ?? '#000000'}
-					background={parseBackground(data.template.background as Json)}
-					layers={parsedLayers}
-					{fieldValues}
-					fieldStyles={pieceStyles}
-					{mediaUrls}
-				/>
+			<div class="preview-chrome">
+				<div class="preview-export-root" bind:this={previewEl}>
+					<CardPreview
+						width={data.template.canvas_width}
+						height={data.template.canvas_height}
+						borderRadius={data.template.border_radius}
+						frameBorderWidth={data.template.frame_border_width ?? 0}
+						frameBorderColor={data.template.frame_border_color ?? '#000000'}
+						background={parseBackground(data.template.background as Json)}
+						layers={parsedLayers}
+						{fieldValues}
+						fieldStyles={pieceStyles}
+						{mediaUrls}
+						flattenLayout={true}
+					/>
+				</div>
 			</div>
 		</div>
 	</div>
@@ -531,15 +603,32 @@
 		color: #fff;
 		border-color: transparent;
 	}
+	.btn.primary.btn-done {
+		background: #15803d;
+	}
+	.btn.btn-done:not(.primary) {
+		border-color: #22c55e;
+		color: #86efac;
+		background: rgba(34, 197, 94, 0.12);
+	}
+	.btn:disabled {
+		opacity: 0.65;
+		cursor: not-allowed;
+	}
 	.actions {
 		margin: 1rem 0;
 	}
-	.preview-wrap {
+	.preview-chrome {
 		display: inline-block;
 		padding: 16px;
 		border-radius: 8px;
 		background: repeating-conic-gradient(#1a1a1a 0% 25%, #242424 0% 50%) 50% / 20px 20px;
 		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+	}
+	.preview-export-root {
+		display: inline-block;
+		vertical-align: top;
+		line-height: 0;
 	}
 	.err {
 		color: #f87171;
