@@ -102,7 +102,7 @@
 
 	function deleteSelectionFromCanvasMenu() {
 		const s = get(game);
-		if (s.selectedIds.size === 0 || s.editorTableSelected) return;
+		if (s.selectedIds.size === 0) return;
 		g.removePiecesForEditor([...s.selectedIds]);
 		commitHistory();
 		closeCanvasMenu();
@@ -196,8 +196,7 @@
 			...s,
 			pieces: [...s.pieces, ...newPieces],
 			nextPieceId: nextId,
-			selectedIds: new Set(newPieces.map((p) => p.id)),
-			editorTableSelected: false
+			selectedIds: new Set(newPieces.map((p) => p.id))
 		}));
 		commitHistory();
 	}
@@ -271,7 +270,8 @@
 			const st = get(game);
 			const json = piecesToGameDataJson(st.pieces, st.table, {
 				table_bg: st.assetBaseUrl ? st.tableBgFilename : undefined,
-				piece_color_palette: st.pieceColorPalette
+				piece_color_palette: st.pieceColorPalette,
+				editor_view: { zoom: st.zoom, pan_x: st.panX, pan_y: st.panY }
 			});
 			const { error } = await supabase
 				.from('custom_board_games')
@@ -335,7 +335,7 @@
 		}
 
 		if (meta && e.key.toLowerCase() === 'd') {
-			if (get(game).selectedIds.size === 0 || get(game).editorTableSelected) return;
+			if (get(game).selectedIds.size === 0) return;
 			e.preventDefault();
 			g.duplicateSelectedForEditor();
 			commitHistory();
@@ -349,7 +349,7 @@
 
 		if (e.key === 'Delete' || e.key === 'Backspace') {
 			const s = get(game);
-			if (s.selectedIds.size === 0 || s.editorTableSelected) return;
+			if (s.selectedIds.size === 0) return;
 			e.preventDefault();
 			g.removePiecesForEditor([...s.selectedIds]);
 			commitHistory();
@@ -469,7 +469,7 @@
 			<button
 				type="button"
 				class="secondary"
-				disabled={$game.selectedIds.size === 0 || $game.editorTableSelected}
+				disabled={$game.selectedIds.size === 0}
 				title="Duplicate selected pieces (⌘D / Ctrl+D)"
 				onclick={() => {
 					g.duplicateSelectedForEditor();

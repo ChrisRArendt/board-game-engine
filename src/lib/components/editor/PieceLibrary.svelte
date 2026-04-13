@@ -71,8 +71,11 @@
 				: Math.max(1, Math.min(500, Math.floor(Number(offset)) || 32));
 		const cols = Math.max(1, Math.min(99, Math.floor(gridCols) || 3));
 		const w = clientToWorld(e.clientX, e.clientY);
-		const baseX = w.x;
-		const baseY = w.y;
+		/** Ghost uses translate(-50%,-50%) — first piece top-left so its center matches the cursor. */
+		const pw = card.canvas_width;
+		const ph = card.canvas_height;
+		const baseX = w.x - pw / 2;
+		const baseY = w.y - ph / 2;
 		onDropCard(card, {
 			quantity: q,
 			layout,

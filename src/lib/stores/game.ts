@@ -57,8 +57,6 @@ export interface GameState {
 	cameraY: number;
 	textRegions: Record<string, string>;
 	nextPieceId: number;
-	/** Board editor: table surface is selected (vs piece selection). Mutually exclusive with non-empty selection. */
-	editorTableSelected: boolean;
 	shiftDown: boolean;
 	selectionBox: null | { x: number; y: number; w: number; h: number };
 	selectingBox: boolean;
@@ -114,7 +112,6 @@ function initialState(): GameState {
 			textregion_3: '00'
 		},
 		nextPieceId: 0,
-		editorTableSelected: false,
 		shiftDown: false,
 		selectionBox: null,
 		selectingBox: false,
@@ -199,6 +196,22 @@ export function loadGameData(
 			json.piece_color_palette && json.piece_color_palette.length > 0
 				? [...json.piece_color_palette]
 				: [...DEFAULT_PIECE_COLOR_PALETTE];
+		const useEditorView = opts?.stripEditorOnly !== true;
+		const ev = json.editor_view;
+		let zoom = ZOOM_DEFAULT;
+		let panX = 0;
+		let panY = 0;
+		if (useEditorView && ev && typeof ev === 'object') {
+			if (typeof ev.zoom === 'number' && Number.isFinite(ev.zoom)) {
+				zoom = clampZoom(ev.zoom);
+			}
+			if (typeof ev.pan_x === 'number' && Number.isFinite(ev.pan_x)) {
+				panX = ev.pan_x;
+			}
+			if (typeof ev.pan_y === 'number' && Number.isFinite(ev.pan_y)) {
+				panY = ev.pan_y;
+			}
+		}
 		return {
 			...s,
 			curGame,
@@ -211,12 +224,11 @@ export function loadGameData(
 			nextPieceId: nextId,
 			selectedIds: new Set(),
 			remoteSelection: {},
-			editorTableSelected: false,
 			cameraX: vp.w / 2,
 			cameraY: vp.h / 2,
-			panX: 0,
-			panY: 0,
-			zoom: ZOOM_DEFAULT,
+			panX,
+			panY,
+			zoom,
 			loaded: true,
 			spacePanHeld: false,
 			panPointerStart: null,
@@ -438,7 +450,7 @@ export function selectPiece(id: number) {
 		if (!p || !hasAttr(p, 'select')) return s;
 		const selectedIds = new Set(s.selectedIds);
 		selectedIds.add(id);
-		return { ...s, selectedIds, editorTableSelected: false };
+		return { ...s, selectedIds };
 	});
 }
 
@@ -456,22 +468,12 @@ export function deselectAll() {
 		for (const id of s.selectedIds) {
 			emitGame?.('piece_deselect', { id });
 		}
-		return { ...s, selectedIds: new Set(), editorTableSelected: false };
+		return { ...s, selectedIds: new Set() };
 	});
 }
 
-/** Board editor: select the table surface (clears piece selection). */
 export function setPieceColorPalette(colors: string[]) {
 	game.update((s) => ({ ...s, pieceColorPalette: [...colors] }));
-}
-
-export function selectEditorTable() {
-	game.update((s) => {
-		for (const id of s.selectedIds) {
-			emitGame?.('piece_deselect', { id });
-		}
-		return { ...s, selectedIds: new Set(), editorTableSelected: true };
-	});
 }
 
 export function toggleSelect(id: number) {
@@ -481,7 +483,7 @@ export function toggleSelect(id: number) {
 		const selectedIds = new Set(s.selectedIds);
 		if (selectedIds.has(id)) selectedIds.delete(id);
 		else selectedIds.add(id);
-		return { ...s, selectedIds, editorTableSelected: false };
+		return { ...s, selectedIds };
 	});
 }
 
@@ -508,7 +510,7 @@ export function clickSelect(id: number, shift: boolean) {
 				emitGame?.('piece_select', { id });
 			}
 		}
-		return { ...s, selectedIds, editorTableSelected: false };
+		return { ...s, selectedIds };
 	});
 }
 
@@ -555,8 +557,7 @@ export function addPieceInstance(p: PieceInstance) {
 			...s,
 			pieces: [...s.pieces, p],
 			nextPieceId: nextId,
-			selectedIds: sel,
-			editorTableSelected: false
+			selectedIds: sel
 		};
 	});
 }
@@ -616,8 +617,7 @@ export function duplicatePieceForEditor(id: number): number | null {
 			...s,
 			pieces: [...s.pieces, np],
 			nextPieceId: s.nextPieceId + 1,
-			selectedIds: new Set([nid]),
-			editorTableSelected: false
+			selectedIds: new Set([nid])
 		};
 	});
 	return newId;
@@ -651,8 +651,7 @@ export function duplicateSelectedForEditor(): void {
 			...s,
 			pieces: newPieces,
 			nextPieceId: nextId,
-			selectedIds: new Set(newIds),
-			editorTableSelected: false
+			selectedIds: new Set(newIds)
 		};
 	});
 }
@@ -950,8 +949,7 @@ export function startSelectionBox(x: number, y: number) {
 		...s,
 		selectingBox: true,
 		selectionBox: { x, y, w: 0, h: 0 },
-		selectBoxStartItems: new Set(s.selectedIds),
-		editorTableSelected: false
+		selectBoxStartItems: new Set(s.selectedIds)
 	}));
 }
 
@@ -989,7 +987,7 @@ export function updateSelectionBox(
 			}
 		}
 
-		return { ...s, selectionBox: selrect, selectedIds, editorTableSelected: false };
+		return { ...s, selectionBox: selrect, selectedIds };
 	});
 }
 
@@ -1126,8 +1124,7 @@ export function removePiecesForEditor(ids: number[]) {
 		return {
 			...s,
 			pieces: s.pieces.filter((p) => !idSet.has(p.id)),
-			selectedIds,
-			editorTableSelected: false
+			selectedIds
 		};
 	});
 }
@@ -1138,7 +1135,7 @@ export function selectAllPiecesForEditor() {
 		for (const p of s.pieces) {
 			if (hasAttr(p, 'select') && !p.hidden) selectedIds.add(p.id);
 		}
-		return { ...s, selectedIds, editorTableSelected: false };
+		return { ...s, selectedIds };
 	});
 }
 
@@ -1162,7 +1159,7 @@ export function selectPieceForEditor(id: number, shift: boolean) {
 			selectedIds.add(id);
 			emitGame?.('piece_select', { id });
 		}
-		return { ...s, selectedIds, editorTableSelected: false };
+		return { ...s, selectedIds };
 	});
 }
 
@@ -1398,7 +1395,6 @@ export function applyStoredGameSnapshot(
 		spacePanHeld: false,
 		panPointerStart: null,
 		handscroll: false,
-		editorTableSelected: false,
 		editorSnapGuides: null,
 		editorSnapToGrid: false,
 		editorGridSize: 20

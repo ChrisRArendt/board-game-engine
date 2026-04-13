@@ -71,8 +71,9 @@ export class EditorHistory {
 
 /** Strip editor-only fields from game JSON for runtime play (optional). */
 export function stripEditorOnlyFromGameJson(json: GameDataJson): GameDataJson {
+	const { editor_view: _view, ...withoutView } = json;
 	return {
-		...json,
+		...withoutView,
 		pieces: json.pieces.map((row) => {
 			const { editor_hidden, editor_locked, ...rest } = row as typeof row & {
 				editor_hidden?: boolean;

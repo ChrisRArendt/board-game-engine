@@ -28,11 +28,11 @@
 	}
 
 	$: pieceSel =
-		!$game.editorTableSelected && $game.selectedIds.size === 1
+		$game.selectedIds.size === 1
 			? ($game.pieces.find((p) => $game.selectedIds.has(p.id)) ?? null)
 			: null;
 	$: pieceCardId = pieceSel ? cardInstanceIdFromPieceBg(pieceSel.bg) : null;
-	$: multiSel = !$game.editorTableSelected && $game.selectedIds.size > 1;
+	$: multiSel = $game.selectedIds.size > 1;
 
 	/** Legacy table image not linked to `game_media` — still show preview. */
 	$: tableFallbackThumb =
@@ -42,8 +42,8 @@
 </script>
 
 <div class="inspector">
-	{#if $game.editorTableSelected}
-		<h4>Table</h4>
+	{#if $game.selectedIds.size === 0}
+		<h4>Table &amp; board</h4>
 		<div class="props">
 			<label class="row">
 				<span>Width</span>
@@ -132,7 +132,7 @@
 			}}
 		/>
 	{:else}
-		<p class="muted">Click the table or a piece. Use the toolbar for zoom and grid.</p>
+		<p class="muted">Clear selection (click empty space or Escape) for table settings, or pick a piece.</p>
 	{/if}
 </div>
 

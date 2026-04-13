@@ -36,6 +36,13 @@ export interface PieceData {
 	editor_locked?: boolean;
 }
 
+/** Board editor only: last canvas zoom/pan (CSS px in viewport space). Not used in play. */
+export interface EditorViewJson {
+	zoom: number;
+	pan_x: number;
+	pan_y: number;
+}
+
 export interface GameDataJson {
 	table: { size: TableSize };
 	pieces: PieceData[];
@@ -43,6 +50,8 @@ export interface GameDataJson {
 	table_bg?: string;
 	/** Shared swatches for piece background colors in the editor (and optional quick-pick in play). */
 	piece_color_palette?: string[];
+	/** Board editor: restore zoom/pan when reopening the editor. Omitted in play exports. */
+	editor_view?: EditorViewJson;
 }
 
 /** Default palette when `piece_color_palette` is missing from game data. */

@@ -259,12 +259,16 @@
 					g.startPanPointer(clientX, clientY);
 					return;
 				}
-				if (shift) {
+				/** Board editor: drag on the table = marquee (RTS-style). Hold Space to pan instead. Shift = add to current selection. */
+				if (editorMode) {
+					if (!shift) {
+						g.deselectAll();
+					}
 					g.startSelectionBox(clientX, clientY);
 					return;
 				}
-				if (editorMode) {
-					g.selectEditorTable();
+				if (shift) {
+					g.startSelectionBox(clientX, clientY);
 					return;
 				}
 				g.deselectAll();
@@ -296,7 +300,8 @@
 			getShift: () => get(game).shiftDown,
 			getMoveDrag: () => get(game).moveDrag != null,
 			getPanPointerActive: () => get(game).panPointerStart != null,
-			getSelectingBox: () => get(game).selectingBox
+			getSelectingBox: () => get(game).selectingBox,
+			getEditorMode: () => editorMode
 		});
 		pointerEngine.attachWindowListeners();
 
@@ -324,13 +329,20 @@
 		if (target.closest('.table')) return;
 		if (target.closest('[data-piece-id]')) return;
 		if (target.closest('.textregion')) return;
+		if (target.closest('.zoom-hud')) return;
+		if (target.closest('.editor-resize-layer')) return;
 		if (e.pointerType === 'touch') {
 			pointerEngine?.handlePointerDown(e, { kind: 'viewport' });
 			return;
 		}
 		const st = get(game);
-		if (!st.spacePanHeld) return;
-		pointerEngine?.handlePointerDown(e, { kind: 'viewport' });
+		if (st.spacePanHeld) {
+			pointerEngine?.handlePointerDown(e, { kind: 'viewport' });
+			return;
+		}
+		if (editorMode && (e.pointerType === 'mouse' || e.pointerType === 'pen')) {
+			pointerEngine?.handlePointerDown(e, { kind: 'viewport' });
+		}
 	}
 
 	function onTablePointerDown(e: PointerEvent) {
@@ -415,7 +427,7 @@
 		: `/data/${$game.curGame}/images/table-bg.jpg`;
 	/** Single selected piece in board editor — show handles (disabled when locked so state is obvious). */
 	$: editorResizeTarget =
-		editorMode && !$game.editorTableSelected && $game.selectedIds.size === 1
+		editorMode && $game.selectedIds.size === 1
 			? $game.pieces.find((p) => $game.selectedIds.has(p.id)) ?? null
 			: null;
 	$: viewportCursor = replayMode
@@ -452,7 +464,6 @@
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class="table"
-				class:table-selected={editorMode && $game.editorTableSelected}
 				bind:this={tableEl}
 				style:width="{$game.table.w}px"
 				style:height="{$game.table.h}px"
@@ -586,28 +597,6 @@
 				</div>
 			{/if}
 
-			{#if editorMode && $game.editorTableSelected}
-				<div class="editor-resize-layer editor-table-handles" style:z-index="999998">
-					<ResizeHandles
-						x={0}
-						y={0}
-						w={$game.table.w}
-						h={$game.table.h}
-						zoomScale={zm}
-						originLocked={true}
-						onResize={(next, _kind, _e) => {
-							g.game.update((s) => ({
-								...s,
-								table: {
-									w: Math.max(500, Math.round(next.w)),
-									h: Math.max(500, Math.round(next.h))
-								}
-							}));
-						}}
-					/>
-				</div>
-			{/if}
-
 			{#if !editorMode}
 				<!-- Other players’ zones: on top of pieces so their area obscures hidden tokens for everyone else. -->
 				<div class="user-stashes user-stashes-others" aria-hidden="true">
@@ -657,7 +646,7 @@
 	</div>
 
 	{#if $game.selectionBox && $game.selectingBox}
-		<SelectionBox rect={$game.selectionBox} />
+		<SelectionBox rect={$game.selectionBox} zoom={$game.zoom} />
 	{/if}
 
 	<button
@@ -722,9 +711,6 @@
 		z-index: 0;
 		background-repeat: no-repeat;
 		background-size: cover;
-	}
-	.table.table-selected {
-		box-shadow: inset 0 0 0 2px var(--editor-selection, #3b82f6);
 	}
 	.user-stashes {
 		position: absolute;
