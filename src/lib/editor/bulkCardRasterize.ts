@@ -14,6 +14,9 @@ export type TemplateRow = {
 	border_radius: number;
 	background: Json;
 	layers: Json;
+	/** Inset frame; omitted treated as 0 / #000000 */
+	frame_border_width?: number;
+	frame_border_color?: string;
 };
 
 export async function rasterizeCardInstanceToBlob(
@@ -37,6 +40,8 @@ export async function rasterizeCardInstanceToBlob(
 			width: template.canvas_width,
 			height: template.canvas_height,
 			borderRadius: template.border_radius,
+			frameBorderWidth: template.frame_border_width ?? 0,
+			frameBorderColor: template.frame_border_color ?? '#000000',
 			background: parseBackground(template.background),
 			layers: parseLayers(template.layers),
 			fieldValues,

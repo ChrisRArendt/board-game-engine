@@ -333,6 +333,8 @@
 					width={data.template.canvas_width}
 					height={data.template.canvas_height}
 					borderRadius={data.template.border_radius}
+					frameBorderWidth={data.template.frame_border_width ?? 0}
+					frameBorderColor={data.template.frame_border_color ?? '#000000'}
 					background={parseBackground(data.template.background as Json)}
 					layers={parsedLayers}
 					{fieldValues}

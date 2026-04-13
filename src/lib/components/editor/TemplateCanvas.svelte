@@ -6,6 +6,8 @@
 	export let canvasWidth: number;
 	export let canvasHeight: number;
 	export let borderRadius: number;
+	export let frameBorderWidth = 0;
+	export let frameBorderColor = '#000000';
 	export let background: CardBackground;
 	export let layers: CardLayer[];
 	export let selectedId: string | null;
@@ -87,6 +89,8 @@
 						width={canvasWidth}
 						height={canvasHeight}
 						borderRadius={borderRadius}
+						frameBorderWidth={frameBorderWidth}
+						frameBorderColor={frameBorderColor}
 						{background}
 						{layers}
 						fieldValues={fieldPreview}

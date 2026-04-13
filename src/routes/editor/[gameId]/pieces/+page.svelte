@@ -90,6 +90,8 @@
 						canvas_width: tmpl.canvas_width,
 						canvas_height: tmpl.canvas_height,
 						border_radius: tmpl.border_radius,
+						frame_border_width: tmpl.frame_border_width,
+						frame_border_color: tmpl.frame_border_color,
 						background: tmpl.background,
 						layers: tmpl.layers
 					},
@@ -138,6 +140,8 @@
 						canvas_width: tmpl.canvas_width,
 						canvas_height: tmpl.canvas_height,
 						border_radius: tmpl.border_radius,
+						frame_border_width: tmpl.frame_border_width,
+						frame_border_color: tmpl.frame_border_color,
 						background: tmpl.background,
 						layers: tmpl.layers
 					},

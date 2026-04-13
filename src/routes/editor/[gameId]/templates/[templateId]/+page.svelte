@@ -30,6 +30,8 @@
 	let canvasW = $state(data.template.canvas_width);
 	let canvasH = $state(data.template.canvas_height);
 	let borderR = $state(data.template.border_radius);
+	let frameW = $state(data.template.frame_border_width ?? 0);
+	let frameColor = $state(data.template.frame_border_color ?? '#000000');
 	const initialLayers = parseLayers(data.template.layers as Json);
 	let background = $state(parseBackground(data.template.background as Json));
 	let layers = $state(initialLayers);
@@ -52,6 +54,23 @@
 		if (!browser) return;
 		void data.game.id;
 		void loadMedia();
+	});
+
+	let lastTemplateId = $state(data.template.id);
+	$effect(() => {
+		const id = data.template.id;
+		if (id === lastTemplateId) return;
+		lastTemplateId = id;
+		name = data.template.name;
+		canvasW = data.template.canvas_width;
+		canvasH = data.template.canvas_height;
+		borderR = data.template.border_radius;
+		frameW = data.template.frame_border_width ?? 0;
+		frameColor = data.template.frame_border_color ?? '#000000';
+		const parsed = parseLayers(data.template.layers as Json);
+		layers = parsed;
+		background = parseBackground(data.template.background as Json);
+		selectedId = parsed[0]?.id ?? null;
 	});
 
 	function selectedLayer(): CardLayer | null {
@@ -78,6 +97,8 @@
 					canvas_width: canvasW,
 					canvas_height: canvasH,
 					border_radius: borderR,
+					frame_border_width: Math.max(0, Math.min(64, Math.round(frameW))),
+					frame_border_color: frameColor.trim() || '#000000',
 					background: background as unknown as Json,
 					layers: layers as unknown as Json,
 					updated_at: new Date().toISOString()
@@ -303,6 +324,47 @@
 				{/if}
 			</section>
 
+			<section class="frame-panel" aria-labelledby="frame-heading">
+				<h3 id="frame-heading" class="card-bg-heading">Frame border</h3>
+				<p class="card-bg-desc">
+					Drawn inside the card size (content area shrinks). Uses the same corner radius as the card.
+				</p>
+				<div class="frame-presets">
+					<button
+						type="button"
+						class="preset"
+						onclick={() => {
+							frameW = 0;
+							frameColor = '#000000';
+						}}>None</button
+					>
+					<button
+						type="button"
+						class="preset"
+						onclick={() => {
+							frameW = 8;
+							frameColor = '#000000';
+						}}>MTG (black)</button
+					>
+					<button
+						type="button"
+						class="preset"
+						onclick={() => {
+							frameW = 8;
+							frameColor = '#ffcb05';
+						}}>Pokémon (yellow)</button
+					>
+				</div>
+				<label class="frame-row">
+					<span>Thickness (px)</span>
+					<input type="number" bind:value={frameW} min="0" max="64" step="1" />
+				</label>
+				<div class="card-bg-block">
+					<span class="mini-label">Color</span>
+					<ColorPicker value={frameColor} onValueChange={(c) => (frameColor = c)} />
+				</div>
+			</section>
+
 			<div class="add">
 				<span>Add layer</span>
 				<button type="button" onclick={() => addLayer('text')}>Text</button>
@@ -339,6 +401,8 @@
 			canvasWidth={canvasW}
 			canvasHeight={canvasH}
 			borderRadius={borderR}
+			frameBorderWidth={frameW}
+			frameBorderColor={frameColor}
 			{background}
 			{layers}
 			{selectedId}
@@ -489,6 +553,42 @@
 		letter-spacing: 0.04em;
 		color: var(--color-text-muted);
 		margin-bottom: 6px;
+	}
+	.frame-panel {
+		padding-bottom: 14px;
+		margin-bottom: 14px;
+		border-bottom: 1px solid var(--color-border);
+	}
+	.frame-presets {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-bottom: 12px;
+	}
+	.frame-presets .preset {
+		padding: 6px 8px;
+		border-radius: 4px;
+		border: 1px solid var(--color-border);
+		background: var(--color-bg);
+		color: inherit;
+		cursor: pointer;
+		font-size: 11px;
+	}
+	.frame-row {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-bottom: 12px;
+		font-size: 12px;
+		color: var(--color-text-muted);
+	}
+	.frame-row input {
+		max-width: 96px;
+		padding: 6px 8px;
+		border-radius: 6px;
+		border: 1px solid var(--color-border);
+		background: var(--color-bg);
+		color: inherit;
 	}
 	.main {
 		flex: 1;

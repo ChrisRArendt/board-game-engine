@@ -13,6 +13,9 @@
 		width: number;
 		height: number;
 		borderRadius?: number;
+		/** Inset frame border (px); drawn inside width×height (box-sizing border-box). */
+		frameBorderWidth?: number;
+		frameBorderColor?: string;
 		background: CardBackground;
 		layers: CardLayer[];
 		/** fieldName -> string value for bound fields */
@@ -31,6 +34,8 @@
 		width,
 		height,
 		borderRadius = 0,
+		frameBorderWidth = 0,
+		frameBorderColor = '#000000',
 		background,
 		layers,
 		fieldValues = {},
@@ -83,6 +88,9 @@
 		style:width="{width}px"
 		style:height="{height}px"
 		style:border-radius="{borderRadius}px"
+		style:border={frameBorderWidth > 0
+			? `${frameBorderWidth}px solid ${frameBorderColor}`
+			: 'none'}
 		style:background={cardFaceBackgroundCss(background, mediaUrls)}
 	>
 		{#each sorted as L (L.id)}

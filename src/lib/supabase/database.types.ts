@@ -219,6 +219,8 @@ export interface Database {
 					canvas_width: number;
 					canvas_height: number;
 					border_radius: number;
+					frame_border_width: number;
+					frame_border_color: string;
 					background: Json;
 					layers: Json;
 					created_at: string;
@@ -231,6 +233,8 @@ export interface Database {
 					canvas_width: number;
 					canvas_height: number;
 					border_radius?: number;
+					frame_border_width?: number;
+					frame_border_color?: string;
 					background?: Json;
 					layers?: Json;
 					created_at?: string;
@@ -243,6 +247,8 @@ export interface Database {
 					canvas_width?: number;
 					canvas_height?: number;
 					border_radius?: number;
+					frame_border_width?: number;
+					frame_border_color?: string;
 					background?: Json;
 					layers?: Json;
 					created_at?: string;
