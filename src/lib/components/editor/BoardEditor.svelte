@@ -199,6 +199,8 @@
 			baseY: number;
 			spacingMode: PlacementSpacingMode;
 			gridCols?: number;
+			/** Face-up (front) vs face-down when the card has a back. */
+			faceUp?: boolean;
 		}
 	) {
 		if (!card.rendered_image_path) return;
@@ -216,6 +218,8 @@
 			cols:
 				opts.layout === 'grid' || opts.layout === 'honeycomb' ? opts.gridCols : undefined
 		});
+		const faceUp = opts.faceUp !== false;
+		const flipped = card.has_back ? !faceUp : false;
 		let nextId = st.nextPieceId;
 		let z = maxZIndex(st.pieces);
 		for (const w of st.widgets) z = Math.max(z, w.zIndex);
@@ -232,7 +236,7 @@
 				x: pos.x,
 				y: pos.y,
 				zIndex: z,
-				flipped: false,
+				flipped,
 				initial_size: { w: card.canvas_width, h: card.canvas_height }
 			});
 		}

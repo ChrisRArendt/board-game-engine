@@ -23,6 +23,8 @@
 			baseY: number;
 			spacingMode: PlacementSpacingMode;
 			gridCols?: number;
+			/** Face-up (front) vs face-down when the card has a back (flip). */
+			faceUp: boolean;
 		}
 	) => void;
 
@@ -65,7 +67,7 @@
 		const canvas = el?.closest?.('[data-board-editor-canvas]');
 		if (!canvas) return;
 		const q = Math.max(1, Math.min(99, Math.floor(quantity) || 1));
-		const { layout, spacingMode, cols, offset } = get(arrangementPrefs);
+		const { layout, spacingMode, cols, offset, arrangeFaceUp } = get(arrangementPrefs);
 		const off =
 			spacingMode === 'separate'
 				? Math.max(0, Math.min(500, Number(offset) || 0))
@@ -84,7 +86,8 @@
 			baseX,
 			baseY,
 			spacingMode,
-			gridCols: layout === 'grid' || layout === 'honeycomb' ? c : undefined
+			gridCols: layout === 'grid' || layout === 'honeycomb' ? c : undefined,
+			faceUp: arrangeFaceUp
 		});
 	}
 </script>
@@ -107,7 +110,7 @@
 	{/if}
 
 	<div class="defaults">
-		<ArrangementControls showQuantity bind:quantity showApplyButton={false} />
+		<ArrangementControls showQuantity bind:quantity showApplyButton={false} showFaceControl />
 	</div>
 
 	{#if cardsForBoard.length}

@@ -9,6 +9,8 @@
 	export let showQuantity = false;
 
 	export let showApplyButton = true;
+	/** Piece library: show Face up/down without an Apply button (preference used when dropping cards). */
+	export let showFaceControl = false;
 	/** In-game context menu: small/medium/large gap presets (30 / 90 / 270 px) instead of a numeric offset. */
 	export let gapPresetMode = false;
 	/** Tighter padding and type for context menu. */
@@ -17,7 +19,7 @@
 	export let useSelectionUnlockedHint = false;
 	export let unlockedCount = 0;
 	export let selectedCount = 0;
-	/** Selected pieces with the flip attribute — show Face row when non-zero and applying. */
+	/** Selected pieces with the flip attribute — used for optional hints when no flip-capable selection. */
 	export let flipCapableCount = 0;
 
 	export let onAfterApply: (() => void) | undefined = undefined;
@@ -305,7 +307,7 @@
 			/>
 		</label>
 	{/if}
-	{#if showApplyButton && flipCapableCount > 0}
+	{#if showApplyButton || showFaceControl}
 		<label class="row toggle-row">
 			<span>Face</span>
 			<div class="segmented" role="group" aria-label="Card face after arrange">
@@ -325,6 +327,11 @@
 				</button>
 			</div>
 		</label>
+		{#if showApplyButton && flipCapableCount === 0}
+			<p class="subhint">Only pieces with the flip attribute change face when arranged.</p>
+		{:else if showFaceControl}
+			<p class="subhint">For drops, only double-sided cards (with a back) use this.</p>
+		{/if}
 	{/if}
 	{#if showApplyButton}
 		<button
