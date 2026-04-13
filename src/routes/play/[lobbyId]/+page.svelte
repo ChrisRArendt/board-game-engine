@@ -394,14 +394,15 @@
 			} else if (data.customGame) {
 				g.loadGameData(data.customGame.gameData, {
 					curGame: data.lobby.game_key,
-					assetBaseUrl: data.customGame.assetBaseUrl
+					assetBaseUrl: data.customGame.assetBaseUrl,
+					stripEditorOnly: true
 				});
 				g.centerCamToVP();
 				await persistSnapshot();
 			} else {
 				const r = await fetch(`/data/${data.lobby.game_key}/pieces.json`);
 				const j = (await r.json()) as GameDataJson;
-				g.loadGameData(j);
+				g.loadGameData(j, { stripEditorOnly: true });
 				g.centerCamToVP();
 				await persistSnapshot();
 			}

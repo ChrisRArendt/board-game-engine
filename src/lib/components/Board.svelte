@@ -31,6 +31,10 @@
 	export let onOpenContextMenu: ((clientX: number, clientY: number) => void) | undefined = undefined;
 	/** Board layout editor: no stash/textregions, all pieces selectable, no realtime emits */
 	export let editorMode = false;
+	/** Editor: fill parent instead of 100vw/100vh */
+	export let embeddedEditor = false;
+	export let showGridOverlay = false;
+	export let gridSize = 20;
 
 	let viewportEl: HTMLDivElement | undefined;
 	let cameraEl: HTMLDivElement | undefined;
@@ -48,6 +52,55 @@
 	let zoomHudVisible = false;
 	let zoomHudTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastHudZoom = -1;
+
+	let rotDrag: {
+		pid: number;
+		startAngle: number;
+		startRot: number;
+		cx: number;
+		cy: number;
+	} | null = null;
+
+	function worldFromClient(clientX: number, clientY: number) {
+		const st = get(game);
+		return { x: (clientX - st.panX) / st.zoom, y: (clientY - st.panY) / st.zoom };
+	}
+
+	function onRotHandleDown(p: PieceInstance, e: PointerEvent) {
+		if (!editorMode || p.locked) return;
+		e.preventDefault();
+		e.stopPropagation();
+		const w = worldFromClient(e.clientX, e.clientY);
+		const cx = p.x + p.initial_size.w / 2;
+		const cy = p.y + p.initial_size.h / 2;
+		const startAngle = (Math.atan2(w.y - cy, w.x - cx) * 180) / Math.PI;
+		const startRot = p.rotation ?? 0;
+		rotDrag = { pid: p.id, startAngle, startRot, cx, cy };
+		window.addEventListener('pointermove', onRotMove);
+		window.addEventListener('pointerup', onRotUp);
+	}
+
+	function onRotMove(e: PointerEvent) {
+		const rd = rotDrag;
+		if (!rd) return;
+		const w = worldFromClient(e.clientX, e.clientY);
+		const angleNow = (Math.atan2(w.y - rd.cy, w.x - rd.cx) * 180) / Math.PI;
+		let delta = angleNow - rd.startAngle;
+		while (delta > 180) delta -= 360;
+		while (delta < -180) delta += 360;
+		let newRot = rd.startRot + delta;
+		if (e.shiftKey) newRot = Math.round(newRot / 45) * 45;
+		newRot = ((newRot % 360) + 360) % 360;
+		const cur = get(game).pieces.find((x) => x.id === rd.pid);
+		if (!cur) return;
+		g.replacePieceInstance({ ...cur, rotation: newRot });
+	}
+
+	function onRotUp() {
+		rotDrag = null;
+		window.removeEventListener('pointermove', onRotMove);
+		window.removeEventListener('pointerup', onRotUp);
+	}
 
 	function prefersReducedMotion(): boolean {
 		if (!browser || typeof matchMedia === 'undefined') return false;
@@ -360,7 +413,7 @@
 		: `/data/${$game.curGame}/images/table-bg.jpg`;
 	$: editorResizePiece =
 		editorMode && !$game.editorTableSelected && $game.selectedIds.size === 1
-			? $game.pieces.find((p) => $game.selectedIds.has(p.id)) ?? null
+			? $game.pieces.find((p) => $game.selectedIds.has(p.id) && !p.locked) ?? null
 			: null;
 	$: viewportCursor = replayMode
 		? 'default'
@@ -376,12 +429,14 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="viewport"
+	class:embedded-editor={embeddedEditor}
 	class:space-pan={$game.spacePanHeld}
 	class:handscroll={$game.handscroll}
 	class:replay-mode={replayMode}
 	class:dragging-piece={$game.moveDrag != null}
 	style:cursor={viewportCursor}
 	bind:this={viewportEl}
+	data-board-editor-canvas
 	onpointerdown={onViewportPointerDown}
 >
 	<div class="game" class:will-move={$game.handscroll || $game.panPointerStart != null} style:transform="translate3d({$game.panX}px, {$game.panY}px, 0)">
@@ -400,7 +455,33 @@
 				style:height="{$game.table.h}px"
 				style:background-image="url({bgTable})"
 				onpointerdown={onTablePointerDown}
-			></div>
+			>
+				{#if editorMode && showGridOverlay}
+					<svg
+						class="grid-overlay"
+						width={$game.table.w}
+						height={$game.table.h}
+						aria-hidden="true"
+					>
+						<defs>
+							<pattern
+								id="bedGrid"
+								width={gridSize}
+								height={gridSize}
+								patternUnits="userSpaceOnUse"
+							>
+								<path
+									d="M {gridSize} 0 L 0 0 0 {gridSize}"
+									fill="none"
+									stroke="rgba(255,255,255,0.08)"
+									stroke-width="1"
+								/>
+							</pattern>
+						</defs>
+						<rect width="100%" height="100%" fill="url(#bedGrid)" />
+					</svg>
+				{/if}
+			</div>
 
 			{#if !editorMode}
 				<!-- Your private zone: under pieces so you see your own tokens clearly on top. -->
@@ -422,26 +503,45 @@
 			{/if}
 
 			{#each $game.pieces as piece (piece.id)}
-				<Piece
-					{piece}
-					curGame={$game.curGame}
-					assetBaseUrl={$game.assetBaseUrl}
-					replayMode={replayMode}
-					faceHidden={editorMode
-						? false
-						: isPieceFaceHiddenFromPeers(piece, stashRoster, selfUserId, replayMode)}
-					selected={$game.selectedIds.has(piece.id)}
-					dragging={$game.moveDrag != null && $game.selectedIds.has(piece.id) && piece.attributes.includes('move')}
-					pressing={pressingPieceId === piece.id}
-					remoteColor={$game.remoteSelection[piece.id]}
-					onpointerdown={(e) => onPiecePointerDown(piece, e)}
-					onpiecedblclick={(id) => {
-						const piece = get(game).pieces.find((p) => p.id === id);
-						if (!piece || !canViewerSelectPiece(piece)) return;
-						onOpenViewer?.(id);
-					}}
-				/>
+				{#if !piece.hidden}
+					<Piece
+						{piece}
+						curGame={$game.curGame}
+						assetBaseUrl={$game.assetBaseUrl}
+						replayMode={replayMode}
+						editorMode={editorMode}
+						faceHidden={editorMode
+							? false
+							: isPieceFaceHiddenFromPeers(piece, stashRoster, selfUserId, replayMode)}
+						selected={$game.selectedIds.has(piece.id)}
+						dragging={$game.moveDrag != null && $game.selectedIds.has(piece.id) && piece.attributes.includes('move')}
+						pressing={pressingPieceId === piece.id}
+						remoteColor={$game.remoteSelection[piece.id]}
+						onpointerdown={(e) => onPiecePointerDown(piece, e)}
+						onpiecedblclick={(id) => {
+							const piece = get(game).pieces.find((p) => p.id === id);
+							if (!piece || !canViewerSelectPiece(piece)) return;
+							onOpenViewer?.(id);
+						}}
+					/>
+				{/if}
 			{/each}
+
+			{#if editorMode && $game.editorSnapGuides && ($game.editorSnapGuides.verticals.length > 0 || $game.editorSnapGuides.horizontals.length > 0)}
+				<svg
+					class="snap-guides"
+					width={$game.table.w}
+					height={$game.table.h}
+					aria-hidden="true"
+				>
+					{#each $game.editorSnapGuides.verticals as x}
+						<line x1={x} y1={0} x2={x} y2={$game.table.h} stroke="#ec4899" stroke-width="1" opacity="0.85" />
+					{/each}
+					{#each $game.editorSnapGuides.horizontals as y}
+						<line x1={0} y1={y} x2={$game.table.w} y2={y} stroke="#ec4899" stroke-width="1" opacity="0.85" />
+					{/each}
+				</svg>
+			{/if}
 
 			{#if editorMode && editorResizePiece}
 				<div class="editor-resize-layer" style:z-index={editorResizePiece.zIndex + 100000}>
@@ -463,6 +563,15 @@
 							});
 						}}
 					/>
+					<button
+						type="button"
+						class="rot-knob"
+						style:left="{editorResizePiece.x + editorResizePiece.initial_size.w / 2 - 10}px"
+						style:top="{editorResizePiece.y - 28}px"
+						style:z-index={editorResizePiece.zIndex + 100001}
+						aria-label="Rotate"
+						onpointerdown={(e) => onRotHandleDown(editorResizePiece!, e)}
+					></button>
 				</div>
 			{/if}
 
@@ -552,10 +661,17 @@
 </div>
 
 <style>
-	.viewport {
-		position: relative;
+	.viewport.embedded-editor {
+		width: 100%;
+		height: 100%;
+		min-height: 0;
+	}
+	.viewport:not(.embedded-editor) {
 		width: 100vw;
 		height: 100vh;
+	}
+	.viewport {
+		position: relative;
 		overflow: hidden;
 		touch-action: none;
 		z-index: 0;
@@ -575,6 +691,20 @@
 	}
 	.pieces-layer {
 		position: relative;
+	}
+	.grid-overlay {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		z-index: 1;
+	}
+	.snap-guides {
+		position: absolute;
+		left: 0;
+		top: 0;
+		pointer-events: none;
+		z-index: 999997;
+		overflow: visible;
 	}
 	.table {
 		position: absolute;
@@ -645,6 +775,20 @@
 	}
 	.editor-resize-layer :global(.h) {
 		pointer-events: auto;
+	}
+	.rot-knob {
+		position: absolute;
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		border: 2px solid var(--editor-selection, #3b82f6);
+		background: rgba(255, 255, 255, 0.95);
+		cursor: grab;
+		pointer-events: auto;
+		padding: 0;
+	}
+	.rot-knob:active {
+		cursor: grabbing;
 	}
 	.stash.top {
 		color: #fff;

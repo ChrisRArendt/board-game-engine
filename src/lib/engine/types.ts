@@ -5,12 +5,18 @@ export interface TableSize {
 	h: number;
 }
 
+export type PlacementLayout = 'stack' | 'grid' | 'honeycomb';
+
 export interface Placement {
 	coords?: { x: number; y: number };
 	count?: number;
 	cols?: number;
 	xstep?: number;
 	ystep?: number;
+	/** Editor: how multiple instances are laid out when placing from the library. */
+	layout?: PlacementLayout;
+	/** Spacing between instances (px); used with layout. */
+	offset?: number;
 }
 
 export interface PieceData {
@@ -22,6 +28,12 @@ export interface PieceData {
 	placement?: Placement;
 	initial_size: { w: number; h: number };
 	image_size?: { w: number; h: number };
+	/** Degrees clockwise; default 0. */
+	rotation?: number;
+	/** Editor-only: layer hidden on canvas (still in layer list). */
+	editor_hidden?: boolean;
+	/** Editor-only: cannot move/resize on canvas (can still edit in list/properties). */
+	editor_locked?: boolean;
 }
 
 export interface GameDataJson {
@@ -64,6 +76,12 @@ export interface PieceInstance {
 	flipped: boolean;
 	initial_size: { w: number; h: number };
 	image_size?: { w: number; h: number };
+	/** Degrees clockwise (CSS transform). */
+	rotation?: number;
+	/** Layer hidden on canvas in editor (still listed). */
+	hidden?: boolean;
+	/** Locked in editor: no move/resize from canvas. */
+	locked?: boolean;
 }
 
 export interface UserEntry {

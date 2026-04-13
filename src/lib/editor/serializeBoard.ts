@@ -19,6 +19,9 @@ export function piecesToGameDataJson(
 				image_size: p.image_size ? { ...p.image_size } : undefined
 			};
 			if (p.bg_color) row.bg_color = p.bg_color;
+			if (p.rotation !== undefined && p.rotation !== 0) row.rotation = p.rotation;
+			if (p.hidden) row.editor_hidden = true;
+			if (p.locked) row.editor_locked = true;
 			return row;
 		})
 	};

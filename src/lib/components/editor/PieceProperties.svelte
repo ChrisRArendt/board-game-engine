@@ -29,6 +29,65 @@
 
 {#if piece}
 	<div class="props">
+		<div class="row2">
+			<label class="row tight">
+				<span>X</span>
+				<input
+					type="number"
+					value={Math.round(piece.x)}
+					oninput={(e) =>
+						patch({ x: parseFloat((e.currentTarget as HTMLInputElement).value) || 0 })}
+				/>
+			</label>
+			<label class="row tight">
+				<span>Y</span>
+				<input
+					type="number"
+					value={Math.round(piece.y)}
+					oninput={(e) =>
+						patch({ y: parseFloat((e.currentTarget as HTMLInputElement).value) || 0 })}
+				/>
+			</label>
+		</div>
+		<label class="row">
+			<span>Z-index</span>
+			<input
+				type="number"
+				value={piece.zIndex}
+				oninput={(e) =>
+					patch({ zIndex: Math.round(parseFloat((e.currentTarget as HTMLInputElement).value) || 0) })}
+			/>
+		</label>
+		<label class="row">
+			<span>Rotation (°)</span>
+			<input
+				type="number"
+				value={piece.rotation ?? 0}
+				oninput={(e) => {
+					let v = parseFloat((e.currentTarget as HTMLInputElement).value) || 0;
+					v = ((v % 360) + 360) % 360;
+					patch({ rotation: v });
+				}}
+			/>
+		</label>
+		<div class="row2">
+			<label class="check">
+				<input
+					type="checkbox"
+					checked={piece.hidden === true}
+					onchange={() => patch({ hidden: !piece!.hidden })}
+				/>
+				<span>Hidden</span>
+			</label>
+			<label class="check">
+				<input
+					type="checkbox"
+					checked={piece.locked === true}
+					onchange={() => patch({ locked: !piece!.locked })}
+				/>
+				<span>Locked</span>
+			</label>
+		</div>
 		<label class="row">
 			<span>Class</span>
 			<input
@@ -157,5 +216,13 @@
 	.bg-picker {
 		display: flex;
 		align-items: center;
+	}
+	.row2 {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
+	}
+	.row.tight {
+		margin: 0;
 	}
 </style>

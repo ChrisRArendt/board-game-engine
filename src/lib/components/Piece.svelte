@@ -16,8 +16,10 @@
 	export let onpointerdown: ((e: PointerEvent) => void) | undefined = undefined;
 	/** Local-only enlarged viewer (double-click); not synced to other players */
 	export let onpiecedblclick: ((id: number) => void) | undefined = undefined;
+	export let editorMode = false;
 
 	$: canFlip = hasAttr(piece, 'flip');
+	$: rot = piece.rotation ?? 0;
 	$: bgUrl = assetBaseUrl
 		? `${assetBaseUrl}${piece.bg}`
 		: `/data/${curGame}/images/${piece.bg}`;
@@ -32,14 +34,16 @@
 	class:pressing
 	class:replay={replayMode}
 	class:face-hidden={faceHidden}
+	class:editor-locked={editorMode && piece.locked}
 	data-piece-id={piece.id}
 	title={faceHidden ? 'Hidden — private area' : undefined}
 	style:z-index={piece.zIndex}
 	style:width="{piece.initial_size.w}px"
 	style:height="{piece.initial_size.h}px"
+	style:transform-origin="center center"
 	style:transform={dragging
-		? `translate3d(${piece.x}px, ${piece.y}px, 0) scale(1.05)`
-		: `translate3d(${piece.x}px, ${piece.y}px, 0)`}
+		? `translate3d(${piece.x}px, ${piece.y}px, 0) rotate(${rot}deg) scale(1.05)`
+		: `translate3d(${piece.x}px, ${piece.y}px, 0) rotate(${rot}deg)`}
 	style:background-color={showFace && piece.bg_color ? piece.bg_color : undefined}
 	style:background-image={showFace ? `url(${bgUrl})` : undefined}
 	/* outline (not border): border shrinks content with border-box + background-clip: content-box */
@@ -62,6 +66,15 @@
 		onpiecedblclick?.(piece.id);
 	}}
 ></div>
+{#if editorMode && piece.locked}
+	<div
+		class="lock-badge"
+		style:left="{piece.x + piece.initial_size.w - 18}px"
+		style:top="{piece.y + 4}px"
+		style:z-index={piece.zIndex + 1}
+		aria-hidden="true"
+	>🔒</div>
+{/if}
 
 <style>
 	.piece {
@@ -87,6 +100,15 @@
 	}
 	.piece.replay {
 		pointer-events: none;
+	}
+	.lock-badge {
+		position: absolute;
+		font-size: 12px;
+		pointer-events: none;
+		filter: drop-shadow(0 0 2px #000);
+	}
+	.piece.editor-locked {
+		outline-style: dashed;
 	}
 	.piece.face-hidden {
 		background-image: repeating-linear-gradient(

@@ -3,6 +3,10 @@ import { shuffle } from './geometry';
 
 export function pieceFromData(data: PieceData, id: number, curGame: string, offset: { x: number; y: number }): PieceInstance {
 	const coords = data.placement?.coords ?? { x: 0, y: 0 };
+	const rot =
+		typeof data.rotation === 'number' && Number.isFinite(data.rotation) ? data.rotation : undefined;
+	const hidden = data.editor_hidden === true;
+	const locked = data.editor_locked === true;
 	return {
 		id,
 		bg: data.bg,
@@ -14,7 +18,10 @@ export function pieceFromData(data: PieceData, id: number, curGame: string, offs
 		zIndex: id,
 		flipped: false,
 		initial_size: { ...data.initial_size },
-		image_size: data.image_size ? { ...data.image_size } : undefined
+		image_size: data.image_size ? { ...data.image_size } : undefined,
+		...(rot !== undefined ? { rotation: rot } : {}),
+		...(hidden ? { hidden: true } : {}),
+		...(locked ? { locked: true } : {})
 	};
 }
 

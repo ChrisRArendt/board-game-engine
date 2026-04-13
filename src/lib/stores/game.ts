@@ -27,6 +27,13 @@ import {
 	type Rect,
 	ZOOM_DEFAULT
 } from '$lib/engine/geometry';
+import {
+	buildBoardSnapTargets,
+	mergeGuides,
+	snapBoardPiecePosition,
+	type BoardSnapGuides,
+	EMPTY_BOARD_GUIDES
+} from '$lib/editor/boardSnapGeometry';
 
 export interface GameState {
 	curGame: string;
@@ -74,6 +81,13 @@ export interface GameState {
 	zSorted: boolean;
 	edgePan: { x: number; y: number };
 	loaded: boolean;
+	/** Board editor: alignment snap while dragging pieces. */
+	editorSnapEnabled: boolean;
+	editorSnapThreshold: number;
+	editorSnapGuides: BoardSnapGuides | null;
+	/** Board editor: snap positions to grid when dragging. */
+	editorSnapToGrid: boolean;
+	editorGridSize: number;
 }
 
 function initialState(): GameState {
@@ -111,7 +125,12 @@ function initialState(): GameState {
 		moveDrag: null,
 		zSorted: false,
 		edgePan: { x: 0, y: 0 },
-		loaded: false
+		loaded: false,
+		editorSnapEnabled: false,
+		editorSnapThreshold: 8,
+		editorSnapGuides: null,
+		editorSnapToGrid: false,
+		editorGridSize: 20
 	};
 }
 
@@ -126,7 +145,7 @@ export const selectedPieces = derived(game, ($g) => $g.pieces.filter((p) => $g.s
 
 export function loadGameData(
 	json: GameDataJson,
-	opts?: { curGame?: string; assetBaseUrl?: string | null }
+	opts?: { curGame?: string; assetBaseUrl?: string | null; stripEditorOnly?: boolean }
 ) {
 	const curGame = opts?.curGame ?? 'bsg_1';
 	const assetBaseUrl = opts?.assetBaseUrl !== undefined ? opts.assetBaseUrl : null;
@@ -149,6 +168,14 @@ export function loadGameData(
 				};
 				const p = pieceFromData(piecedata as PieceData, nextId++, curGame, offset);
 				pieces.push(p);
+			}
+		}
+
+		const strip = opts?.stripEditorOnly === true;
+		if (strip) {
+			for (let i = 0; i < pieces.length; i++) {
+				const p = pieces[i];
+				pieces[i] = { ...p, hidden: undefined, locked: undefined };
 			}
 		}
 
@@ -179,7 +206,12 @@ export function loadGameData(
 			loaded: true,
 			spacePanHeld: false,
 			panPointerStart: null,
-			handscroll: false
+			handscroll: false,
+			editorSnapEnabled: false,
+			editorSnapThreshold: 8,
+			editorSnapGuides: null,
+			editorSnapToGrid: false,
+			editorGridSize: 20
 		};
 	});
 }
@@ -760,11 +792,28 @@ export function runShuffleStackToolbar() {
 	}
 }
 
+export function setEditorBoardSnap(enabled: boolean) {
+	game.update((s) => ({ ...s, editorSnapEnabled: enabled }));
+}
+
+export function setEditorSnapGuides(guides: BoardSnapGuides | null) {
+	game.update((s) => ({ ...s, editorSnapGuides: guides }));
+}
+
+export function setEditorGridSnap(enabled: boolean, gridSize?: number) {
+	game.update((s) => ({
+		...s,
+		editorSnapToGrid: enabled,
+		...(typeof gridSize === 'number' && gridSize > 0 ? { editorGridSize: gridSize } : {})
+	}));
+}
+
 export function startMoveDrag(pieceId: number, clientX: number, clientY: number, panX: number, panY: number) {
 	game.update((s) => {
 		const selected = s.pieces.filter((p) => s.selectedIds.has(p.id));
 		const canMove = selected.every((p) => hasAttr(p, 'move'));
 		if (!canMove) return s;
+		if (selected.some((p) => p.locked)) return s;
 
 		const elStarts = new Map<number, { x: number; y: number }>();
 		for (const p of selected) {
@@ -801,14 +850,46 @@ export function moveDragTo(clientX: number, clientY: number) {
 			if (!s.selectedIds.has(p.id) || !hasAttr(p, 'move')) return p;
 			const start = md.elStarts.get(p.id);
 			if (!start) return p;
-			const nx =
+			let nx =
 				start.x +
 				(clientX - s.panX - md.dragStartClientX + md.dragStartPanX) / z;
-			const ny =
+			let ny =
 				start.y +
 				(clientY - s.panY - md.dragStartClientY + md.dragStartPanY) / z;
+			if (s.editorSnapToGrid && s.editorGridSize > 0) {
+				const gs = s.editorGridSize;
+				nx = Math.round(nx / gs) * gs;
+				ny = Math.round(ny / gs) * gs;
+			}
 			return { ...p, x: nx, y: ny };
 		});
+
+		let mergedGuides: BoardSnapGuides = EMPTY_BOARD_GUIDES;
+		if (s.editorSnapEnabled && dragging.length > 0) {
+			const exclude = new Set(s.selectedIds);
+			const targets = buildBoardSnapTargets(s.table, pieces, exclude);
+			const primaryId = Math.min(...[...s.selectedIds]);
+			const primary = pieces.find((p) => p.id === primaryId);
+			if (primary && hasAttr(primary, 'move')) {
+				const snapped = snapBoardPiecePosition(
+					primary,
+					primary.x,
+					primary.y,
+					targets,
+					s.editorSnapThreshold
+				);
+				const dx = snapped.x - primary.x;
+				const dy = snapped.y - primary.y;
+				if (dx !== 0 || dy !== 0) {
+					pieces = pieces.map((p) =>
+						s.selectedIds.has(p.id) && hasAttr(p, 'move')
+							? { ...p, x: p.x + dx, y: p.y + dy }
+							: p
+					);
+				}
+				mergedGuides = mergeGuides(mergedGuides, snapped.guides);
+			}
+		}
 
 		let zSorted = s.zSorted;
 		if (!zSorted && dragging.length > 0) {
@@ -818,7 +899,12 @@ export function moveDragTo(clientX: number, clientY: number) {
 			zSorted = true;
 		}
 
-		return { ...s, pieces, zSorted };
+		return {
+			...s,
+			pieces,
+			zSorted,
+			editorSnapGuides: s.editorSnapEnabled ? mergedGuides : null
+		};
 	});
 	const zu = zUpdatesRef.map;
 	if (zu) {
@@ -829,7 +915,7 @@ export function moveDragTo(clientX: number, clientY: number) {
 }
 
 export function endMoveDrag() {
-	game.update((s) => ({ ...s, moveDrag: null, zSorted: false }));
+	game.update((s) => ({ ...s, moveDrag: null, zSorted: false, editorSnapGuides: null }));
 }
 
 export function cancelMoveDrag() {
@@ -841,7 +927,7 @@ export function cancelMoveDrag() {
 			if (!start || !s.selectedIds.has(p.id)) return p;
 			return { ...p, x: start.x, y: start.y };
 		});
-		return { ...s, pieces, moveDrag: null, zSorted: false };
+		return { ...s, pieces, moveDrag: null, zSorted: false, editorSnapGuides: null };
 	});
 }
 
@@ -1017,6 +1103,199 @@ export function getPieceById(id: number): PieceInstance | undefined {
 	return get(game).pieces.find((p) => p.id === id);
 }
 
+/** Board editor: remove pieces without destroy attribute check. */
+export function removePiecesForEditor(ids: number[]) {
+	const idSet = new Set(ids);
+	game.update((s) => {
+		const selectedIds = new Set(s.selectedIds);
+		for (const id of ids) selectedIds.delete(id);
+		return {
+			...s,
+			pieces: s.pieces.filter((p) => !idSet.has(p.id)),
+			selectedIds,
+			editorTableSelected: false
+		};
+	});
+}
+
+export function selectAllPiecesForEditor() {
+	game.update((s) => {
+		const selectedIds = new Set<number>();
+		for (const p of s.pieces) {
+			if (hasAttr(p, 'select') && !p.hidden) selectedIds.add(p.id);
+		}
+		return { ...s, selectedIds, editorTableSelected: false };
+	});
+}
+
+/** Layer list: select a piece even if hidden (always succeeds for editor). */
+export function selectPieceForEditor(id: number, shift: boolean) {
+	game.update((s) => {
+		const p = s.pieces.find((x) => x.id === id);
+		if (!p || !hasAttr(p, 'select')) return s;
+		const selectedIds = new Set(s.selectedIds);
+		if (shift) {
+			if (selectedIds.has(id)) {
+				selectedIds.delete(id);
+				emitGame?.('piece_deselect', { id });
+			} else {
+				selectedIds.add(id);
+				emitGame?.('piece_select', { id });
+			}
+		} else {
+			for (const oid of selectedIds) emitGame?.('piece_deselect', { id: oid });
+			selectedIds.clear();
+			selectedIds.add(id);
+			emitGame?.('piece_select', { id });
+		}
+		return { ...s, selectedIds, editorTableSelected: false };
+	});
+}
+
+export function nudgeSelectedPieces(dx: number, dy: number) {
+	game.update((s) => {
+		const pieces = s.pieces.map((p) =>
+			s.selectedIds.has(p.id) && hasAttr(p, 'move') && !p.locked
+				? { ...p, x: p.x + dx, y: p.y + dy }
+				: p
+		);
+		return { ...s, pieces };
+	});
+}
+
+export function togglePieceHidden(id: number) {
+	game.update((s) => ({
+		...s,
+		pieces: s.pieces.map((p) => (p.id === id ? { ...p, hidden: !p.hidden } : p))
+	}));
+}
+
+export function togglePieceLocked(id: number) {
+	game.update((s) => ({
+		...s,
+		pieces: s.pieces.map((p) => (p.id === id ? { ...p, locked: !p.locked } : p))
+	}));
+}
+
+/** Ordered list bottom→top (same as LayerPanel z-sorted ascending). */
+export function reorderPiecesFromOrderedList(ordered: PieceInstance[]) {
+	game.update((s) => {
+		const byId = new Map(s.pieces.map((p) => [p.id, p]));
+		const next: PieceInstance[] = [];
+		for (let i = 0; i < ordered.length; i++) {
+			const p = byId.get(ordered[i].id);
+			if (!p) continue;
+			next.push({ ...p, zIndex: i });
+		}
+		return { ...s, pieces: next };
+	});
+}
+
+export function bringForward(id: number) {
+	game.update((s) => {
+		const ord = [...s.pieces].sort((a, b) => a.zIndex - b.zIndex);
+		const idx = ord.findIndex((p) => p.id === id);
+		if (idx < 0 || idx >= ord.length - 1) return s;
+		const a = ord[idx];
+		const b = ord[idx + 1];
+		const za = a.zIndex;
+		const zb = b.zIndex;
+		return {
+			...s,
+			pieces: s.pieces.map((p) => {
+				if (p.id === a.id) return { ...p, zIndex: zb };
+				if (p.id === b.id) return { ...p, zIndex: za };
+				return p;
+			})
+		};
+	});
+}
+
+export function sendBackward(id: number) {
+	game.update((s) => {
+		const ord = [...s.pieces].sort((a, b) => a.zIndex - b.zIndex);
+		const idx = ord.findIndex((p) => p.id === id);
+		if (idx <= 0) return s;
+		const a = ord[idx];
+		const b = ord[idx - 1];
+		const za = a.zIndex;
+		const zb = b.zIndex;
+		return {
+			...s,
+			pieces: s.pieces.map((p) => {
+				if (p.id === a.id) return { ...p, zIndex: zb };
+				if (p.id === b.id) return { ...p, zIndex: za };
+				return p;
+			})
+		};
+	});
+}
+
+export function bringToFront(id: number) {
+	game.update((s) => {
+		const top = maxZIndex(s.pieces) + 1;
+		return {
+			...s,
+			pieces: s.pieces.map((p) => (p.id === id ? { ...p, zIndex: top } : p))
+		};
+	});
+}
+
+export function sendToBack(id: number) {
+	game.update((s) => {
+		const ord = [...s.pieces].sort((a, b) => a.zIndex - b.zIndex);
+		if (ord.length === 0) return s;
+		const bottom = ord[0].zIndex - 1;
+		return {
+			...s,
+			pieces: s.pieces.map((p) => (p.id === id ? { ...p, zIndex: bottom } : p))
+		};
+	});
+}
+
+export function applyPiecePositionUpdates(updates: Map<number, { x: number; y: number }>) {
+	game.update((s) => ({
+		...s,
+		pieces: s.pieces.map((p) => {
+			const u = updates.get(p.id);
+			return u ? { ...p, x: u.x, y: u.y } : p;
+		})
+	}));
+}
+
+export function applyPiecePatches(
+	updates: Map<number, Partial<PieceInstance> & { initial_size?: { w: number; h: number } }>
+) {
+	game.update((s) => ({
+		...s,
+		pieces: s.pieces.map((p) => {
+			const u = updates.get(p.id);
+			return u ? { ...p, ...u } : p;
+		})
+	}));
+}
+
+export function restoreBoardEditorSnapshot(snapshot: {
+	pieces: PieceInstance[];
+	table: { w: number; h: number };
+	tableBgFilename: string;
+	tableBgRev: number;
+	pieceColorPalette: string[];
+	nextPieceId: number;
+}) {
+	game.update((s) => ({
+		...s,
+		pieces: snapshot.pieces.map((p) => ({ ...p, attributes: [...p.attributes], initial_size: { ...p.initial_size } })),
+		table: { ...snapshot.table },
+		tableBgFilename: snapshot.tableBgFilename,
+		tableBgRev: snapshot.tableBgRev,
+		pieceColorPalette: [...snapshot.pieceColorPalette],
+		nextPieceId: snapshot.nextPieceId,
+		editorSnapGuides: null,
+		moveDrag: null
+	}));
+}
+
 /** Serializable board state for `game_snapshots` (DB / resume). */
 export type StoredGameSnapshot = {
 	pieces: PieceInstance[];
@@ -1101,7 +1380,10 @@ export function applyStoredGameSnapshot(
 		spacePanHeld: false,
 		panPointerStart: null,
 		handscroll: false,
-		editorTableSelected: false
+		editorTableSelected: false,
+		editorSnapGuides: null,
+		editorSnapToGrid: false,
+		editorGridSize: 20
 	}));
 	if (!opts?.skipCenter) centerCamToVP();
 }
