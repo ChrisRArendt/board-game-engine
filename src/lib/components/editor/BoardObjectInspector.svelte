@@ -1,11 +1,16 @@
 <script lang="ts">
+	import GameMediaImageTools from './GameMediaImageTools.svelte';
 	import PieceProperties from './PieceProperties.svelte';
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
 
 	export let gameId: string;
 	export let userId: string;
-	export let onUploadTableBg: (file: File) => Promise<void>;
+	export let tableMediaId: string | null;
+	export let mediaUrls: Record<string, string>;
+	export let onTableMediaIdChange: (id: string | null) => void | Promise<void>;
+	export let onMergeTableMediaUrls: (urls: Record<string, string>) => void;
+	export let onAfterTableMediaPick: () => void;
 	export let onPalettePersist: ((cols: string[]) => void) | undefined = undefined;
 	export let onAfterEdit: (() => void) | undefined = undefined;
 
@@ -28,6 +33,12 @@
 			: null;
 	$: pieceCardId = pieceSel ? cardInstanceIdFromPieceBg(pieceSel.bg) : null;
 	$: multiSel = !$game.editorTableSelected && $game.selectedIds.size > 1;
+
+	/** Legacy table image not linked to `game_media` — still show preview. */
+	$: tableFallbackThumb =
+		tableMediaId == null && $game.assetBaseUrl && $game.tableBgFilename
+			? `${$game.assetBaseUrl}${$game.tableBgFilename}?v=${$game.tableBgRev}`
+			: null;
 </script>
 
 <div class="inspector">
@@ -60,17 +71,20 @@
 						)}
 				/>
 			</label>
-			<label class="row file">
+			<div class="row table-bg-tools">
 				<span>Table background</span>
-				<input
-					type="file"
-					accept="image/*"
-					onchange={(e) => {
-						const f = (e.currentTarget as HTMLInputElement).files?.[0];
-						if (f) void onUploadTableBg(f);
-					}}
+				<p class="subhint">Upload, pick from library, or generate — same as card backgrounds.</p>
+				<GameMediaImageTools
+					compact
+					{gameId}
+					mediaId={tableMediaId}
+					{mediaUrls}
+					fallbackThumbUrl={tableFallbackThumb}
+					onMediaIdChange={onTableMediaIdChange}
+					onMergeUrls={onMergeTableMediaUrls}
+					onAfterPick={onAfterTableMediaPick}
 				/>
-			</label>
+			</div>
 		</div>
 	{:else if multiSel}
 		<h4>Pieces ({$game.selectedIds.size})</h4>
@@ -153,9 +167,11 @@
 		background: var(--color-surface);
 		color: inherit;
 	}
-	.file input[type='file'] {
-		max-width: 100%;
-		font-size: 12px;
+	.table-bg-tools .subhint {
+		margin: 0 0 6px;
+		font-size: 11px;
+		color: var(--color-text-muted);
+		line-height: 1.35;
 	}
 	.check {
 		display: flex;

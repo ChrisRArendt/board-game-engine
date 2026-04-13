@@ -20,6 +20,7 @@
 	import { EditorHistory, type BoardEditorSnapshot } from '$lib/editor/editorHistory';
 	import { maxZIndex } from '$lib/engine/pieces';
 	import { isTypingInField } from '$lib/engine/input';
+	import { publicStorageUrl } from '$lib/editor/mediaUrls';
 
 	export let gameId: string;
 	export let userId: string;
@@ -35,6 +36,10 @@
 
 	let saving = false;
 	let errMsg = '';
+
+	/** `game_media.id` for current table background, if it matches a library row. */
+	let tableMediaId: string | null = null;
+	let mediaUrls: Record<string, string> = {};
 
 	let leftW = 280;
 	let rightW = 300;
@@ -111,7 +116,18 @@
 
 	function clientToWorld(clientX: number, clientY: number) {
 		const s = get(game);
-		return { x: (clientX - s.panX) / s.zoom, y: (clientY - s.panY) / s.zoom };
+		if (!browser) {
+			return { x: (clientX - s.panX) / s.zoom, y: (clientY - s.panY) / s.zoom };
+		}
+		/** Pan/zoom live on `Board`’s `.viewport`; client coords must be relative to that rect. */
+		const host = document.querySelector('[data-board-editor-canvas].viewport');
+		if (!(host instanceof HTMLElement)) {
+			return { x: (clientX - s.panX) / s.zoom, y: (clientY - s.panY) / s.zoom };
+		}
+		const r = host.getBoundingClientRect();
+		const vx = clientX - r.left;
+		const vy = clientY - r.top;
+		return { x: (vx - s.panX) / s.zoom, y: (vy - s.panY) / s.zoom };
 	}
 
 	function addPiece() {
@@ -186,27 +202,66 @@
 		commitHistory();
 	}
 
-	async function uploadTableBg(file: File) {
-		const raw = file.name.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() ?? 'jpg';
-		const ext = raw === 'jpeg' ? 'jpg' : raw;
-		const safe = ['png', 'jpg', 'webp', 'gif'].includes(ext) ? ext : 'jpg';
-		const filename = `table-bg.${safe}`;
-		const path = `${userId}/${gameId}/${filename}`;
-		const { error } = await supabase.storage.from('custom-game-assets').upload(path, file, {
-			upsert: true,
-			contentType: file.type || `image/${safe === 'jpg' ? 'jpeg' : safe}`
-		});
-		if (error) {
-			errMsg = error.message;
-			return;
-		}
+	function mergeTableMediaUrls(m: Record<string, string>) {
+		mediaUrls = { ...mediaUrls, ...m };
+	}
+
+	function applyTableMediaFromStoragePath(filePath: string, id: string) {
+		const prefix = `${userId}/${gameId}/`;
+		const rel = filePath.startsWith(prefix) ? filePath.slice(prefix.length) : filePath;
 		errMsg = '';
 		g.game.update((s) => ({
 			...s,
-			tableBgFilename: filename,
+			tableBgFilename: rel,
 			tableBgRev: s.tableBgRev + 1
 		}));
+		tableMediaId = id;
+		mediaUrls = { ...mediaUrls, [id]: publicStorageUrl(filePath) };
 		commitHistory();
+	}
+
+	async function loadGameMedia() {
+		const { data, error } = await supabase.from('game_media').select('id, file_path').eq('game_id', gameId);
+		if (error) {
+			console.warn('[board editor] loadGameMedia', error);
+			return;
+		}
+		const urls: Record<string, string> = {};
+		const st = get(game);
+		const prefix = `${userId}/${gameId}/`;
+		let tid: string | null = null;
+		for (const row of data ?? []) {
+			urls[row.id] = publicStorageUrl(row.file_path);
+			if (row.file_path === `${prefix}${st.tableBgFilename}`) {
+				tid = row.id;
+			}
+		}
+		mediaUrls = urls;
+		tableMediaId = tid;
+	}
+
+	async function onTableMediaIdChange(id: string | null) {
+		if (id === null) {
+			errMsg = '';
+			g.game.update((s) => ({
+				...s,
+				tableBgFilename: 'table-bg.jpg',
+				tableBgRev: s.tableBgRev + 1
+			}));
+			tableMediaId = null;
+			commitHistory();
+			return;
+		}
+		const { data, error } = await supabase.from('game_media').select('file_path').eq('id', id).single();
+		if (error || !data?.file_path) {
+			errMsg = error?.message ?? 'Could not load media';
+			return;
+		}
+		applyTableMediaFromStoragePath(data.file_path, id);
+	}
+
+	function afterHistoryRestore() {
+		void loadGameMedia();
 	}
 
 	async function saveBoard() {
@@ -259,10 +314,16 @@
 			e.preventDefault();
 			if (e.shiftKey) {
 				const snap = history.redo();
-				if (snap) g.restoreBoardEditorSnapshot(snap);
+				if (snap) {
+					g.restoreBoardEditorSnapshot(snap);
+					afterHistoryRestore();
+				}
 			} else {
 				const snap = history.undo();
-				if (snap) g.restoreBoardEditorSnapshot(snap);
+				if (snap) {
+					g.restoreBoardEditorSnapshot(snap);
+					afterHistoryRestore();
+				}
 			}
 			return;
 		}
@@ -381,6 +442,7 @@
 		g.setEditorBoardSnap(true);
 		g.setEditorGridSnap(false, 20);
 		history.seed(snapshotFromGame());
+		void loadGameMedia();
 		window.addEventListener('keydown', onKeydown);
 		window.addEventListener('keyup', onKeyup);
 		window.addEventListener('blur', onWindowBlur);
@@ -443,8 +505,8 @@
 			onpointerdown={(e) => startPanelDrag('left', e)}
 		></div>
 		<div class="canvas" bind:clientWidth={canvasW} bind:clientHeight={canvasH} data-board-editor-canvas>
-			<BoardToolbar />
 			<div class="board-wrap">
+				<BoardToolbar />
 				<Board
 					editorMode={true}
 					embeddedEditor={true}
@@ -469,7 +531,16 @@
 		></div>
 		<aside class="right" style:width="{rightW}px">
 			<h3>Properties</h3>
-			<BoardObjectInspector {gameId} {userId} onUploadTableBg={uploadTableBg} onAfterEdit={commitHistory} />
+			<BoardObjectInspector
+				{gameId}
+				{userId}
+				{tableMediaId}
+				{mediaUrls}
+				onTableMediaIdChange={onTableMediaIdChange}
+				onMergeTableMediaUrls={mergeTableMediaUrls}
+				onAfterTableMediaPick={() => void loadGameMedia()}
+				onAfterEdit={commitHistory}
+			/>
 		</aside>
 	</div>
 

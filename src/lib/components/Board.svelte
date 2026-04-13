@@ -441,13 +441,13 @@
 	bind:this={viewportEl}
 	data-board-editor-canvas
 	onpointerdown={onViewportPointerDown}
+	onwheel={onWheel}
 >
 	<div class="game" class:will-move={$game.handscroll || $game.panPointerStart != null} style:transform="translate3d({$game.panX}px, {$game.panY}px, 0)">
 		<div
 			class="pieces-layer"
 			style:transform="scale({zm})"
 			style:transform-origin="0 0"
-			onwheel={onWheel}
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div

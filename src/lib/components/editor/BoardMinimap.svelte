@@ -6,6 +6,8 @@
 	export let viewportH: number;
 
 	let dragging = false;
+	/** Minimap root; `pointermove` is on `window`, so we cannot use `event.currentTarget` in `jumpTo`. */
+	let mmRoot: HTMLDivElement | undefined;
 
 	$: tw = $game.table.w;
 	$: th = $game.table.h;
@@ -63,7 +65,8 @@
 	}
 
 	function jumpTo(e: PointerEvent) {
-		const el = e.currentTarget as HTMLElement;
+		const el = mmRoot;
+		if (!el) return;
 		const r = el.getBoundingClientRect();
 		const mx = e.clientX - r.left;
 		const my = e.clientY - r.top;
@@ -85,6 +88,7 @@
 {#if show && tw > 0 && th > 0 && viewportW > 0}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
+		bind:this={mmRoot}
 		class="minimap"
 		style:width="{mmW}px"
 		style:height="{mmH}px"

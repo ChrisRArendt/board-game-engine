@@ -12,16 +12,19 @@
 		onMediaIdChange,
 		onMergeUrls,
 		onAfterPick,
-		compact = false
+		compact = false,
+		/** When no library row matches (e.g. legacy table-bg.jpg), show this preview URL. */
+		fallbackThumbUrl = null
 	}: {
 		gameId: string;
 		mediaId: string | null;
 		mediaUrls: Record<string, string>;
-		onMediaIdChange: (id: string | null) => void;
+		onMediaIdChange: (id: string | null) => void | Promise<void>;
 		onMergeUrls: (urls: Record<string, string>) => void;
 		/** e.g. refresh `game_media` map from Supabase */
 		onAfterPick?: () => void;
 		compact?: boolean;
+		fallbackThumbUrl?: string | null;
 	} = $props();
 
 	const supabase = createSupabaseBrowserClient();
@@ -108,6 +111,8 @@
 					alt=""
 					draggable="false"
 				/>
+			{:else if fallbackThumbUrl}
+				<img class="thumb" src={fallbackThumbUrl} alt="" draggable="false" />
 			{:else}
 				<div class="thumb ph">No image</div>
 			{/if}

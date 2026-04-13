@@ -37,31 +37,6 @@
 		return publicStorageUrl(card.rendered_image_path);
 	}
 
-	/** Debug: verify thumbnail URLs load (session 3b813a). */
-	let _dbgThumbSamples = 0;
-	function dbgThumbEvent(card: CardForBoardPiece, kind: 'load' | 'error', ev: Event) {
-		if (_dbgThumbSamples >= 6) return;
-		_dbgThumbSamples++;
-		const path = card.rendered_image_path ?? '';
-		const url = thumbUrl(card);
-		const img = ev.currentTarget instanceof HTMLImageElement ? ev.currentTarget : null;
-		// #region agent log
-		fetch('http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b813a' },
-			body: JSON.stringify({
-				sessionId: '3b813a',
-				runId: 'post-fix',
-				hypothesisId: 'H1',
-				location: 'PieceLibrary.svelte:dbgThumbEvent',
-				message: kind === 'load' ? 'library thumb loaded' : 'library thumb failed',
-				data: { path, url, naturalW: img?.naturalWidth ?? 0, kind },
-				timestamp: Date.now()
-			})
-		}).catch(() => {});
-		// #endregion
-	}
-
 	function onThumbPointerDown(card: CardForBoardPiece, e: PointerEvent) {
 		if (e.button !== 0) return;
 		e.preventDefault();
@@ -168,13 +143,7 @@
 						onpointerdown={(e) => onThumbPointerDown(card, e)}
 						title={card.name}
 					>
-						<img
-							src={thumbUrl(card)}
-							alt=""
-							draggable="false"
-							onload={(e) => dbgThumbEvent(card, 'load', e)}
-							onerror={(e) => dbgThumbEvent(card, 'error', e)}
-						/>
+						<img src={thumbUrl(card)} alt="" draggable="false" />
 						<span class="name">{card.name}</span>
 					</button>
 				{/if}

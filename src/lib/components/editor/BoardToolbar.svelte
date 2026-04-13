@@ -50,14 +50,23 @@
 
 <style>
 	.toolbar {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		z-index: 60;
 		display: flex;
 		flex-wrap: wrap;
+		justify-content: flex-end;
 		align-items: center;
 		gap: 6px;
+		max-width: calc(100% - 16px);
 		padding: 6px 8px;
-		border-bottom: 1px solid var(--color-border);
+		border-radius: 8px;
+		border: 1px solid var(--color-border);
 		background: var(--color-surface);
+		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
 		font-size: 12px;
+		pointer-events: auto;
 	}
 	.tb {
 		padding: 4px 8px;
