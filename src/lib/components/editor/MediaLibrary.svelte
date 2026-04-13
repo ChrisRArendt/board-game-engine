@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { publicStorageUrl } from '$lib/editor/mediaUrls';
+	import { uploadImageToGameLibrary } from '$lib/editor/uploadGameMedia';
 	import AIGenerateModal from './AIGenerateModal.svelte';
 	import type { Database } from '$lib/supabase/database.types';
 
@@ -62,26 +63,8 @@
 		busy = true;
 		err = '';
 		try {
-			const { data: u } = await supabase.auth.getUser();
-			const uid = u.user?.id;
-			if (!uid) throw new Error('Not signed in');
 			for (const file of Array.from(files)) {
-				const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
-				const fname = `upload_${crypto.randomUUID()}${ext}`;
-				const path = `${uid}/${gameId}/media/${fname}`;
-				const { error: upErr } = await supabase.storage.from('custom-game-assets').upload(path, file, {
-					contentType: file.type || undefined
-				});
-				if (upErr) throw upErr;
-				const { error: insErr } = await supabase.from('game_media').insert({
-					game_id: gameId,
-					creator_id: uid,
-					file_path: path,
-					filename: file.name,
-					source_type: 'upload',
-					ai_prompt: null
-				});
-				if (insErr) throw insErr;
+				await uploadImageToGameLibrary(supabase, gameId, file);
 			}
 			onChanged();
 		} catch (e) {
