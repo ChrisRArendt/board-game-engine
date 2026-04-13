@@ -26,6 +26,7 @@ import {
 	hasAttr,
 	maxZIndex,
 	pieceFromData,
+	pieceSupportsFlip,
 	shuffleSelectedPieces,
 	spreadCustom,
 	spreadHorizontal,
@@ -128,6 +129,8 @@ export interface GameState {
 	boardViewportForCapture: { w: number; h: number } | null;
 	/** Saved world rect to fit on play load; null = engine default on first load. */
 	initialPlayView: InitialPlayViewState | null;
+	/** True while staggered “apply arrangement” animation is running (smooth motion + flip transition). */
+	arrangementAnimationActive: boolean;
 }
 
 function initialState(): GameState {
@@ -174,14 +177,39 @@ function initialState(): GameState {
 		playerSlots: null,
 		playerSlotScores: Array.from({ length: PLAYER_SLOT_MAX }, () => 0),
 		boardViewportForCapture: null,
-		initialPlayView: null
+		initialPlayView: null,
+		arrangementAnimationActive: false
 	};
 }
 
 export const game = writable<GameState>(initialState());
 
+/** Stagger between each piece starting its move; total spread is (n−1)×stagger + moveMs. */
+export const ARRANGEMENT_ANIM_STAGGER_MS = 5;
+export const ARRANGEMENT_ANIM_MOVE_MS = 250;
+
+let arrangementAnimGeneration = 0;
+const arrangementStaggerTimeouts: ReturnType<typeof setTimeout>[] = [];
+let arrangementDoneTimeout: ReturnType<typeof setTimeout> | null = null;
+let pendingArrangeResolve: ((v: boolean) => void) | null = null;
+
+function clearArrangementAnimationTimeouts() {
+	for (const t of arrangementStaggerTimeouts) clearTimeout(t);
+	arrangementStaggerTimeouts.length = 0;
+	if (arrangementDoneTimeout) {
+		clearTimeout(arrangementDoneTimeout);
+		arrangementDoneTimeout = null;
+	}
+	if (pendingArrangeResolve) {
+		pendingArrangeResolve(false);
+		pendingArrangeResolve = null;
+	}
+}
+
 /** Clear board state (e.g. leaving board editor). */
 export function resetGameToEmpty() {
+	clearArrangementAnimationTimeouts();
+	arrangementAnimGeneration++;
 	game.set(initialState());
 }
 
@@ -688,10 +716,10 @@ export function clickSelect(id: number, shift: boolean) {
 export function flipPiece(id: number) {
 	game.update((s) => ({
 		...s,
-		pieces: s.pieces.map((p) => (p.id === id && hasAttr(p, 'flip') ? { ...p, flipped: !p.flipped } : p))
+		pieces: s.pieces.map((p) => (p.id === id && pieceSupportsFlip(p) ? { ...p, flipped: !p.flipped } : p))
 	}));
 	const p = getPieceById(id);
-	if (p && hasAttr(p, 'flip')) {
+	if (p && pieceSupportsFlip(p)) {
 		emitGame?.('piece_flip', { id, isFlipped: p.flipped });
 	}
 }
@@ -699,7 +727,7 @@ export function flipPiece(id: number) {
 export function setPieceFlipped(id: number, flipped: boolean) {
 	game.update((s) => ({
 		...s,
-		pieces: s.pieces.map((p) => (p.id === id && hasAttr(p, 'flip') ? { ...p, flipped } : p))
+		pieces: s.pieces.map((p) => (p.id === id && pieceSupportsFlip(p) ? { ...p, flipped } : p))
 	}));
 }
 
@@ -997,6 +1025,7 @@ function emitMovesForSelected() {
  * Reposition selected pieces using the same placement math as the editor / piece library.
  * Order follows layer order (back → front). Locked pieces are skipped. Emits `piece_moves_batch` for play sync.
  * For flip-capable pieces, `faceUp` sets face-up (front) vs face-down (back) after arranging.
+ * Animates each piece in sequence (stagger) into place, then resolves. Emits once after motion completes.
  */
 export function applyPlacementArrangementToSelection(
 	layout: PlacementLayout,
@@ -1004,13 +1033,13 @@ export function applyPlacementArrangementToSelection(
 	cols: number,
 	offset: number,
 	faceUp = true
-): boolean {
+): Promise<boolean> {
 	const st = get(game);
 	const pieces: PieceInstance[] = [...st.selectedIds]
 		.map((id) => st.pieces.find((p) => p.id === id))
 		.filter((p): p is PieceInstance => p != null && !p.locked)
 		.sort((a, b) => a.zIndex - b.zIndex || a.id - b.id);
-	if (pieces.length < 2) return false;
+	if (pieces.length < 2) return Promise.resolve(false);
 
 	const count = pieces.length;
 	const maxW = Math.max(...pieces.map((p) => p.initial_size.w), 1);
@@ -1039,32 +1068,62 @@ export function applyPlacementArrangementToSelection(
 	});
 
 	const flippedTarget = !faceUp;
-	const byId = new Map(pieces.map((p, i) => [p.id, i]));
 
-	game.update((s) => ({
-		...s,
-		pieces: s.pieces.map((p) => {
-			const idx = byId.get(p.id);
-			if (idx === undefined) return p;
-			const pos = positions[idx];
-			if (!pos) return p;
-			let next: PieceInstance = { ...p, x: pos.x, y: pos.y };
-			if (hasAttr(p, 'flip')) {
-				next = { ...next, flipped: flippedTarget };
-			}
-			return next;
-		})
-	}));
-
-	emitMovesForSelected();
-	for (const p of pieces) {
-		if (!hasAttr(p, 'flip')) continue;
-		const np = getPieceById(p.id);
-		if (np && np.flipped !== p.flipped) {
-			emitGame?.('piece_flip', { id: p.id, isFlipped: np.flipped });
-		}
+	const steps: Array<{ id: number; x: number; y: number; flipped: boolean }> = [];
+	for (let i = 0; i < pieces.length; i++) {
+		const p = pieces[i];
+		const pos = positions[i];
+		if (!pos) continue;
+		const flipped = pieceSupportsFlip(p) ? flippedTarget : p.flipped;
+		steps.push({ id: p.id, x: pos.x, y: pos.y, flipped });
 	}
-	return true;
+
+	clearArrangementAnimationTimeouts();
+	arrangementAnimGeneration++;
+	const myGen = arrangementAnimGeneration;
+
+	game.update((s) => ({ ...s, arrangementAnimationActive: true }));
+
+	for (let i = 0; i < steps.length; i++) {
+		const step = steps[i];
+		const tid = setTimeout(() => {
+			if (myGen !== arrangementAnimGeneration) return;
+			game.update((s) => ({
+				...s,
+				pieces: s.pieces.map((p) => {
+					if (p.id !== step.id) return p;
+					return { ...p, x: step.x, y: step.y, flipped: step.flipped };
+				})
+			}));
+		}, i * ARRANGEMENT_ANIM_STAGGER_MS);
+		arrangementStaggerTimeouts.push(tid);
+	}
+
+	const finalDelay =
+		Math.max(0, steps.length - 1) * ARRANGEMENT_ANIM_STAGGER_MS + ARRANGEMENT_ANIM_MOVE_MS;
+
+	return new Promise<boolean>((resolve) => {
+		pendingArrangeResolve = resolve;
+		arrangementDoneTimeout = setTimeout(() => {
+			arrangementDoneTimeout = null;
+			const finish = pendingArrangeResolve;
+			pendingArrangeResolve = null;
+			if (myGen !== arrangementAnimGeneration) {
+				finish?.(false);
+				return;
+			}
+			game.update((s) => ({ ...s, arrangementAnimationActive: false }));
+			emitMovesForSelected();
+			for (const p of pieces) {
+				if (!pieceSupportsFlip(p)) continue;
+				const np = getPieceById(p.id);
+				if (np && np.flipped !== p.flipped) {
+					emitGame?.('piece_flip', { id: p.id, isFlipped: np.flipped });
+				}
+			}
+			finish?.(true);
+		}, finalDelay);
+	});
 }
 
 export function runSpreadHorizontal() {
@@ -1123,7 +1182,7 @@ export function runShuffleStackToolbar() {
 			return upd ? { ...p, zIndex: upd.z, x: upd.x, y: upd.y } : p;
 		});
 		pieces = pieces.map((p) => {
-			if (!s.selectedIds.has(p.id) || !hasAttr(p, 'flip')) return p;
+			if (!s.selectedIds.has(p.id) || !pieceSupportsFlip(p)) return p;
 			if (!p.flipped) return { ...p, flipped: true };
 			return p;
 		});
@@ -1583,7 +1642,7 @@ export function remotePieceMovesBatch(moves: Array<{ id: number; x: number; y: n
 export function remotePieceFlip(id: number, isFlipped: boolean) {
 	game.update((s) => ({
 		...s,
-		pieces: s.pieces.map((p) => (p.id === id && hasAttr(p, 'flip') ? { ...p, flipped: isFlipped } : p))
+		pieces: s.pieces.map((p) => (p.id === id && pieceSupportsFlip(p) ? { ...p, flipped: isFlipped } : p))
 	}));
 }
 
@@ -2105,6 +2164,8 @@ export function applyStoredGameSnapshot(
 	snapshot: StoredGameSnapshot,
 	opts?: { skipCenter?: boolean }
 ) {
+	clearArrangementAnimationTimeouts();
+	arrangementAnimGeneration++;
 	game.update((s) => {
 		const playerSlots =
 			snapshot.playerSlots === undefined
@@ -2171,7 +2232,8 @@ export function applyStoredGameSnapshot(
 			editorSnapGuides: null,
 			editorSnapToGrid: false,
 			editorGridSize: 20,
-			playerSlotScores: normalizePlayerSlotScores(snapshot.playerSlotScores)
+			playerSlotScores: normalizePlayerSlotScores(snapshot.playerSlotScores),
+			arrangementAnimationActive: false
 		};
 	});
 	if (!opts?.skipCenter) centerCamToVP();

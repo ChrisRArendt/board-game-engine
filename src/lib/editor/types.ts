@@ -128,6 +128,20 @@ export function newId(): string {
 	return `id_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
+/** Deep-clone a card background for safe paste into another template. */
+export function cloneCardBackground(bg: CardBackground): CardBackground {
+	return parseBackground(JSON.parse(JSON.stringify(bg)) as unknown);
+}
+
+/** Deep-clone layers with new ids (e.g. after copying from another template). */
+export function cloneLayersWithNewIds(layers: CardLayer[]): CardLayer[] {
+	return layers.map((L) => {
+		const j = JSON.parse(JSON.stringify(L)) as CardLayer;
+		j.id = newId();
+		return j;
+	});
+}
+
 export function defaultTextLayer(): TextLayer {
 	return {
 		id: newId(),

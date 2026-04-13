@@ -14,6 +14,7 @@
 	import Settings from '$lib/components/windows/Settings.svelte';
 	import CardViewer from '$lib/components/windows/CardViewer.svelte';
 	import type { GameDataJson } from '$lib/engine/types';
+	import { pieceSupportsFlip } from '$lib/engine/pieces';
 	import * as g from '$lib/stores/game';
 	import { game } from '$lib/stores/game';
 	import { registerGameEmit } from '$lib/stores/game';
@@ -220,7 +221,7 @@
 			if (sel.every((p) => p.attributes.includes('duplicate'))) sel.forEach((p) => g.duplicatePiece(p.id));
 		} else if (e.key === 'f' || e.key === 'F') {
 			const sel = get(game).pieces.filter((p) => get(game).selectedIds.has(p.id));
-			if (sel.every((p) => p.attributes.includes('flip'))) sel.forEach((p) => g.flipPiece(p.id));
+			if (sel.every((p) => pieceSupportsFlip(p))) sel.forEach((p) => g.flipPiece(p.id));
 		} else if (e.key === 's' || e.key === 'S') {
 			const sel = get(game).pieces.filter((p) => get(game).selectedIds.has(p.id));
 			if (sel.length > 1 && sel.every((p) => p.attributes.includes('shuffle'))) g.runShuffleSelected();

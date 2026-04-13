@@ -10,7 +10,7 @@
 	import PlayerZonesEditorOverlay from '$lib/components/editor/PlayerZonesEditorOverlay.svelte';
 	import InitialPlayViewFrame from '$lib/components/editor/InitialPlayViewFrame.svelte';
 	import * as g from '$lib/stores/game';
-	import { game } from '$lib/stores/game';
+	import { game, ARRANGEMENT_ANIM_MOVE_MS } from '$lib/stores/game';
 	import { ZOOM_DEFAULT, type ViewportFitInset } from '$lib/engine/geometry';
 	import { PointerEngine } from '$lib/engine/pointer';
 	import { users } from '$lib/stores/users';
@@ -733,7 +733,11 @@
 							curGame={$game.curGame}
 							assetBaseUrl={$game.assetBaseUrl}
 							replayMode={replayMode}
-							smoothPosition={!editorMode && !replayMode}
+							smoothPosition={(!editorMode && !replayMode) || $game.arrangementAnimationActive}
+							smoothDurationMs={$game.arrangementAnimationActive
+								? ARRANGEMENT_ANIM_MOVE_MS
+								: undefined}
+							arrangeAnimating={$game.arrangementAnimationActive}
 							editorMode={editorMode}
 							onEditorContextMenu={editorMode ? onEditorPieceContextMenu : undefined}
 							faceHidden={editorMode

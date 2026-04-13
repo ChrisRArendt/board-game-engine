@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { cubicOut } from 'svelte/easing';
 	import { tweened } from 'svelte/motion';
 	import type { PieceInstance } from '$lib/engine/types';
-	import { hasAttr } from '$lib/engine/pieces';
+	import { hasAttr, pieceSupportsFlip } from '$lib/engine/pieces';
 
 	export let piece: PieceInstance;
 	export let curGame: string;
@@ -22,6 +23,10 @@
 	export let onEditorContextMenu: ((e: MouseEvent, pieceId: number) => void) | undefined = undefined;
 	/** Play mode: glide toward networked positions instead of jumping (local drag uses raw coords). */
 	export let smoothPosition = false;
+	/** When set (e.g. arrangement animation), overrides default glide duration (ms). */
+	export let smoothDurationMs: number | undefined = undefined;
+	/** Arrangement apply: smooth flip via CSS on background-position. */
+	export let arrangeAnimating = false;
 
 	const posX = tweened(0);
 	const posY = tweened(0);
@@ -33,11 +38,13 @@
 		const idChanged = piece.id !== lastPieceId;
 		if (idChanged) lastPieceId = piece.id;
 		const snap = dragging || !smoothPosition || idChanged;
-		posX.set(piece.x, { duration: snap ? 0 : POS_SMOOTH_MS });
-		posY.set(piece.y, { duration: snap ? 0 : POS_SMOOTH_MS });
+		const dur = snap ? 0 : smoothDurationMs ?? POS_SMOOTH_MS;
+		const easing = snap ? undefined : smoothDurationMs != null ? cubicOut : undefined;
+		posX.set(piece.x, { duration: dur, easing });
+		posY.set(piece.y, { duration: dur, easing });
 	}
 
-	$: canFlip = hasAttr(piece, 'flip');
+	$: canFlip = pieceSupportsFlip(piece);
 	$: rot = piece.rotation ?? 0;
 	$: bgUrl = assetBaseUrl
 		? `${assetBaseUrl}${piece.bg}`
@@ -54,6 +61,8 @@
 	class:replay={replayMode}
 	class:face-hidden={faceHidden}
 	class:editor-locked={editorMode && piece.locked}
+	class:can-flip={canFlip}
+	class:arrange-anim={arrangeAnimating}
 	data-piece-id={piece.id}
 	title={faceHidden ? 'Hidden — private area' : undefined}
 	style:z-index={piece.zIndex}
@@ -147,5 +156,12 @@
 			#1e2129 10px
 		) !important;
 		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+	}
+	/* Apply arrangement: slide sprite between front/back while motion tweens */
+	.piece.arrange-anim.can-flip {
+		transition:
+			box-shadow 150ms ease,
+			filter 150ms ease,
+			background-position 0.25s cubic-bezier(0.33, 1, 0.68, 1);
 	}
 </style>

@@ -15,6 +15,10 @@
 	export let gapPresetMode = false;
 	/** Tighter padding and type for context menu. */
 	export let compact = false;
+	/** With `compact`: 16px body type in the context menu (still dense layout). */
+	export let contextMenu = false;
+	/** Show “only flip-capable pieces…” when none selected (inspector); hide in context menu. */
+	export let showNoFlipSubhint = true;
 	/** Editor / menu: warn when fewer than two unlocked pieces in selection. */
 	export let useSelectionUnlockedHint = false;
 	export let unlockedCount = 0;
@@ -44,9 +48,9 @@
 		patchArrangementPrefs({ offset: GAP_PRESETS[p] });
 	}
 
-	function apply() {
+	async function apply() {
 		const { layout, spacingMode, cols, offset, arrangeFaceUp } = get(arrangementPrefs);
-		const ok = g.applyPlacementArrangementToSelection(
+		const ok = await g.applyPlacementArrangementToSelection(
 			layout,
 			spacingMode,
 			cols,
@@ -64,7 +68,7 @@
 	];
 </script>
 
-<div class="arrangement-controls" class:compact>
+<div class="arrangement-controls" class:compact class:context-menu={contextMenu}>
 	{#if showQuantity}
 		<label class="row">
 			<span>Quantity</span>
@@ -327,7 +331,7 @@
 				</button>
 			</div>
 		</label>
-		{#if showApplyButton && flipCapableCount === 0}
+		{#if showNoFlipSubhint && showApplyButton && flipCapableCount === 0}
 			<p class="subhint">Only pieces with the flip attribute change face when arranged.</p>
 		{:else if showFaceControl}
 			<p class="subhint">For drops, only double-sided cards (with a back) use this.</p>
@@ -340,7 +344,7 @@
 			disabled={useSelectionUnlockedHint && unlockedCount < 2}
 			onclick={apply}
 		>
-			Apply arrangement
+			{compact ? 'Apply' : 'Apply arrangement'}
 		</button>
 		{#if useSelectionUnlockedHint && unlockedCount < 2 && selectedCount >= 2}
 			<p class="subhint warn">Select at least two unlocked pieces to arrange.</p>
@@ -356,13 +360,16 @@
 		font-size: 13px;
 	}
 	.arrangement-controls.compact {
-		gap: 8px;
-		font-size: 12px;
+		gap: 5px;
+		font-size: 11px;
 	}
 	.row {
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
+	}
+	.compact .row {
+		gap: 2px;
 	}
 	/* Direct child only — not .layout-label inside layout buttons */
 	.row > span {
@@ -372,7 +379,8 @@
 		color: var(--color-text-muted);
 	}
 	.compact .row > span {
-		font-size: 10px;
+		font-size: 9px;
+		letter-spacing: 0.05em;
 	}
 	.row input[type='number'] {
 		padding: 6px 8px;
@@ -382,13 +390,17 @@
 		color: inherit;
 	}
 	.compact .row input[type='number'] {
-		padding: 5px 6px;
-		font-size: 12px;
+		padding: 3px 5px;
+		font-size: 11px;
+		border-radius: 3px;
 	}
 	.layout-grid {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
 		gap: 6px;
+	}
+	.compact .layout-grid {
+		gap: 3px;
 	}
 	.layout-btn {
 		display: flex;
@@ -422,8 +434,8 @@
 		flex-shrink: 0;
 	}
 	.compact .layout-icon {
-		width: 24px;
-		height: 24px;
+		width: 18px;
+		height: 18px;
 	}
 	.layout-label {
 		font-size: 11px;
@@ -434,11 +446,13 @@
 		color: inherit;
 	}
 	.compact .layout-btn {
-		padding: 6px 4px;
-		gap: 4px;
+		padding: 3px 2px;
+		gap: 2px;
+		border-radius: 4px;
 	}
 	.compact .layout-label {
-		font-size: 10px;
+		font-size: 9px;
+		line-height: 1.1;
 	}
 	.toggle-row .segmented {
 		display: flex;
@@ -456,8 +470,11 @@
 		cursor: pointer;
 	}
 	.compact .segmented button {
-		padding: 5px 6px;
-		font-size: 11px;
+		padding: 3px 5px;
+		font-size: 10px;
+	}
+	.compact .toggle-row .segmented {
+		border-radius: 4px;
 	}
 	.segmented button + button {
 		border-left: 1px solid var(--color-border);
@@ -476,8 +493,9 @@
 		cursor: pointer;
 	}
 	.compact .arrange-apply {
-		padding: 7px 10px;
-		font-size: 12px;
+		padding: 4px 8px;
+		font-size: 11px;
+		border-radius: 4px;
 	}
 	.arrange-apply:disabled {
 		opacity: 0.45;
@@ -488,6 +506,38 @@
 		font-size: 11px;
 		color: var(--color-text-muted);
 		line-height: 1.35;
+	}
+	.compact .subhint {
+		font-size: 9px;
+		line-height: 1.3;
+	}
+	.arrangement-controls.compact.context-menu {
+		font-size: 16px;
+	}
+	.compact.context-menu .row > span {
+		font-size: 12px;
+	}
+	.compact.context-menu .row input[type='number'] {
+		font-size: 16px;
+		padding: 4px 6px;
+	}
+	.compact.context-menu .layout-label {
+		font-size: 14px;
+	}
+	.compact.context-menu .layout-icon {
+		width: 22px;
+		height: 22px;
+	}
+	.compact.context-menu .segmented button {
+		font-size: 16px;
+		padding: 5px 6px;
+	}
+	.compact.context-menu .arrange-apply {
+		font-size: 16px;
+		padding: 6px 10px;
+	}
+	.compact.context-menu .subhint {
+		font-size: 14px;
 	}
 	.subhint.warn {
 		color: #f87171;

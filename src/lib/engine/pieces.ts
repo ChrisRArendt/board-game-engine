@@ -7,12 +7,17 @@ export function pieceFromData(data: PieceData, id: number, curGame: string, offs
 		typeof data.rotation === 'number' && Number.isFinite(data.rotation) ? data.rotation : undefined;
 	const hidden = data.editor_hidden === true;
 	const locked = data.editor_locked === true;
+	let attributes = data.attributes ? [...data.attributes] : [];
+	const bgPath = data.bg ?? '';
+	if (!attributes.includes('flip') && bgPath.startsWith('cards/')) {
+		attributes = [...attributes, 'flip'];
+	}
 	return {
 		id,
 		bg: data.bg,
 		...(data.bg_color ? { bg_color: data.bg_color } : {}),
 		classes: data.class ?? '',
-		attributes: data.attributes ? [...data.attributes] : [],
+		attributes,
 		x: coords.x + offset.x,
 		y: coords.y + offset.y,
 		zIndex: id,
@@ -27,6 +32,12 @@ export function pieceFromData(data: PieceData, id: number, curGame: string, offs
 
 export function hasAttr(p: PieceInstance, attr: string): boolean {
 	return p.attributes.includes(attr);
+}
+
+/** Front/back flip: explicit `flip` attribute, or custom-game card PNG under `cards/`. */
+export function pieceSupportsFlip(p: PieceInstance): boolean {
+	if (hasAttr(p, 'flip')) return true;
+	return (p.bg ?? '').startsWith('cards/');
 }
 
 export function maxZIndex(pieces: PieceInstance[]): number {

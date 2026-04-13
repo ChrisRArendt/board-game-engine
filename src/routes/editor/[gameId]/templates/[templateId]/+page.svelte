@@ -22,7 +22,10 @@
 		defaultBackBackground,
 		parseOptionalBackgroundOrNull,
 		parseOptionalLayersOrNull,
-		newId
+		newId,
+		templateHasBack,
+		cloneCardBackground,
+		cloneLayersWithNewIds
 	} from '$lib/editor/types';
 	import type { Json } from '$lib/supabase/database.types';
 	import { publicStorageUrl } from '$lib/editor/mediaUrls';
@@ -80,6 +83,9 @@
 	let selectedId = $state<string | null>(initialFrontLayers[0]?.id ?? null);
 	let saving = $state(false);
 	let err = $state('');
+
+	/** Other templates in this game — copy back face from one of these (Back tab only). */
+	let copyBackSourceId = $state('');
 
 	let mediaUrls = $state<Record<string, string>>({});
 
@@ -155,6 +161,34 @@
 		}
 	}
 
+	/** Replace this template’s back background + layers with a copy from another piece template. */
+	function replaceBackFromTemplate() {
+		err = '';
+		if (!copyBackSourceId) return;
+		const src = data.templateBackSources.find((t) => t.id === copyBackSourceId);
+		if (!src) {
+			err = 'Template not found.';
+			return;
+		}
+		if (!templateHasBack(src.back_background, src.back_layers)) {
+			err = 'That template has no back face yet.';
+			return;
+		}
+		flushActiveFaceToStores();
+		const rawBg = parseOptionalBackgroundOrNull(src.back_background);
+		const bg: CardBackground =
+			rawBg != null ? cloneCardBackground(rawBg) : cloneCardBackground(defaultBackBackground());
+		const parsedLayers = parseOptionalLayersOrNull(src.back_layers) ?? [];
+		const nextLayers = cloneLayersWithNewIds(parsedLayers);
+		back_background = bg;
+		back_layers = nextLayers;
+		background = bg;
+		layers = [...nextLayers];
+		selectedId = nextLayers[0]?.id ?? null;
+		activeFace = 'back';
+		void loadMedia();
+	}
+
 	async function loadMedia() {
 		const { data: rows } = await supabase.from('game_media').select('id, file_path').eq('game_id', data.game.id);
 		const m: Record<string, string> = {};
@@ -192,6 +226,7 @@
 		background = front_background;
 		selectedId = parsed[0]?.id ?? null;
 		layerCtxMenu = null;
+		copyBackSourceId = '';
 		pieceColorPalette = getPieceColorPaletteFromGameData(data.game.game_data);
 	});
 
@@ -402,6 +437,36 @@
 
 	<div class="main" class:resizing={resizeKind !== null}>
 		<aside class="left" style:width="{leftPanelW}px">
+			{#if activeFace === 'back'}
+				<div class="copy-back-panel">
+					<h3 class="copy-back-heading">Import back from template</h3>
+					<p class="copy-back-hint">
+						Copy another piece template’s back background and layers into this one. Save the template when
+						done.
+					</p>
+					{#if data.templateBackSources.length === 0}
+						<p class="copy-back-empty">No other templates in this game.</p>
+					{:else}
+						<label class="copy-back-row">
+							<span>Piece template</span>
+							<select class="copy-back-select" bind:value={copyBackSourceId}>
+								<option value="">— Select template —</option>
+								{#each data.templateBackSources as t (t.id)}
+									<option value={t.id}>{t.name}</option>
+								{/each}
+							</select>
+						</label>
+						<button
+							type="button"
+							class="copy-back-btn"
+							disabled={!copyBackSourceId}
+							onclick={replaceBackFromTemplate}
+						>
+							Replace back with copy
+						</button>
+					{/if}
+				</div>
+			{/if}
 			<details class="collapsible-panel card-bg-panel" bind:open={cardBgOpen} aria-labelledby="card-bg-heading">
 				<summary class="collapsible-summary">
 					<h3 id="card-bg-heading" class="card-bg-heading">Card background</h3>
@@ -912,5 +977,61 @@
 		color: inherit;
 		cursor: pointer;
 		font-size: 12px;
+	}
+	.copy-back-panel {
+		margin-bottom: 14px;
+		padding: 10px 10px 12px;
+		border-radius: 6px;
+		border: 1px solid var(--color-border);
+		background: var(--color-bg, rgba(0, 0, 0, 0.2));
+	}
+	.copy-back-heading {
+		margin: 0 0 6px;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+	.copy-back-hint {
+		margin: 0 0 10px;
+		font-size: 11px;
+		line-height: 1.4;
+		color: var(--color-text-muted);
+	}
+	.copy-back-empty {
+		margin: 0;
+		font-size: 12px;
+		color: var(--color-text-muted);
+	}
+	.copy-back-row {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		margin-bottom: 8px;
+		font-size: 12px;
+	}
+	.copy-back-row span {
+		color: var(--color-text-muted);
+	}
+	.copy-back-select {
+		padding: 6px 8px;
+		border-radius: 4px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: inherit;
+		font-size: 12px;
+	}
+	.copy-back-btn {
+		width: 100%;
+		padding: 7px 10px;
+		border-radius: 4px;
+		border: 1px solid var(--color-accent, #3b82f6);
+		background: var(--color-accent, #3b82f6);
+		color: #fff;
+		font-size: 12px;
+		cursor: pointer;
+	}
+	.copy-back-btn:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
 	}
 </style>

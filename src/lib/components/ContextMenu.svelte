@@ -2,7 +2,7 @@
 	import { browser } from '$app/environment';
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
-	import { hasAttr } from '$lib/engine/pieces';
+	import { hasAttr, pieceSupportsFlip } from '$lib/engine/pieces';
 	import ArrangementControls from '$lib/components/ArrangementControls.svelte';
 	import DealToDialog from '$lib/components/DealToDialog.svelte';
 	import { users } from '$lib/stores/users';
@@ -20,8 +20,8 @@
 	export let y = 0;
 	export let selfDisplayName = 'You';
 
-	const MENU_W = 280;
-	const MENU_H = 520;
+	const MENU_W = 248;
+	const MENU_H = 400;
 
 	let dealOpen = false;
 
@@ -58,7 +58,7 @@
 	})();
 
 	$: sel = $game.pieces.filter((p) => $game.selectedIds.has(p.id));
-	$: showFlip = sel.some((p) => hasAttr(p, 'flip'));
+	$: showFlip = sel.some((p) => pieceSupportsFlip(p));
 	$: showArrange = sel.length > 1 && sel.every((p) => hasAttr(p, 'move'));
 	$: showDeal =
 		sel.length >= 1 && sel.every((p) => hasAttr(p, 'move')) && stashRoster.length > 0;
@@ -68,7 +68,7 @@
 		return p != null && !p.locked;
 	}).length;
 
-	$: arrangeFlipCapableCount = sel.filter((p) => hasAttr(p, 'flip')).length;
+	$: arrangeFlipCapableCount = sel.filter((p) => pieceSupportsFlip(p)).length;
 
 	$: showSpacerAfterFlip = showFlip && (showArrange || showDeal);
 	$: showSpacerBeforeDeal = showDeal && (showFlip || showArrange);
@@ -100,11 +100,11 @@
 		{#if showFlip}
 			<li
 				onpointerdown={() => {
-					sel.forEach((p) => hasAttr(p, 'flip') && g.flipPiece(p.id));
+					sel.forEach((p) => pieceSupportsFlip(p) && g.flipPiece(p.id));
 					open = false;
 				}}
 			>
-				{sel.filter((p) => hasAttr(p, 'flip')).length > 1 ? 'Flip all' : 'Flip'}
+				{sel.filter((p) => pieceSupportsFlip(p)).length > 1 ? 'Flip all' : 'Flip'}
 			</li>
 		{/if}
 		{#if showSpacerAfterFlip}
@@ -113,9 +113,11 @@
 		{#if showArrange}
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
 			<li class="embed" onpointerdown={(e) => e.stopPropagation()}>
-				<p class="embed-title">Arrangement</p>
+				<p class="embed-title">Arrange</p>
 				<ArrangementControls
 					compact
+					contextMenu
+					showNoFlipSubhint={false}
 					gapPresetMode
 					useSelectionUnlockedHint
 					unlockedCount={arrangeUnlockedCount}
@@ -150,23 +152,25 @@
 		border: 1px solid var(--color-border-strong);
 		z-index: 2000000003;
 		box-shadow: var(--shadow-md);
-		border-radius: 4px;
-		padding: 4px 0;
+		border-radius: 3px;
+		padding: 2px 0;
 		margin: 0;
-		min-width: 120px;
-		max-width: min(320px, calc(100vw - 16px));
+		min-width: 108px;
+		max-width: min(280px, calc(100vw - 16px));
+		font-size: 16px;
 	}
 	.ctx li {
-		padding: 12px 20px;
-		min-height: 44px;
+		padding: 5px 10px;
+		min-height: 32px;
 		box-sizing: border-box;
 		display: flex;
 		align-items: center;
-		font-size: 14px;
+		font-size: 16px;
+		line-height: 1.25;
 		color: var(--color-text);
 		cursor: pointer;
 	}
-	.ctx li:not(.embed):hover {
+	.ctx li:not(.embed):not(.spacer):hover {
 		background: var(--color-ctx-hover-bg);
 		color: #fff;
 	}
@@ -174,21 +178,28 @@
 		flex-direction: column;
 		align-items: stretch;
 		cursor: default;
-		padding: 10px 14px 14px;
+		padding: 4px 6px 6px;
 		min-height: unset;
 	}
 	.embed-title {
-		margin: 0 0 8px;
-		font-size: 11px;
+		margin: 0 0 3px;
+		font-size: 12px;
 		text-transform: uppercase;
-		letter-spacing: 0.04em;
+		letter-spacing: 0.06em;
 		color: var(--color-text-muted);
 	}
-	.spacer {
+	/* Divider only: .ctx li min-height would otherwise force a tall blank “row” */
+	.ctx li.spacer {
+		min-height: 0;
 		height: 0;
-		border-top: 1px solid var(--color-border);
-		margin: 5px 0;
 		padding: 0;
+		margin: 2px 0;
+		overflow: hidden;
+		flex: 0 0 auto;
+		align-self: stretch;
+		border: none;
+		border-top: 1px solid var(--color-border);
 		cursor: default;
+		pointer-events: none;
 	}
 </style>

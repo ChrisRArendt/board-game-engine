@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
-	import { hasAttr } from '$lib/engine/pieces';
+	import { hasAttr, pieceSupportsFlip } from '$lib/engine/pieces';
 	import { browser } from '$app/environment';
 	import { getViewportSize } from '$lib/engine/geometry';
 	import { voiceChatState, joinVoiceRoom, leaveVoiceRoom } from '$lib/stores/voiceChat';
@@ -25,7 +25,7 @@
 
 	$: sel = $game.pieces.filter((p) => $game.selectedIds.has(p.id));
 	$: showDup = sel.length > 0 && sel.every((p) => hasAttr(p, 'duplicate'));
-	$: showFlip = sel.length > 0 && sel.every((p) => hasAttr(p, 'flip'));
+	$: showFlip = sel.length > 0 && sel.every((p) => pieceSupportsFlip(p));
 	$: showDest = sel.length > 0 && sel.every((p) => hasAttr(p, 'destroy'));
 	$: showShuf = sel.length > 1 && sel.every((p) => hasAttr(p, 'shuffle'));
 	$: showFan = sel.length > 1;
