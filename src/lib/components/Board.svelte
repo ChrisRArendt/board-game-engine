@@ -35,6 +35,8 @@
 	export let embeddedEditor = false;
 	export let showGridOverlay = false;
 	export let gridSize = 20;
+	/** Board editor: right-click on a piece (supplies client coords + piece id). */
+	export let onEditorPieceContextMenu: ((e: MouseEvent, pieceId: number) => void) | undefined = undefined;
 
 	let viewportEl: HTMLDivElement | undefined;
 	let cameraEl: HTMLDivElement | undefined;
@@ -411,9 +413,10 @@
 	$: bgTable = $game.assetBaseUrl
 		? `${$game.assetBaseUrl}${$game.tableBgFilename}?v=${$game.tableBgRev}`
 		: `/data/${$game.curGame}/images/table-bg.jpg`;
-	$: editorResizePiece =
+	/** Single selected piece in board editor — show handles (disabled when locked so state is obvious). */
+	$: editorResizeTarget =
 		editorMode && !$game.editorTableSelected && $game.selectedIds.size === 1
-			? $game.pieces.find((p) => $game.selectedIds.has(p.id) && !p.locked) ?? null
+			? $game.pieces.find((p) => $game.selectedIds.has(p.id)) ?? null
 			: null;
 	$: viewportCursor = replayMode
 		? 'default'
@@ -510,6 +513,7 @@
 						assetBaseUrl={$game.assetBaseUrl}
 						replayMode={replayMode}
 						editorMode={editorMode}
+						onEditorContextMenu={editorMode ? onEditorPieceContextMenu : undefined}
 						faceHidden={editorMode
 							? false
 							: isPieceFaceHiddenFromPeers(piece, stashRoster, selfUserId, replayMode)}
@@ -543,17 +547,22 @@
 				</svg>
 			{/if}
 
-			{#if editorMode && editorResizePiece}
-				<div class="editor-resize-layer" style:z-index={editorResizePiece.zIndex + 100000}>
+			{#if editorMode && editorResizeTarget}
+				<div
+					class="editor-resize-layer"
+					class:piece-locked-handles={editorResizeTarget.locked === true}
+					style:z-index={editorResizeTarget.zIndex + 100000}
+				>
 					<ResizeHandles
-						x={editorResizePiece.x}
-						y={editorResizePiece.y}
-						w={editorResizePiece.initial_size.w}
-						h={editorResizePiece.initial_size.h}
+						x={editorResizeTarget.x}
+						y={editorResizeTarget.y}
+						w={editorResizeTarget.initial_size.w}
+						h={editorResizeTarget.initial_size.h}
 						zoomScale={zm}
+						disabled={editorResizeTarget.locked === true}
 						onResize={(next, _kind, _e) => {
-							const cur = get(game).pieces.find((x) => x.id === editorResizePiece!.id);
-							if (!cur) return;
+							const cur = get(game).pieces.find((x) => x.id === editorResizeTarget!.id);
+							if (!cur || cur.locked) return;
 							g.replacePieceInstance({
 								...cur,
 								x: next.x,
@@ -563,15 +572,17 @@
 							});
 						}}
 					/>
-					<button
-						type="button"
-						class="rot-knob"
-						style:left="{editorResizePiece.x + editorResizePiece.initial_size.w / 2 - 10}px"
-						style:top="{editorResizePiece.y - 28}px"
-						style:z-index={editorResizePiece.zIndex + 100001}
-						aria-label="Rotate"
-						onpointerdown={(e) => onRotHandleDown(editorResizePiece!, e)}
-					></button>
+					{#if editorResizeTarget.locked !== true}
+						<button
+							type="button"
+							class="rot-knob"
+							style:left="{editorResizeTarget.x + editorResizeTarget.initial_size.w / 2 - 10}px"
+							style:top="{editorResizeTarget.y - 28}px"
+							style:z-index={editorResizeTarget.zIndex + 100001}
+							aria-label="Rotate"
+							onpointerdown={(e) => onRotHandleDown(editorResizeTarget!, e)}
+						></button>
+					{/if}
 				</div>
 			{/if}
 
@@ -775,6 +786,12 @@
 	}
 	.editor-resize-layer :global(.h) {
 		pointer-events: auto;
+	}
+	.editor-resize-layer.piece-locked-handles :global(.box) {
+		opacity: 0.5;
+	}
+	.editor-resize-layer.piece-locked-handles :global(.h) {
+		cursor: not-allowed;
 	}
 	.rot-knob {
 		position: absolute;

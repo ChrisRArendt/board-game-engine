@@ -19,6 +19,7 @@
 	import { computePlacementPositions, type PlacementSpacingMode } from '$lib/editor/placementLayouts';
 	import { EditorHistory, type BoardEditorSnapshot } from '$lib/editor/editorHistory';
 	import { maxZIndex } from '$lib/engine/pieces';
+	import { isTypingInField } from '$lib/engine/input';
 
 	export let gameId: string;
 	export let userId: string;
@@ -43,10 +44,6 @@
 
 	let canvasW = 800;
 	let canvasH = 600;
-
-	let showGrid = false;
-	let gridSize = 20;
-	let snapToGrid = false;
 
 	function loadPanelWidths() {
 		if (typeof localStorage === 'undefined') return;
@@ -80,6 +77,36 @@
 
 	function commitHistory() {
 		history.pushAfterMutate(snapshotFromGame());
+	}
+
+	let canvasCtxMenu: { x: number; y: number; pieceId: number } | null = null;
+
+	function closeCanvasMenu() {
+		canvasCtxMenu = null;
+	}
+
+	function onEditorPieceContextMenu(e: MouseEvent, pieceId: number) {
+		e.preventDefault();
+		e.stopPropagation();
+		const s = get(game);
+		if (!s.selectedIds.has(pieceId)) {
+			g.selectPieceForEditor(pieceId, false);
+		}
+		canvasCtxMenu = { x: e.clientX, y: e.clientY, pieceId };
+	}
+
+	function deleteSelectionFromCanvasMenu() {
+		const s = get(game);
+		if (s.selectedIds.size === 0 || s.editorTableSelected) return;
+		g.removePiecesForEditor([...s.selectedIds]);
+		commitHistory();
+		closeCanvasMenu();
+	}
+
+	function deleteOnePieceFromCanvasMenu(id: number) {
+		g.removePiecesForEditor([id]);
+		commitHistory();
+		closeCanvasMenu();
 	}
 
 	function clientToWorld(clientX: number, clientY: number) {
@@ -203,9 +230,28 @@
 		saving = false;
 	}
 
+	function onKeyup(e: KeyboardEvent) {
+		if (e.key === ' ' || e.code === 'Space') {
+			g.setSpacePanHeld(false);
+			g.endPanPointer();
+		}
+	}
+
+	function onWindowBlur() {
+		g.setSpacePanHeld(false);
+		g.endPanPointer();
+	}
+
 	function onKeydown(e: KeyboardEvent) {
 		const el = e.target as HTMLElement | null;
 		if (el?.closest('input, textarea, select, [contenteditable]')) return;
+
+		if (e.key === ' ' || e.code === 'Space') {
+			if (isTypingInField(e.target)) return;
+			e.preventDefault();
+			if (!e.repeat) g.setSpacePanHeld(true);
+			return;
+		}
 
 		const meta = e.metaKey || e.ctrlKey;
 
@@ -324,25 +370,36 @@
 		}
 	}
 
-	$: g.setEditorGridSnap(snapToGrid, gridSize);
-
 	onMount(() => {
 		loadPanelWidths();
-		g.loadGameData(initialGameData, { curGame: gameKey, assetBaseUrl });
+		g.loadGameData(initialGameData, {
+			curGame: gameKey,
+			assetBaseUrl,
+			ensureEditorPieceAttrs: true
+		});
 		g.centerCamToVP();
 		g.setEditorBoardSnap(true);
+		g.setEditorGridSnap(false, 20);
 		history.seed(snapshotFromGame());
 		window.addEventListener('keydown', onKeydown);
+		window.addEventListener('keyup', onKeyup);
+		window.addEventListener('blur', onWindowBlur);
 	});
 
 	onDestroy(() => {
 		if (browser) {
 			window.removeEventListener('keydown', onKeydown);
+			window.removeEventListener('keyup', onKeyup);
+			window.removeEventListener('blur', onWindowBlur);
+			g.setSpacePanHeld(false);
+			g.endPanPointer();
 		}
 		g.setEditorBoardSnap(false);
 		g.resetGameToEmpty();
 	});
 </script>
+
+<svelte:window onclick={closeCanvasMenu} />
 
 <div class="bed">
 	<header class="top">
@@ -376,7 +433,7 @@
 				{clientToWorld}
 				onDropCard={addPiecesFromCard}
 			/>
-			<BoardLayerList {assetBaseUrl} />
+			<BoardLayerList {assetBaseUrl} onAfterEdit={commitHistory} />
 		</aside>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
@@ -386,7 +443,7 @@
 			onpointerdown={(e) => startPanelDrag('left', e)}
 		></div>
 		<div class="canvas" bind:clientWidth={canvasW} bind:clientHeight={canvasH} data-board-editor-canvas>
-			<BoardToolbar bind:showGrid bind:gridSize bind:snapToGrid />
+			<BoardToolbar />
 			<div class="board-wrap">
 				<Board
 					editorMode={true}
@@ -396,8 +453,9 @@
 					zoomWithScroll={true}
 					panScreenEdge={false}
 					replayMode={false}
-					showGridOverlay={showGrid}
-					gridSize={gridSize}
+					showGridOverlay={false}
+					gridSize={20}
+					onEditorPieceContextMenu={onEditorPieceContextMenu}
 				/>
 				<BoardMinimap viewportW={canvasW} viewportH={canvasH} />
 			</div>
@@ -414,6 +472,29 @@
 			<BoardObjectInspector {gameId} {userId} onUploadTableBg={uploadTableBg} onAfterEdit={commitHistory} />
 		</aside>
 	</div>
+
+	{#if canvasCtxMenu}
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div
+			class="canvas-ctx"
+			style:left="{canvasCtxMenu.x}px"
+			style:top="{canvasCtxMenu.y}px"
+			onclick={(e) => e.stopPropagation()}
+			role="menu"
+			tabindex="-1"
+		>
+			{#if $game.selectedIds.size > 1}
+				<button type="button" onclick={() => deleteSelectionFromCanvasMenu()}>
+					Delete all ({$game.selectedIds.size})
+				</button>
+				<button type="button" onclick={() => deleteOnePieceFromCanvasMenu(canvasCtxMenu!.pieceId)}>
+					Delete this piece
+				</button>
+			{:else}
+				<button type="button" onclick={() => deleteSelectionFromCanvasMenu()}>Delete</button>
+			{/if}
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -506,5 +587,31 @@
 		flex: 1;
 		min-height: 0;
 		position: relative;
+	}
+	.canvas-ctx {
+		position: fixed;
+		z-index: 200001;
+		min-width: 160px;
+		padding: 4px;
+		border-radius: 8px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.canvas-ctx button {
+		text-align: left;
+		padding: 8px 10px;
+		border: none;
+		background: transparent;
+		color: inherit;
+		cursor: pointer;
+		border-radius: 4px;
+		font-size: 13px;
+	}
+	.canvas-ctx button:hover {
+		background: rgba(59, 130, 246, 0.15);
 	}
 </style>

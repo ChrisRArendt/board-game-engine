@@ -1,9 +1,12 @@
 <script lang="ts">
+	import { get } from 'svelte/store';
 	import type { PieceInstance } from '$lib/engine/types';
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
 
 	export let assetBaseUrl: string | null;
+	/** Called after edits from this panel so the board editor can record undo history. */
+	export let onAfterEdit: (() => void) | undefined = undefined;
 
 	function thumbUrl(p: PieceInstance) {
 		if (!assetBaseUrl) return '';
@@ -135,6 +138,10 @@
 
 	function onRowContextMenu(e: MouseEvent, id: number) {
 		e.preventDefault();
+		const s = get(game);
+		if (!s.selectedIds.has(id)) {
+			g.selectPieceForEditor(id, false);
+		}
 		menu = { id, x: e.clientX, y: e.clientY };
 	}
 </script>
@@ -167,10 +174,38 @@
 					type="button"
 					class="eye"
 					class:eye-off={L.hidden}
-					title={L.hidden ? 'Show' : 'Hide'}
-					onclick={() => g.togglePieceHidden(L.id)}
+					title={L.hidden ? 'Show on board' : 'Hide on board'}
+					aria-pressed={!L.hidden}
+					onclick={(e) => {
+						e.stopPropagation();
+						g.togglePieceHidden(L.id);
+					}}
 				>
-					👁
+					{#if !L.hidden}
+						<svg class="eye-icon" viewBox="0 0 24 24" aria-hidden="true">
+							<path
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M1 12s4-8 11-8 11 8-4 8-11 8-11-8-11-8z"
+							/>
+							<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" />
+						</svg>
+					{:else}
+						<svg class="eye-icon" viewBox="0 0 24 24" aria-hidden="true">
+							<path
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+							/>
+							<line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" stroke-width="2" />
+						</svg>
+					{/if}
 				</button>
 				<div class="thumb-wrap">
 					{#if assetBaseUrl}
@@ -186,11 +221,36 @@
 				<button
 					type="button"
 					class="lock"
-					class:lock-on={L.locked}
-					title={L.locked ? 'Unlock' : 'Lock'}
-					onclick={() => g.togglePieceLocked(L.id)}
+					class:lock-on={L.locked === true}
+					title={L.locked === true ? 'Unlock piece' : 'Lock piece'}
+					aria-pressed={L.locked === true}
+					onclick={(e) => {
+						e.stopPropagation();
+						e.preventDefault();
+						g.togglePieceLocked(L.id);
+					}}
 				>
-					🔒
+					{#if L.locked === true}
+						<svg class="lock-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+							<path
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 4.5h10.5a2.25 2.25 0 012.25 2.25v6.75a2.25 2.25 0 01-2.25 2.25H3.75a2.25 2.25 0 01-2.25-2.25v-6.75a2.25 2.25 0 012.25-2.25z"
+							/>
+						</svg>
+					{:else}
+						<svg class="lock-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+							<path
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
+							/>
+						</svg>
+					{/if}
 				</button>
 			</li>
 		{/each}
@@ -205,26 +265,40 @@
 		style:top="{menu.y}px"
 		onclick={(e) => e.stopPropagation()}
 		role="menu"
+		tabindex="-1"
 	>
 		<button
 			type="button"
 			onclick={() => {
 				g.duplicatePieceForEditor(menu!.id);
 				closeMenu();
+				onAfterEdit?.();
 			}}>Duplicate</button
 		>
+		{#if $game.selectedIds.size > 1 && $game.selectedIds.has(menu.id)}
+			<button
+				type="button"
+				onclick={() => {
+					g.removePiecesForEditor([...$game.selectedIds]);
+					closeMenu();
+					onAfterEdit?.();
+				}}>Delete all ({$game.selectedIds.size})</button
+			>
+		{/if}
 		<button
 			type="button"
 			onclick={() => {
 				g.removePiecesForEditor([menu!.id]);
 				closeMenu();
-			}}>Delete</button
+				onAfterEdit?.();
+			}}>{$game.selectedIds.size > 1 ? 'Delete this piece' : 'Delete'}</button
 		>
 		<button
 			type="button"
 			onclick={() => {
 				g.bringToFront(menu!.id);
 				closeMenu();
+				onAfterEdit?.();
 			}}>Bring to front</button
 		>
 		<button
@@ -232,6 +306,7 @@
 			onclick={() => {
 				g.sendToBack(menu!.id);
 				closeMenu();
+				onAfterEdit?.();
 			}}>Send to back</button
 		>
 	</div>
@@ -262,7 +337,7 @@
 	}
 	.row {
 		display: grid;
-		grid-template-columns: 24px 24px 36px 1fr 28px;
+		grid-template-columns: 28px 28px 36px 1fr 28px;
 		gap: 4px;
 		align-items: center;
 		padding: 4px 6px;
@@ -291,15 +366,25 @@
 		padding: 0;
 		font-size: 14px;
 	}
-	.eye {
+	.row > button.eye {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 28px;
+		min-height: 28px;
+		padding: 0;
 		background: transparent;
 		border: none;
 		cursor: pointer;
-		font-size: 12px;
-		opacity: 0.85;
+		color: var(--color-text-muted);
 	}
-	.eye-off {
-		opacity: 0.35;
+	.row > button.eye .eye-icon {
+		width: 18px;
+		height: 18px;
+		display: block;
+	}
+	.row > button.eye.eye-off .eye-icon {
+		opacity: 0.55;
 	}
 	.thumb-wrap {
 		width: 36px;
@@ -340,15 +425,25 @@
 		opacity: 0.55;
 		font-size: 10px;
 	}
-	.lock {
+	.row > button.lock {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 28px;
+		min-height: 28px;
+		padding: 0;
 		background: transparent;
 		border: none;
 		cursor: pointer;
-		font-size: 12px;
-		opacity: 0.5;
+		color: var(--color-text-muted);
 	}
-	.lock.lock-on {
-		opacity: 1;
+	.row > button.lock .lock-icon {
+		width: 18px;
+		height: 18px;
+		display: block;
+	}
+	.row > button.lock.lock-on {
+		color: #fbbf24;
 	}
 	.layers.dnd-active {
 		cursor: grabbing;

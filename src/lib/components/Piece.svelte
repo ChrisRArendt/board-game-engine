@@ -17,6 +17,8 @@
 	/** Local-only enlarged viewer (double-click); not synced to other players */
 	export let onpiecedblclick: ((id: number) => void) | undefined = undefined;
 	export let editorMode = false;
+	/** Board editor: right-click on piece (browser context menu suppressed). */
+	export let onEditorContextMenu: ((e: MouseEvent, pieceId: number) => void) | undefined = undefined;
 
 	$: canFlip = hasAttr(piece, 'flip');
 	$: rot = piece.rotation ?? 0;
@@ -65,6 +67,12 @@
 		e.stopPropagation();
 		onpiecedblclick?.(piece.id);
 	}}
+	oncontextmenu={(e) => {
+		if (replayMode || !editorMode || !onEditorContextMenu) return;
+		e.preventDefault();
+		e.stopPropagation();
+		onEditorContextMenu(e, piece.id);
+	}}
 ></div>
 {#if editorMode && piece.locked}
 	<div
@@ -98,6 +106,12 @@
 	.piece.selected {
 		outline: 3px solid #3af;
 	}
+	/* Locked (board editor): amber dashed ring — matches template layer list lock accent */
+	.piece.editor-locked {
+		outline: 2px dashed #fbbf24 !important;
+		outline-offset: 2px;
+		box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35);
+	}
 	.piece.replay {
 		pointer-events: none;
 	}
@@ -106,9 +120,6 @@
 		font-size: 12px;
 		pointer-events: none;
 		filter: drop-shadow(0 0 2px #000);
-	}
-	.piece.editor-locked {
-		outline-style: dashed;
 	}
 	.piece.face-hidden {
 		background-image: repeating-linear-gradient(

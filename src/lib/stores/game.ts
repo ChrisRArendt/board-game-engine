@@ -145,7 +145,13 @@ export const selectedPieces = derived(game, ($g) => $g.pieces.filter((p) => $g.s
 
 export function loadGameData(
 	json: GameDataJson,
-	opts?: { curGame?: string; assetBaseUrl?: string | null; stripEditorOnly?: boolean }
+	opts?: {
+		curGame?: string;
+		assetBaseUrl?: string | null;
+		stripEditorOnly?: boolean;
+		/** Board editor: ensure every piece can be selected and moved (legacy JSON often omits attributes). */
+		ensureEditorPieceAttrs?: boolean;
+	}
 ) {
 	const curGame = opts?.curGame ?? 'bsg_1';
 	const assetBaseUrl = opts?.assetBaseUrl !== undefined ? opts.assetBaseUrl : null;
@@ -176,6 +182,14 @@ export function loadGameData(
 			for (let i = 0; i < pieces.length; i++) {
 				const p = pieces[i];
 				pieces[i] = { ...p, hidden: undefined, locked: undefined };
+			}
+		}
+
+		if (opts?.ensureEditorPieceAttrs) {
+			for (let i = 0; i < pieces.length; i++) {
+				const p = pieces[i];
+				const attrs = new Set([...p.attributes, 'select', 'move']);
+				pieces[i] = { ...p, attributes: [...attrs] };
 			}
 		}
 
@@ -1128,11 +1142,11 @@ export function selectAllPiecesForEditor() {
 	});
 }
 
-/** Layer list: select a piece even if hidden (always succeeds for editor). */
+/** Layer list: select a piece even if hidden or missing `select` in saved JSON (board editor only). */
 export function selectPieceForEditor(id: number, shift: boolean) {
 	game.update((s) => {
 		const p = s.pieces.find((x) => x.id === id);
-		if (!p || !hasAttr(p, 'select')) return s;
+		if (!p) return s;
 		const selectedIds = new Set(s.selectedIds);
 		if (shift) {
 			if (selectedIds.has(id)) {
@@ -1173,7 +1187,11 @@ export function togglePieceHidden(id: number) {
 export function togglePieceLocked(id: number) {
 	game.update((s) => ({
 		...s,
-		pieces: s.pieces.map((p) => (p.id === id ? { ...p, locked: !p.locked } : p))
+		pieces: s.pieces.map((p) => {
+			if (p.id !== id) return p;
+			const nextLocked = p.locked === true ? false : true;
+			return { ...p, locked: nextLocked };
+		})
 	}));
 }
 
