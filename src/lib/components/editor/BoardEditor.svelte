@@ -86,7 +86,14 @@
 			nextPieceId: s.nextPieceId,
 			nextWidgetId: s.nextWidgetId,
 			playerSlots: s.playerSlots
-				? s.playerSlots.map((z) => ({ safe: { ...z.safe }, deal: { ...z.deal } }))
+				? s.playerSlots.map((z) => ({
+						safe: { ...z.safe },
+						deal: { ...z.deal },
+						score: { ...z.score }
+					}))
+				: null,
+			initialPlayView: s.initialPlayView
+				? { world_rect: { ...s.initialPlayView.world_rect } }
 				: null
 		};
 	}
@@ -350,6 +357,7 @@
 					st.assetBaseUrl && st.envBgFilename.trim() ? st.envBgFilename : undefined,
 				piece_color_palette: st.pieceColorPalette,
 				editor_view: { zoom: st.zoom, pan_x: st.panX, pan_y: st.panY },
+				initial_play_view: st.initialPlayView,
 				widgets: st.widgets,
 				player_slots: st.playerSlots
 			});
@@ -560,10 +568,38 @@
 			>
 				Duplicate
 			</button>
+			<button
+				type="button"
+				class="secondary"
+				title="Save current pan/zoom as the default view when players open this game"
+				onclick={() => {
+					g.captureInitialPlayView();
+					commitHistory();
+				}}
+			>
+				Save initial play view
+			</button>
+			<button
+				type="button"
+				class="secondary"
+				disabled={!$game.initialPlayView}
+				title="Remove saved default play camera"
+				onclick={() => {
+					g.clearInitialPlayView();
+					commitHistory();
+				}}
+			>
+				Clear play view
+			</button>
 			<button type="button" class="primary" disabled={saving} onclick={() => saveBoard()}>
 				{saving ? 'Saving…' : 'Save board'}
 			</button>
 		</div>
+		<p class="view-hint">
+			Pan and zoom the board, then <strong>Save initial play view</strong>. The gold frame is the world region
+			saved to the game file; in play it is zoomed to fit each device’s screen (centered). Players with no
+			saved view use the default camera.
+		</p>
 		{#if errMsg}
 			<p class="err">{errMsg}</p>
 		{/if}
@@ -595,12 +631,13 @@
 					embeddedEditor={true}
 					selfUserId={userId}
 					selfDisplayName="Editor"
-					zoomWithScroll={true}
+					scrollWheelPans={false}
 					panScreenEdge={false}
 					replayMode={false}
 					showGridOverlay={false}
 					gridSize={20}
 					showEditorPlayerZonesPreview={true}
+					showInitialPlayViewFrame={true}
 					onPlayerZonesEdited={commitHistory}
 					onEditorPieceContextMenu={onEditorPieceContextMenu}
 				/>
@@ -703,6 +740,13 @@
 		color: #f87171;
 		margin: 8px 0 0;
 		font-size: 13px;
+	}
+	.view-hint {
+		margin: 8px 0 0;
+		font-size: 12px;
+		line-height: 1.45;
+		color: var(--color-text-muted, #94a3b8);
+		max-width: 720px;
 	}
 	.main {
 		flex: 1;

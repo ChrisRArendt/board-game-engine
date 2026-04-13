@@ -464,6 +464,12 @@ export async function connectGameChannel(
 		game.setWidgetValue(p.widgetId, p.value);
 	});
 
+	ch.on('broadcast', { event: 'player_slot_score' }, ({ payload }) => {
+		const p = payload as { slotIndex?: number; value?: number };
+		if (typeof p.slotIndex !== 'number' || typeof p.value !== 'number') return;
+		game.applyPlayerSlotScore(p.slotIndex, p.value);
+	});
+
 	ch.on('broadcast', { event: 'turn_highlight' }, ({ payload }) => {
 		const p = payload as { userIds?: string[] };
 		if (Array.isArray(p.userIds)) {

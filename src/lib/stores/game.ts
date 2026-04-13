@@ -8,7 +8,9 @@ export function registerGameEmit(fn: (type: string, data: Record<string, unknown
 }
 import type {
 	BoardWidget,
+	EditorViewJson,
 	GameDataJson,
+	InitialPlayViewState,
 	PieceData,
 	PieceInstance,
 	PlayerSlotZones,
@@ -32,6 +34,9 @@ import {
 	clampZoom,
 	getViewportSize,
 	legacyZoomLevelToZoom,
+	panZoomToFitWorldRect,
+	type ViewportFitInset,
+	visibleWorldRect,
 	type Rect,
 	ZOOM_DEFAULT
 } from '$lib/engine/geometry';
@@ -42,7 +47,11 @@ import {
 	type BoardSnapGuides,
 	EMPTY_BOARD_GUIDES
 } from '$lib/editor/boardSnapGeometry';
-import { dealRectForRosterIndex, parsePlayerSlotsFromJson } from '$lib/engine/stash';
+import {
+	dealRectForRosterIndex,
+	parsePlayerSlotsFromJson,
+	PLAYER_SLOT_MAX
+} from '$lib/engine/stash';
 
 export interface GameState {
 	curGame: string;
@@ -108,6 +117,12 @@ export interface GameState {
 	editorGridSize: number;
 	/** Custom safe/deal rects per roster slot; null uses legacy `stashPos` grid. */
 	playerSlots: PlayerSlotZones[] | null;
+	/** Per slot index (0 … PLAYER_SLOT_MAX-1); synced in play. */
+	playerSlotScores: number[];
+	/** Last board viewport (CSS px) — used when capturing initial play view in the editor. */
+	boardViewportForCapture: { w: number; h: number } | null;
+	/** Saved world rect to fit on play load; null = engine default on first load. */
+	initialPlayView: InitialPlayViewState | null;
 }
 
 function initialState(): GameState {
@@ -151,7 +166,10 @@ function initialState(): GameState {
 		editorSnapGuides: null,
 		editorSnapToGrid: false,
 		editorGridSize: 20,
-		playerSlots: null
+		playerSlots: null,
+		playerSlotScores: Array.from({ length: PLAYER_SLOT_MAX }, () => 0),
+		boardViewportForCapture: null,
+		initialPlayView: null
 	};
 }
 
@@ -163,6 +181,87 @@ export function resetGameToEmpty() {
 }
 
 export const selectedPieces = derived(game, ($g) => $g.pieces.filter((p) => $g.selectedIds.has(p.id)));
+
+/** Stable viewport for migrating old `initial_play_view` { zoom, pan_* } saves. */
+const LEGACY_INITIAL_PLAY_VIEWPORT = { w: 1920, h: 1080 };
+
+function isValidWorldRect(o: unknown): o is Rect {
+	if (!o || typeof o !== 'object') return false;
+	const r = o as Record<string, unknown>;
+	return (
+		[r.x, r.y, r.w, r.h].every((n) => typeof n === 'number' && Number.isFinite(n as number)) &&
+		(r.w as number) > 0 &&
+		(r.h as number) > 0
+	);
+}
+
+export function parseInitialPlayViewJson(raw: unknown): InitialPlayViewState | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const o = raw as Record<string, unknown>;
+	if (isValidWorldRect(o.world_rect)) {
+		const wr = o.world_rect as Rect;
+		return {
+			world_rect: { x: wr.x, y: wr.y, w: wr.w, h: wr.h }
+		};
+	}
+	/** Legacy: pan/zoom — convert to world rect using a fixed reference viewport. */
+	if (
+		typeof o.zoom === 'number' &&
+		Number.isFinite(o.zoom) &&
+		typeof o.pan_x === 'number' &&
+		Number.isFinite(o.pan_x) &&
+		typeof o.pan_y === 'number' &&
+		Number.isFinite(o.pan_y)
+	) {
+		const z = clampZoom(o.zoom);
+		const r = visibleWorldRect(
+			o.pan_x,
+			o.pan_y,
+			z,
+			LEGACY_INITIAL_PLAY_VIEWPORT.w,
+			LEGACY_INITIAL_PLAY_VIEWPORT.h
+		);
+		return { world_rect: { x: r.x, y: r.y, w: r.w, h: r.h } };
+	}
+	return null;
+}
+
+/** Report board viewport size (editor canvas) so “Save initial play view” matches the visible frame. */
+export function setBoardViewportForCapture(w: number, h: number) {
+	if (!Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1) return;
+	game.update((s) => ({ ...s, boardViewportForCapture: { w, h } }));
+}
+
+/** Snapshot the current visible world rectangle as the default play framing. */
+export function captureInitialPlayView() {
+	game.update((s) => {
+		const vp = s.boardViewportForCapture ?? getViewportSize();
+		const r = visibleWorldRect(s.panX, s.panY, s.zoom, vp.w, vp.h);
+		return {
+			...s,
+			initialPlayView: {
+				world_rect: { x: r.x, y: r.y, w: r.w, h: r.h }
+			}
+		};
+	});
+}
+
+/** Fit pan/zoom so the saved world rect is visible in the given viewport (play load / resize). */
+export function applyInitialPlayViewToViewport(
+	viewportW: number,
+	viewportH: number,
+	opts?: { inset?: ViewportFitInset }
+) {
+	const s = get(game);
+	if (!s.initialPlayView) return;
+	if (viewportW < 8 || viewportH < 8) return;
+	const { panX, panY, zoom } = panZoomToFitWorldRect(s.initialPlayView.world_rect, viewportW, viewportH, opts);
+	game.update((g) => ({ ...g, panX, panY, zoom }));
+}
+
+export function clearInitialPlayView() {
+	game.update((s) => ({ ...s, initialPlayView: null }));
+}
 
 export function loadGameData(
 	json: GameDataJson,
@@ -198,8 +297,8 @@ export function loadGameData(
 			}
 		}
 
-		const strip = opts?.stripEditorOnly === true;
-		if (strip) {
+		const stripPieces = opts?.stripEditorOnly === true;
+		if (stripPieces) {
 			for (let i = 0; i < pieces.length; i++) {
 				const p = pieces[i];
 				pieces[i] = { ...p, hidden: undefined, locked: undefined };
@@ -233,8 +332,10 @@ export function loadGameData(
 			json.piece_color_palette && json.piece_color_palette.length > 0
 				? [...json.piece_color_palette]
 				: [...DEFAULT_PIECE_COLOR_PALETTE];
-		const useEditorView = opts?.stripEditorOnly !== true;
+		const strip = opts?.stripEditorOnly === true;
+		const useEditorView = !strip;
 		const ev = json.editor_view;
+		const ipv = parseInitialPlayViewJson(json.initial_play_view);
 		let zoom = ZOOM_DEFAULT;
 		let panX = 0;
 		let panY = 0;
@@ -248,6 +349,11 @@ export function loadGameData(
 			if (typeof ev.pan_y === 'number' && Number.isFinite(ev.pan_y)) {
 				panY = ev.pan_y;
 			}
+		} else if (strip && ipv) {
+			const fit = panZoomToFitWorldRect(ipv.world_rect, vp.w, vp.h);
+			zoom = fit.zoom;
+			panX = fit.panX;
+			panY = fit.panY;
 		}
 		return {
 			...s,
@@ -280,7 +386,10 @@ export function loadGameData(
 			editorSnapGuides: null,
 			editorSnapToGrid: false,
 			editorGridSize: 20,
-			playerSlots: parsePlayerSlotsFromJson(json.player_slots) ?? null
+			playerSlots: parsePlayerSlotsFromJson(json.player_slots) ?? null,
+			playerSlotScores: Array.from({ length: PLAYER_SLOT_MAX }, () => 0),
+			boardViewportForCapture: null,
+			initialPlayView: ipv
 		};
 	});
 }
@@ -291,7 +400,8 @@ export function setPlayerSlots(slots: PlayerSlotZones[] | null) {
 		playerSlots: slots
 			? slots.map((z) => ({
 					safe: { ...z.safe },
-					deal: { ...z.deal }
+					deal: { ...z.deal },
+					score: { ...z.score }
 				}))
 			: null
 	}));
@@ -1245,6 +1355,33 @@ export function setWidgetValue(id: number, value: string | number | boolean) {
 	}));
 }
 
+/** Apply score from network / snapshot (no broadcast). */
+export function applyPlayerSlotScore(slotIndex: number, value: number) {
+	if (slotIndex < 0 || slotIndex >= PLAYER_SLOT_MAX) return;
+	const v = Math.round(
+		Math.min(99999, Math.max(-99999, Number.isFinite(value) ? value : 0))
+	);
+	game.update((s) => {
+		const next = [...s.playerSlotScores];
+		next[slotIndex] = v;
+		return { ...s, playerSlotScores: next };
+	});
+}
+
+/** Local change + broadcast in play. */
+export function setPlayerSlotScore(slotIndex: number, value: number) {
+	if (slotIndex < 0 || slotIndex >= PLAYER_SLOT_MAX) return;
+	const v = Math.round(
+		Math.min(99999, Math.max(-99999, Number.isFinite(value) ? value : 0))
+	);
+	game.update((s) => {
+		const next = [...s.playerSlotScores];
+		next[slotIndex] = v;
+		return { ...s, playerSlotScores: next };
+	});
+	emitGame?.('player_slot_score', { slotIndex, value: v });
+}
+
 export function replaceWidgetInstance(w: BoardWidget) {
 	game.update((s) => ({
 		...s,
@@ -1704,6 +1841,7 @@ export function restoreBoardEditorSnapshot(snapshot: {
 	nextPieceId: number;
 	nextWidgetId: number;
 	playerSlots?: PlayerSlotZones[] | null;
+	initialPlayView?: InitialPlayViewState | null;
 }) {
 	game.update((s) => ({
 		...s,
@@ -1721,10 +1859,22 @@ export function restoreBoardEditorSnapshot(snapshot: {
 		nextPieceId: snapshot.nextPieceId,
 		nextWidgetId: snapshot.nextWidgetId,
 		playerSlots: snapshot.playerSlots
-			? snapshot.playerSlots.map((z) => ({ safe: { ...z.safe }, deal: { ...z.deal } }))
+			? snapshot.playerSlots.map((z) => ({
+					safe: { ...z.safe },
+					deal: { ...z.deal },
+					score: { ...z.score }
+				}))
 			: snapshot.playerSlots === undefined
 				? s.playerSlots
 				: null,
+		initialPlayView:
+			snapshot.initialPlayView !== undefined
+				? snapshot.initialPlayView
+					? {
+							world_rect: { ...snapshot.initialPlayView.world_rect }
+						}
+					: null
+				: s.initialPlayView,
 		selectedWidgetIds: new Set(),
 		editorSnapGuides: null,
 		moveDrag: null
@@ -1748,6 +1898,8 @@ export type StoredGameSnapshot = {
 	zoomLevel?: number;
 	panX: number;
 	panY: number;
+	/** Per-player slot scores in play; omitted in older saves. */
+	playerSlotScores?: number[];
 };
 
 function zoomFromSnapshot(snapshot: StoredGameSnapshot): number {
@@ -1782,7 +1934,8 @@ export function serializeGameState(): StoredGameSnapshot {
 		assetBaseUrl: s.assetBaseUrl,
 		zoom: s.zoom,
 		panX: s.panX,
-		panY: s.panY
+		panY: s.panY,
+		playerSlotScores: [...s.playerSlotScores]
 	};
 }
 
@@ -1832,9 +1985,22 @@ export function applyStoredGameSnapshot(
 		handscroll: false,
 		editorSnapGuides: null,
 		editorSnapToGrid: false,
-		editorGridSize: 20
+		editorGridSize: 20,
+		playerSlotScores: normalizePlayerSlotScores(snapshot.playerSlotScores)
 	}));
 	if (!opts?.skipCenter) centerCamToVP();
+}
+
+function normalizePlayerSlotScores(raw: number[] | undefined): number[] {
+	const base = Array.from({ length: PLAYER_SLOT_MAX }, () => 0);
+	if (!raw?.length) return base;
+	for (let i = 0; i < PLAYER_SLOT_MAX; i++) {
+		const v = raw[i];
+		if (typeof v === 'number' && Number.isFinite(v)) {
+			base[i] = Math.round(Math.min(99999, Math.max(-99999, v)));
+		}
+	}
+	return base;
 }
 
 const DEAL_ANIM_DELAY_MS = 72;

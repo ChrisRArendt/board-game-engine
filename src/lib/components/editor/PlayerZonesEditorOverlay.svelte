@@ -28,7 +28,7 @@
 
 	function patchSlot(
 		slotIndex: number,
-		which: 'safe' | 'deal',
+		which: 'safe' | 'deal' | 'score',
 		r: Rect,
 		opts?: { skipHistory?: boolean }
 	) {
@@ -43,7 +43,7 @@
 
 	function onResizeSlot(
 		slotIndex: number,
-		which: 'safe' | 'deal',
+		which: 'safe' | 'deal' | 'score',
 		next: { x: number; y: number; w: number; h: number }
 	) {
 		const slots = get(game).playerSlots;
@@ -64,14 +64,14 @@
 
 	let moveDrag: {
 		slotIndex: number;
-		which: 'safe' | 'deal';
+		which: 'safe' | 'deal' | 'score';
 		sx: number;
 		sy: number;
 		ox: number;
 		oy: number;
 	} | null = null;
 
-	function startMove(slotIndex: number, which: 'safe' | 'deal', cur: Rect, e: PointerEvent) {
+	function startMove(slotIndex: number, which: 'safe' | 'deal' | 'score', cur: Rect, e: PointerEvent) {
 		e.preventDefault();
 		e.stopPropagation();
 		(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -127,6 +127,7 @@
 			{@const color = playerSlotColor(slotIndex)}
 			{@const fillSafe = hexToRgba(color, 0.14)}
 			{@const fillDeal = hexToRgba(color, 0.22)}
+			{@const fillScore = hexToRgba(color, 0.18)}
 			<!-- Safe -->
 			<div
 				class="zone-anchor"
@@ -191,6 +192,38 @@
 					onResizeEnd={() => onEdited?.()}
 				/>
 			</div>
+			<!-- Score -->
+			<div
+				class="zone-anchor"
+				style:left="{z.score.x}px"
+				style:top="{z.score.y}px"
+				style:width="{z.score.w}px"
+				style:height="{z.score.h}px"
+				style:--slot-accent={color}
+			>
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class="zone-drag"
+					class:score={true}
+					style:background={fillScore}
+					style:border-color={color}
+					title="Drag to move score widget zone (player {slotIndex + 1})"
+					onpointerdown={(e) => startMove(slotIndex, 'score', z.score, e)}
+				>
+					<span class="tag" style:color={color}>Score {slotIndex + 1}</span>
+				</div>
+				<ResizeHandles
+					x={0}
+					y={0}
+					w={z.score.w}
+					h={z.score.h}
+					minW={56}
+					minH={36}
+					zoomScale={zoomScale}
+					onResize={(next) => onResizeSlot(slotIndex, 'score', next)}
+					onResizeEnd={() => onEdited?.()}
+				/>
+			</div>
 		{/each}
 	</div>
 {/if}
@@ -225,6 +258,10 @@
 	}
 	.zone-drag.deal {
 		border-style: dashed;
+	}
+	.zone-drag.score {
+		border-style: solid;
+		border-width: 2px;
 	}
 	.tag {
 		position: absolute;

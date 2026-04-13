@@ -62,12 +62,26 @@ export function parsePlayerSlotsFromJson(raw: unknown): PlayerSlotZones[] | null
 		if (!isValidRect(o.safe) || !isValidRect(o.deal)) continue;
 		const safe = o.safe as Rect;
 		const deal = o.deal as Rect;
+		const score = isValidRect(o.score)
+			? (o.score as Rect)
+			: defaultScoreRectForSafe(safe);
 		out.push({
 			safe: { x: safe.x, y: safe.y, w: safe.w, h: safe.h },
-			deal: { x: deal.x, y: deal.y, w: deal.w, h: deal.h }
+			deal: { x: deal.x, y: deal.y, w: deal.w, h: deal.h },
+			score: { x: score.x, y: score.y, w: score.w, h: score.h }
 		});
 	}
 	return out.length > 0 ? out : null;
+}
+
+/** Default score strip above each safe zone (editable in player zones). */
+export function defaultScoreRectForSafe(safe: Rect): Rect {
+	return {
+		x: safe.x,
+		y: safe.y - 56,
+		w: Math.min(200, Math.max(96, safe.w)),
+		h: 44
+	};
 }
 
 /** Default 8 slots from legacy stash positions (safe = deal = stash rect). */
@@ -75,7 +89,12 @@ export function defaultPlayerSlotsFromLegacyGrid(): PlayerSlotZones[] {
 	const slots: PlayerSlotZones[] = [];
 	for (let i = 0; i < PLAYER_SLOT_MAX; i++) {
 		const r = stashRectForIndex(i);
-		slots.push({ safe: { ...r }, deal: { ...r } });
+		const safe = { ...r };
+		slots.push({
+			safe,
+			deal: { ...r },
+			score: defaultScoreRectForSafe(safe)
+		});
 	}
 	return slots;
 }
@@ -94,6 +113,15 @@ export function dealRectForRosterIndex(i: number, playerSlots: PlayerSlotZones[]
 		return { ...playerSlots[i].deal };
 	}
 	return stashRectForIndex(i);
+}
+
+/** Score widget rect for roster index `i`. */
+export function scoreRectForRosterIndex(i: number, playerSlots: PlayerSlotZones[] | null): Rect {
+	if (playerSlots && playerSlots.length > 0 && i < playerSlots.length) {
+		return { ...playerSlots[i].score };
+	}
+	const r = stashRectForIndex(i);
+	return defaultScoreRectForSafe(r);
 }
 
 function pieceCenter(p: PieceInstance): { x: number; y: number } {

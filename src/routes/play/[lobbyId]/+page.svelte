@@ -100,6 +100,8 @@
 
 	let unsubAutosave: (() => void) | undefined;
 	let historyRecordInterval: ReturnType<typeof setInterval> | undefined;
+	/** Used to fit `initial_play_view` in the visible area below the fixed top bar (not under it). */
+	let playTopbarH = 0;
 
 	$: rulesUrlForMenu = data.customGame
 		? data.customGame.rulesUrl
@@ -448,7 +450,7 @@
 
 <svelte:window onkeydown={onKeyDown} onkeyup={onKeyUp} oncontextmenu={onContextMenu} />
 
-<div class="play-topbar">
+<div class="play-topbar" bind:clientHeight={playTopbarH}>
 	<Toolbar
 		curGame={$game.curGame}
 		rulesUrl={data.customGame ? data.customGame.rulesUrl : undefined}
@@ -476,12 +478,13 @@
 <Board
 	selfUserId={data.session.user.id}
 	selfDisplayName={data.profile?.display_name ?? 'You'}
-	zoomWithScroll={$settings.zoomWithScroll}
+	scrollWheelPans={$settings.scrollWheelPans}
 	panScreenEdge={$settings.panScreenEdge}
 	replayMode={$isHistoryReplayActive}
 	onOpenViewer={openLocalViewerForPiece}
 	onViewerFollowPiece={followViewerToPiece}
 	onOpenContextMenu={openContextFromLongPress}
+	initialPlayFitInset={playTopbarH > 0 ? { top: playTopbarH } : undefined}
 />
 
 <UserList

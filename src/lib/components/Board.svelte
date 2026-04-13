@@ -5,27 +5,37 @@
 	import Piece from './Piece.svelte';
 	import BoardWidgetRenderer from './BoardWidgetRenderer.svelte';
 	import SelectionBox from './SelectionBox.svelte';
+	import PlayerSlotScore from './PlayerSlotScore.svelte';
 	import ResizeHandles from '$lib/components/editor/ResizeHandles.svelte';
 	import PlayerZonesEditorOverlay from '$lib/components/editor/PlayerZonesEditorOverlay.svelte';
+	import InitialPlayViewFrame from '$lib/components/editor/InitialPlayViewFrame.svelte';
 	import * as g from '$lib/stores/game';
 	import { game } from '$lib/stores/game';
-	import { ZOOM_DEFAULT } from '$lib/engine/geometry';
+	import { ZOOM_DEFAULT, type ViewportFitInset } from '$lib/engine/geometry';
 	import { PointerEngine } from '$lib/engine/pointer';
 	import { users } from '$lib/stores/users';
-	import { emit, getLocalPlayerColor, playerColorOverrides, playerOrder } from '$lib/stores/network';
+	import {
+		emit,
+		getLocalPlayerColor,
+		playerColorOverrides,
+		playerOrder,
+		turnHighlightUserIds
+	} from '$lib/stores/network';
 	import { settings } from '$lib/stores/settings';
 	import type { BoardWidget, PieceInstance } from '$lib/engine/types';
 	import {
 		buildStashRoster,
 		canSelectPieceForViewer,
 		dealRectForRosterIndex,
+		scoreRectForRosterIndex,
 		isPieceFaceHiddenFromPeers,
 		playerSlotColor,
 		PLAYER_SLOT_MAX,
 		safeRectForRosterIndex
 	} from '$lib/engine/stash';
 
-	export let zoomWithScroll = false;
+	/** When true, wheel pans; when false (default), wheel zooms. */
+	export let scrollWheelPans = false;
 	export let panScreenEdge = false;
 	export let replayMode = false;
 	export let onOpenViewer: ((pieceId: number) => void) | undefined = undefined;
@@ -46,8 +56,14 @@
 	export let showEditorPlayerZonesPreview = false;
 	/** Called after drag/resize of player zones (e.g. commit undo history). */
 	export let onPlayerZonesEdited: (() => void) | undefined = undefined;
+	/** Board editor: show frame for saved initial play viewport. */
+	export let showInitialPlayViewFrame = false;
+	/** Play: inset from viewport edges when fitting `initial_play_view` (e.g. fixed toolbar above the board). */
+	export let initialPlayFitInset: ViewportFitInset | undefined = undefined;
 
 	let viewportEl: HTMLDivElement | undefined;
+	let viewportW = 0;
+	let viewportH = 0;
 	let cameraEl: HTMLDivElement | undefined;
 	let mouseEl: HTMLDivElement | undefined;
 	let tableEl: HTMLDivElement | undefined;
@@ -71,6 +87,33 @@
 		cx: number;
 		cy: number;
 	} | null = null;
+
+	/**
+	 * When this string changes (saved world rect or game id), play mode re-fits pan/zoom.
+	 * Intentionally does not depend on pan — avoids resetting the camera while playing.
+	 */
+	$: initialPlayFitKey = $game.initialPlayView
+		? `${$game.curGame}|${JSON.stringify($game.initialPlayView.world_rect)}|${JSON.stringify(initialPlayFitInset ?? null)}`
+		: '';
+	let lastInitialPlayFitKey = '';
+
+	$: if (!initialPlayFitKey) lastInitialPlayFitKey = '';
+
+	$: if (
+		browser &&
+		!editorMode &&
+		initialPlayFitKey &&
+		viewportW > 8 &&
+		viewportH > 8 &&
+		initialPlayFitKey !== lastInitialPlayFitKey
+	) {
+		lastInitialPlayFitKey = initialPlayFitKey;
+		g.applyInitialPlayViewToViewport(viewportW, viewportH, { inset: initialPlayFitInset });
+	}
+
+	$: if (browser && viewportW > 8 && viewportH > 8) {
+		g.setBoardViewportForCapture(viewportW, viewportH);
+	}
 
 	function worldFromClient(clientX: number, clientY: number) {
 		const st = get(game);
@@ -338,8 +381,7 @@
 			getShift: () => get(game).shiftDown,
 			getMoveDrag: () => get(game).moveDrag != null,
 			getPanPointerActive: () => get(game).panPointerStart != null,
-			getSelectingBox: () => get(game).selectingBox,
-			getEditorMode: () => editorMode
+			getSelectingBox: () => get(game).selectingBox
 		});
 		pointerEngine.attachWindowListeners();
 
@@ -378,7 +420,7 @@
 			pointerEngine?.handlePointerDown(e, { kind: 'viewport' });
 			return;
 		}
-		if (editorMode && (e.pointerType === 'mouse' || e.pointerType === 'pen')) {
+		if (e.pointerType === 'mouse' || e.pointerType === 'pen') {
 			pointerEngine?.handlePointerDown(e, { kind: 'viewport' });
 		}
 	}
@@ -393,7 +435,9 @@
 		if (replayMode) return;
 		e.preventDefault();
 		const st = get(game);
-		if (zoomWithScroll) {
+		if (scrollWheelPans) {
+			g.applyPanDelta(e.deltaX, e.deltaY);
+		} else {
 			const el = mouseEl ?? cameraEl;
 			const focal = el
 				? {
@@ -402,8 +446,6 @@
 					}
 				: { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 			g.adjustZoomWheel(e.deltaY, focal);
-		} else {
-			g.applyPanDelta(e.deltaX, e.deltaY);
 		}
 	}
 
@@ -525,14 +567,16 @@
 	})();
 	$: viewportCursor = replayMode
 		? 'default'
-		: $game.spacePanHeld
-			? 'grab'
-			: $game.handscroll
-				? 'grabbing'
-				: $game.moveDrag &&
-					  ($game.selectedIds.size > 0 || $game.selectedWidgetIds.size > 0)
-					? 'move'
-					: 'default';
+		: $game.spacePanHeld && $game.handscroll
+			? 'grabbing'
+			: $game.spacePanHeld
+				? 'grab'
+				: $game.handscroll
+					? 'grabbing'
+					: $game.moveDrag &&
+						  ($game.selectedIds.size > 0 || $game.selectedWidgetIds.size > 0)
+						? 'move'
+						: 'default';
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -545,6 +589,8 @@
 	class:dragging-piece={$game.moveDrag != null}
 	style:cursor={viewportCursor}
 	bind:this={viewportEl}
+	bind:clientWidth={viewportW}
+	bind:clientHeight={viewportH}
 	data-board-editor-canvas
 	onpointerdown={onViewportPointerDown}
 	onwheel={onWheel}
@@ -602,6 +648,14 @@
 				{/if}
 			</div>
 
+			{#if editorMode && showInitialPlayViewFrame && $game.initialPlayView}
+				<InitialPlayViewFrame
+					view={$game.initialPlayView}
+					tableW={$game.table.w}
+					tableH={$game.table.h}
+				/>
+			{/if}
+
 			{#if !editorMode}
 				<!-- Your private zone: under pieces so you see your own tokens clearly on top. -->
 				<div class="user-stashes user-stashes-mine" aria-hidden="true">
@@ -610,6 +664,7 @@
 							{@const safe = safeRectForRosterIndex(i, $game.playerSlots)}
 							<div
 								class="stash-slot"
+								class:stash-turn={$turnHighlightUserIds.includes(user.id)}
 								style:transform="translate3d({safe.x}px, {safe.y}px, 0)"
 								style:width="{safe.w}px"
 							>
@@ -714,6 +769,27 @@
 				{/if}
 			{/each}
 
+			{#if !editorMode && $game.playerSlots}
+				<div class="player-score-layer" aria-hidden="true">
+					{#each stashRoster as user, i (user.id)}
+						{@const sr = scoreRectForRosterIndex(i, $game.playerSlots)}
+						<div
+							class="player-score-anchor"
+							style:transform="translate3d({sr.x}px, {sr.y}px, 0)"
+							style:width="{sr.w}px"
+							style:min-height="{sr.h}px"
+						>
+							<PlayerSlotScore
+								value={$game.playerSlotScores[i] ?? 0}
+								accent={user.color || playerSlotColor(i)}
+								disabled={replayMode}
+								onChange={(v) => g.setPlayerSlotScore(i, v)}
+							/>
+						</div>
+					{/each}
+				</div>
+			{/if}
+
 			{#if editorMode && $game.editorSnapGuides && ($game.editorSnapGuides.verticals.length > 0 || $game.editorSnapGuides.horizontals.length > 0)}
 				<svg
 					class="snap-guides"
@@ -807,6 +883,7 @@
 							{@const safe = safeRectForRosterIndex(i, $game.playerSlots)}
 							<div
 								class="stash-slot"
+								class:stash-turn={$turnHighlightUserIds.includes(user.id)}
 								style:transform="translate3d({safe.x}px, {safe.y}px, 0)"
 								style:width="{safe.w}px"
 							>
@@ -875,11 +952,14 @@
 		touch-action: none;
 		z-index: 0;
 	}
-	.viewport.space-pan {
-		cursor: grab;
+	/* Space-pan / scroll-pan: override child cursors (widgets, controls) so the hand shows everywhere. */
+	.viewport.space-pan:not(.handscroll),
+	.viewport.space-pan:not(.handscroll) * {
+		cursor: grab !important;
 	}
-	.viewport.handscroll {
-		cursor: grabbing;
+	.viewport.handscroll,
+	.viewport.handscroll * {
+		cursor: grabbing !important;
 	}
 	.game {
 		position: absolute;
@@ -937,6 +1017,19 @@
 		inset: 0;
 		pointer-events: none;
 		z-index: 0;
+	}
+	.player-score-layer {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		z-index: 94000;
+	}
+	.player-score-anchor {
+		position: absolute;
+		top: 0;
+		left: 0;
+		pointer-events: none;
+		box-sizing: border-box;
 	}
 	.deal-zone {
 		position: absolute;
@@ -1004,6 +1097,22 @@
 	.stash.footprint.theirs {
 		color: #000;
 		box-shadow:
+			inset 0 0 0 2px rgba(0, 0, 0, 0.2),
+			inset 0 4px 24px rgba(0, 0, 0, 0.35);
+	}
+	/* Match UserList “my turn” ring: amber-300/400 (see .portrait-shell.has-turn) */
+	.stash-slot.stash-turn > .stash.footprint.mine {
+		box-shadow:
+			0 0 0 3px rgba(251, 191, 36, 0.95),
+			0 0 20px rgba(251, 191, 36, 0.45),
+			inset 0 0 0 2px rgba(0, 0, 0, 0.2),
+			inset 0 6px 28px rgba(0, 0, 0, 0.45),
+			inset 0 2px 8px rgba(0, 0, 0, 0.35);
+	}
+	.stash-slot.stash-turn > .stash.footprint.theirs {
+		box-shadow:
+			0 0 0 3px rgba(251, 191, 36, 0.95),
+			0 0 20px rgba(251, 191, 36, 0.45),
 			inset 0 0 0 2px rgba(0, 0, 0, 0.2),
 			inset 0 4px 24px rgba(0, 0, 0, 0.35);
 	}

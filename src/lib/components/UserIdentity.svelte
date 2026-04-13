@@ -132,13 +132,13 @@
 	}
 	.row .primary,
 	.compact .primary {
-		color: #0f172a;
+		color: var(--color-text);
 		font-size: 0.88rem;
 		font-weight: 600;
 	}
 	.row .sub,
 	.compact .sub {
-		color: #64748b;
+		color: var(--color-text-muted);
 	}
 	.board .primary {
 		font-size: 11px;

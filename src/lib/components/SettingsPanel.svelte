@@ -56,14 +56,17 @@
 		</div>
 	</li>
 	<li>
-		<label class="check">
+		<label
+			class="check"
+			title="Off (default): scroll wheel zooms. On: scroll wheel pans the board."
+		>
 			<input
 				type="checkbox"
-				checked={$settings.zoomWithScroll}
+				checked={$settings.scrollWheelPans}
 				onchange={(e) =>
-					persistSettings({ zoomWithScroll: (e.currentTarget as HTMLInputElement).checked })}
+					persistSettings({ scrollWheelPans: (e.currentTarget as HTMLInputElement).checked })}
 			/>
-			<span>Zoom with scroll wheel</span>
+			<span>Pan with scroll wheel</span>
 		</label>
 	</li>
 	<li>

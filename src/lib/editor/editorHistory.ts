@@ -1,4 +1,11 @@
-import type { BoardWidget, GameDataJson, PieceInstance, PlayerSlotZones } from '$lib/engine/types';
+import type {
+	BoardWidget,
+	EditorViewJson,
+	GameDataJson,
+	InitialPlayViewState,
+	PieceInstance,
+	PlayerSlotZones
+} from '$lib/engine/types';
 
 const MAX = 50;
 
@@ -14,6 +21,7 @@ export interface BoardEditorSnapshot {
 	nextPieceId: number;
 	nextWidgetId: number;
 	playerSlots: PlayerSlotZones[] | null;
+	initialPlayView: InitialPlayViewState | null;
 }
 
 function cloneSnapshot(s: BoardEditorSnapshot): BoardEditorSnapshot {
@@ -33,7 +41,14 @@ function cloneSnapshot(s: BoardEditorSnapshot): BoardEditorSnapshot {
 		nextPieceId: s.nextPieceId,
 		nextWidgetId: s.nextWidgetId,
 		playerSlots: s.playerSlots
-			? s.playerSlots.map((z) => ({ safe: { ...z.safe }, deal: { ...z.deal } }))
+			? s.playerSlots.map((z) => ({
+					safe: { ...z.safe },
+					deal: { ...z.deal },
+					score: { ...z.score }
+				}))
+			: null,
+		initialPlayView: s.initialPlayView
+			? { world_rect: { ...s.initialPlayView.world_rect } }
 			: null
 	};
 }

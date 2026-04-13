@@ -38,10 +38,12 @@ export interface PieceData {
 	editor_locked?: boolean;
 }
 
-/** Per-player areas: private hand (safe) and deal pile target (deal). Editor-placed; up to `PLAYER_SLOT_MAX` slots. */
+/** Per-player areas: private hand (safe), deal pile target (deal), and score counter (play). Editor-placed; up to `PLAYER_SLOT_MAX` slots. */
 export interface PlayerSlotZones {
 	safe: Rect;
 	deal: Rect;
+	/** In play, a shared +/- score is shown in this rect (one per slot). */
+	score: Rect;
 }
 
 /** Board editor only: last canvas zoom/pan (CSS px in viewport space). Not used in play. */
@@ -50,6 +52,17 @@ export interface EditorViewJson {
 	pan_x: number;
 	pan_y: number;
 }
+
+/**
+ * Saved default play framing: a world-space rectangle (table coords) that should be fully
+ * visible when the game opens. Runtime fits this rect inside the device viewport (centered, zoomed out).
+ */
+export interface InitialPlayViewState {
+	world_rect: Rect;
+}
+
+/** Persisted in `game_data.initial_play_view`. */
+export type InitialPlayViewJson = InitialPlayViewState;
 
 export type WidgetType = 'counter' | 'label' | 'textbox' | 'dice' | 'toggle';
 
@@ -98,6 +111,8 @@ export interface GameDataJson {
 	piece_color_palette?: string[];
 	/** Board editor: restore zoom/pan when reopening the editor. Omitted in play exports. */
 	editor_view?: EditorViewJson;
+	/** Default pan/zoom when a lobby loads this board in play (set from the editor). */
+	initial_play_view?: InitialPlayViewJson;
 	/**
 	 * Optional player zones (safe = private hand, deal = cards dealt here). Up to 8 slots by default.
 	 * If omitted, runtime uses legacy fixed stash grid (`stashPos`).

@@ -3,7 +3,10 @@ import { writable } from 'svelte/store';
 import { THEME_STORAGE_KEY, type ThemePreference, isThemePreference } from '$lib/theme';
 
 const KEYS = {
-	zoomWithScroll: 'bge_settings_interface_zoomWithScroll',
+	/** When true, scroll wheel pans; when false (default), scroll wheel zooms. */
+	scrollWheelPans: 'bge_settings_interface_scrollWheelPans',
+	/** @deprecated migrated into scrollWheelPans — kept for one-time migration */
+	_zoomWithScrollLegacy: 'bge_settings_interface_zoomWithScroll',
 	panScreenEdge: 'bge_settings_interface_panScreenEdge',
 	playerColor: 'bge_settings_player_color',
 	address: 'bge_settings_connection_address',
@@ -26,8 +29,24 @@ function loadThemePreference(): ThemePreference {
 	return isThemePreference(raw) ? raw : 'dark';
 }
 
+/**
+ * Default: scroll wheel zooms. Legacy `zoomWithScroll` meant the opposite (true = zoom).
+ */
+function loadScrollWheelPans(): boolean {
+	if (!browser) return false;
+	const v = localStorage.getItem(KEYS.scrollWheelPans);
+	if (v !== null) return v === 'true';
+	const legacy = localStorage.getItem(KEYS._zoomWithScrollLegacy);
+	if (legacy !== null) {
+		const migrated = legacy !== 'true';
+		localStorage.setItem(KEYS.scrollWheelPans, String(migrated));
+		return migrated;
+	}
+	return false;
+}
+
 export const settings = writable({
-	zoomWithScroll: loadBool(KEYS.zoomWithScroll, false),
+	scrollWheelPans: loadScrollWheelPans(),
 	panScreenEdge: loadBool(KEYS.panScreenEdge, false),
 	/** Empty = use automatic hue from account id */
 	playerColor: loadStr(KEYS.playerColor, ''),
@@ -38,7 +57,7 @@ export const settings = writable({
 });
 
 export function persistSettings(s: {
-	zoomWithScroll?: boolean;
+	scrollWheelPans?: boolean;
 	panScreenEdge?: boolean;
 	playerColor?: string;
 	connectionAddress?: string;
@@ -48,8 +67,8 @@ export function persistSettings(s: {
 	settings.update((cur) => {
 		const next = { ...cur, ...s };
 		if (browser) {
-			if (s.zoomWithScroll !== undefined)
-				localStorage.setItem(KEYS.zoomWithScroll, String(next.zoomWithScroll));
+			if (s.scrollWheelPans !== undefined)
+				localStorage.setItem(KEYS.scrollWheelPans, String(next.scrollWheelPans));
 			if (s.panScreenEdge !== undefined)
 				localStorage.setItem(KEYS.panScreenEdge, String(next.panScreenEdge));
 			if (s.playerColor !== undefined)

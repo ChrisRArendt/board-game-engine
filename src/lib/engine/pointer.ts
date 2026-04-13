@@ -54,8 +54,6 @@ export interface PointerEngineOptions {
 	getMoveDrag: () => boolean;
 	getPanPointerActive: () => boolean;
 	getSelectingBox: () => boolean;
-	/** Board editor: empty viewport / margin (not table) can start marquee like the table. */
-	getEditorMode?: () => boolean;
 	/**
 	 * Touch: only start piece drag after threshold if true. If false, treat as board pan
 	 * (e.g. unselected selectable piece). Pieces with `move` but no `select` should return true.
@@ -375,8 +373,8 @@ export class PointerEngine {
 			if (this.opts.getSpacePan()) {
 				this.opts.onPanStart(e.clientX, e.clientY);
 				this.pushSample(e.clientX, e.clientY);
-			} else if (this.opts.getEditorMode?.()) {
-				/** Dead space around the table — same marquee as `onMouseTableDown` on the table. */
+			} else {
+				/** Margin / void around the table — same behavior as `onMouseTableDown` on the table (deselect, marquee+shift, pan). */
 				this.opts.onMouseTableDown(true, e.clientX, e.clientY, this.opts.getShift());
 				this.pushSample(e.clientX, e.clientY);
 			}

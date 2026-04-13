@@ -23,7 +23,7 @@
 
 	function patchRect(
 		slotIndex: number,
-		which: 'safe' | 'deal',
+		which: 'safe' | 'deal' | 'score',
 		field: keyof Rect,
 		raw: string
 	) {
@@ -44,8 +44,8 @@
 <div class="panel">
 	<h4>Player zones</h4>
 	<p class="hint">
-		Up to {PLAYER_SLOT_MAX} slots. Each has a <strong>safe</strong> (private hand) and <strong>deal</strong> (incoming
-		cards) rectangle. Runtime maps lobby players to slots in order.
+		Up to {PLAYER_SLOT_MAX} slots. Each has <strong>safe</strong> (private hand), <strong>deal</strong> (incoming
+		cards), and <strong>score</strong> (shared +/- counter in play). Runtime maps lobby players to slots in order.
 	</p>
 	{#if !$game.playerSlots}
 		<p class="subhint">
@@ -119,6 +119,32 @@
 							type="number"
 							value={z.deal.h}
 							onchange={(e) => patchRect(i, 'deal', 'h', e.currentTarget.value)}
+						/>
+					</div>
+					<div class="grid score">
+						<span class="lab">Score x</span>
+						<input
+							type="number"
+							value={z.score.x}
+							onchange={(e) => patchRect(i, 'score', 'x', e.currentTarget.value)}
+						/>
+						<span class="lab">y</span>
+						<input
+							type="number"
+							value={z.score.y}
+							onchange={(e) => patchRect(i, 'score', 'y', e.currentTarget.value)}
+						/>
+						<span class="lab">w</span>
+						<input
+							type="number"
+							value={z.score.w}
+							onchange={(e) => patchRect(i, 'score', 'w', e.currentTarget.value)}
+						/>
+						<span class="lab">h</span>
+						<input
+							type="number"
+							value={z.score.h}
+							onchange={(e) => patchRect(i, 'score', 'h', e.currentTarget.value)}
 						/>
 					</div>
 				</details>
@@ -213,7 +239,8 @@
 		align-items: center;
 		margin-top: 8px;
 	}
-	.grid.deal {
+	.grid.deal,
+	.grid.score {
 		margin-top: 10px;
 		padding-top: 8px;
 		border-top: 1px dashed var(--color-border);
