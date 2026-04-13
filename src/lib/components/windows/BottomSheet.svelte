@@ -116,9 +116,9 @@
 	.sheet {
 		width: 100%;
 		max-height: 85vh;
-		background: #fff;
+		background: var(--color-window-bg);
 		border-radius: 12px 12px 0 0;
-		box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.25);
+		box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.35);
 		display: flex;
 		flex-direction: column;
 		animation: slideUp 0.25s ease;
@@ -139,7 +139,7 @@
 		width: 36px;
 		height: 4px;
 		border-radius: 4px;
-		background: #cbd5e1;
+		background: var(--color-border-strong);
 		margin: 8px auto 4px;
 		cursor: grab;
 	}
@@ -148,13 +148,13 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 4px 12px 8px;
-		border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+		border-bottom: 1px solid var(--color-border);
 	}
 	.sheet-title {
 		margin: 0;
 		font-size: 15px;
 		font-weight: 600;
-		color: #333;
+		color: var(--color-text);
 	}
 	.sheet-close {
 		all: unset;
@@ -162,11 +162,11 @@
 		font-size: 22px;
 		line-height: 1;
 		padding: 4px 8px;
-		color: #666;
+		color: var(--color-text-muted);
 		border-radius: 4px;
 	}
 	.sheet-close:hover {
-		background: rgba(0, 0, 0, 0.06);
+		background: var(--color-surface-muted);
 	}
 	.sheet-body {
 		overflow: auto;

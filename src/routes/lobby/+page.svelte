@@ -434,9 +434,11 @@
 		margin: 0 auto;
 		padding: 1.5rem;
 		font-family: Roboto, system-ui, sans-serif;
+		color: var(--color-text);
 	}
 	h1 {
 		margin-top: 0;
+		color: var(--color-text);
 	}
 	h2 {
 		margin-top: 0;
@@ -457,10 +459,10 @@
 		}
 	}
 	.card {
-		border: 1px solid #e2e8f0;
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		padding: 1rem 1.25rem;
-		background: #fff;
+		background: var(--color-surface);
 	}
 	.search {
 		display: flex;
@@ -486,14 +488,15 @@
 	.btn {
 		padding: 0.45rem 0.75rem;
 		border-radius: 6px;
-		border: 1px solid #cbd5e1;
-		background: #f1f5f9;
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-surface-muted);
+		color: var(--color-text);
 		cursor: pointer;
 	}
 	.btn.primary {
-		background: #2563eb;
-		color: #fff;
-		border-color: #1d4ed8;
+		background: var(--color-accent);
+		color: var(--color-accent-contrast);
+		border-color: var(--color-accent-hover);
 	}
 	.btn.small {
 		padding: 0.2rem 0.5rem;
@@ -504,16 +507,16 @@
 		cursor: not-allowed;
 	}
 	.err {
-		color: #b91c1c;
+		color: var(--color-danger);
 	}
 	.hint {
 		font-size: 0.82rem;
-		color: #64748b;
+		color: var(--color-text-muted);
 		margin: 0 0 0.5rem;
 		line-height: 1.35;
 	}
 	.muted {
-		color: #64748b;
+		color: var(--color-text-muted);
 		font-size: 0.9rem;
 	}
 	.friend-row {
@@ -548,14 +551,14 @@
 		width: 10px;
 		height: 10px;
 		border-radius: 50%;
-		background: #94a3b8;
+		background: var(--color-text-muted);
 		display: inline-block;
 	}
 	.dot.online {
 		background: #22c55e;
 	}
 	.lobbies a {
-		color: #2563eb;
+		color: var(--color-link);
 		font-weight: 500;
 	}
 	.trash-btn {

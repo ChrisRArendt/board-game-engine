@@ -51,6 +51,11 @@ export interface PointerEngineOptions {
 	getMoveDrag: () => boolean;
 	getPanPointerActive: () => boolean;
 	getSelectingBox: () => boolean;
+	/**
+	 * Touch: only start piece drag after threshold if true. If false, treat as board pan
+	 * (e.g. unselected selectable piece). Pieces with `move` but no `select` should return true.
+	 */
+	isPieceSelectedForTouchDrag: (pieceId: number) => boolean;
 }
 
 function dist(ax: number, ay: number, bx: number, by: number) {
@@ -162,8 +167,15 @@ export class PointerEngine {
 				this.clearLongPressTimer();
 				this.opts.onPieceTouchPressing(this.touchPieceId, false);
 				if (!this.longPressFired) {
-					this.touchDragActive = true;
-					this.opts.onPieceTouchDragStart(this.touchPieceId, d0.x, d0.y);
+					if (this.opts.isPieceSelectedForTouchDrag(this.touchPieceId)) {
+						this.touchDragActive = true;
+						this.opts.onPieceTouchDragStart(this.touchPieceId, d0.x, d0.y);
+					} else {
+						this.touchPieceId = null;
+						this.touchEmptyPanned = true;
+						this.lastMoveSamples = [{ x: d0.x, y: d0.y, t: d0.t }];
+						this.opts.onPanStart(d0.x, d0.y);
+					}
 				}
 			}
 		}

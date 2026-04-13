@@ -325,19 +325,19 @@
 		margin: 0;
 		padding: 4px 0;
 		min-width: 200px;
-		background: #fff;
-		border: 1px solid #c3c3c3;
+		background: var(--color-context-bg);
+		border: 1px solid var(--color-border-strong);
 		border-radius: 4px;
-		box-shadow: 0 7px 16px rgba(0, 0, 0, 0.4);
+		box-shadow: var(--shadow-md);
 	}
 	.order-ctx li {
 		padding: 4px 20px;
 		font-size: 14px;
-		color: #333;
+		color: var(--color-text);
 		cursor: pointer;
 	}
 	.order-ctx li:hover:not(.disabled) {
-		background: linear-gradient(to bottom, #aaa, #777);
+		background: var(--color-ctx-hover-bg);
 		color: #fff;
 	}
 	.order-ctx li.disabled {
@@ -348,7 +348,7 @@
 		height: 1px;
 		padding: 0;
 		margin: 6px 8px;
-		background: #ddd;
+		background: var(--color-border);
 		cursor: default;
 	}
 	.order-ctx li.voice-header {
@@ -356,7 +356,7 @@
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-		color: #666;
+		color: var(--color-text-muted);
 		cursor: default;
 		padding: 6px 12px 2px;
 	}
@@ -369,7 +369,7 @@
 		flex-direction: column;
 		gap: 6px;
 		font-size: 12px;
-		color: #333;
+		color: var(--color-text);
 	}
 	.order-ctx li.voice-slider input[type='range'] {
 		width: 100%;

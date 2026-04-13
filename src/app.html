@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
@@ -7,6 +7,22 @@
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet" />
 		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<script>
+			(function () {
+				try {
+					var k = 'bge_settings_theme';
+					var raw = localStorage.getItem(k);
+					var pref =
+						raw === 'system' || raw === 'light' || raw === 'dark' ? raw : 'dark';
+					var eff;
+					if (pref === 'light') eff = 'light';
+					else if (pref === 'dark') eff = 'dark';
+					else eff = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+					document.documentElement.dataset.theme = eff;
+					document.documentElement.style.colorScheme = eff;
+				} catch (e) {}
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body class="app-shell" data-sveltekit-preload-data="hover">

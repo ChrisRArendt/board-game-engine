@@ -138,12 +138,16 @@
 				const st = get(game);
 				const piece = st.pieces.find((p) => p.id === pieceId);
 				if (!piece?.attributes.includes('move')) return;
-				if (piece.attributes.includes('select')) {
-					g.clickSelect(pieceId, false);
-				}
 				const st2 = get(game);
 				g.startMoveDrag(pieceId, clientX, clientY, st2.panX, st2.panY);
 				onViewerFollowPiece?.(pieceId);
+			},
+			isPieceSelectedForTouchDrag: (pieceId: number) => {
+				const st = get(game);
+				const piece = st.pieces.find((p) => p.id === pieceId);
+				if (!piece?.attributes.includes('move')) return false;
+				if (!piece.attributes.includes('select')) return true;
+				return st.selectedIds.has(pieceId);
 			},
 			onPieceDragMove: (x, y) => {
 				g.moveDragTo(x, y);

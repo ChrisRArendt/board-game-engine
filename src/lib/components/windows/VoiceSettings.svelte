@@ -219,7 +219,7 @@
 	}
 	.meter {
 		height: 10px;
-		background: rgba(0, 0, 0, 0.2);
+		background: var(--color-border);
 		border-radius: 4px;
 		overflow: hidden;
 	}
@@ -236,8 +236,9 @@
 	.btn {
 		padding: 6px 10px;
 		border-radius: 6px;
-		border: 1px solid rgba(0, 0, 0, 0.25);
-		background: rgba(255, 255, 255, 0.9);
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-surface-muted);
+		color: var(--color-text);
 		cursor: pointer;
 		font-size: 13px;
 	}

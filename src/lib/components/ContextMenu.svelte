@@ -84,10 +84,10 @@
 		display: block;
 		position: fixed;
 		list-style: none;
-		background: #fff;
-		border: 1px solid #c3c3c3;
+		background: var(--color-context-bg);
+		border: 1px solid var(--color-border-strong);
 		z-index: 2000000003;
-		box-shadow: 0 7px 16px rgba(0, 0, 0, 0.4);
+		box-shadow: var(--shadow-md);
 		border-radius: 4px;
 		padding: 4px 0;
 		margin: 0;
@@ -100,16 +100,16 @@
 		display: flex;
 		align-items: center;
 		font-size: 14px;
-		color: #333;
+		color: var(--color-text);
 		cursor: pointer;
 	}
 	.ctx li:hover {
-		background: linear-gradient(to bottom, #aaa, #777);
+		background: var(--color-ctx-hover-bg);
 		color: #fff;
 	}
 	.spacer {
 		height: 0;
-		border-top: 1px solid #ddd;
+		border-top: 1px solid var(--color-border);
 		margin: 5px 0;
 		padding: 0;
 		cursor: default;

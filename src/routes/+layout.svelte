@@ -2,11 +2,16 @@
 	import { pageTitle } from '$lib/site';
 	import '../app.css';
 	import { browser } from '$app/environment';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { onlineUserIds } from '$lib/stores/onlinePresence';
-	import { persistSettings } from '$lib/stores/settings';
+	import { persistSettings, settings } from '$lib/stores/settings';
+	import {
+		applyThemePreference,
+		subscribeSystemThemeChange,
+		themeColorForMeta
+	} from '$lib/theme';
 	import { registerFriendVoiceSaver } from '$lib/stores/voiceSettings';
 	import { leaveVoiceRoom } from '$lib/stores/voiceChat';
 	import UserIdentity from '$lib/components/UserIdentity.svelte';
@@ -99,6 +104,24 @@
 		}
 	}
 
+	let unsubscribeTheme: (() => void) | null = null;
+	let unsubscribeSystemTheme: (() => void) | null = null;
+
+	onMount(() => {
+		unsubscribeTheme = settings.subscribe((s) => {
+			applyThemePreference(s.themePreference);
+			unsubscribeSystemTheme?.();
+			unsubscribeSystemTheme =
+				s.themePreference === 'system'
+					? subscribeSystemThemeChange(() => applyThemePreference('system'))
+					: null;
+		});
+		return () => {
+			unsubscribeTheme?.();
+			unsubscribeSystemTheme?.();
+		};
+	});
+
 	onDestroy(() => {
 		teardownGlobalPresence();
 		registerFriendVoiceSaver(null);
@@ -128,6 +151,7 @@
 
 <svelte:head>
 	<title>{docTitle}</title>
+	<meta name="theme-color" content={themeColorForMeta($settings.themePreference)} />
 </svelte:head>
 
 {#if !hideNav}
@@ -139,6 +163,7 @@
 		<nav class="nav-desktop" aria-label="Account">
 			{#if data.session}
 				<a href="/lobby">Lobbies</a>
+				<a href="/settings">Settings</a>
 				<div class="user-wrap">
 					<UserIdentity
 						variant="nav"
@@ -157,6 +182,7 @@
 				<summary class="nav-mobile-trigger">Menu</summary>
 				<div class="nav-mobile-panel">
 					<a href="/lobby">Lobbies</a>
+					<a href="/settings">Settings</a>
 					<span class="nav-mobile-name">{data.profile?.display_name ?? data.session.user.email ?? 'Player'}</span>
 					<button type="button" class="linkish nav-mobile-out" on:click={signOut}>Sign out</button>
 				</div>
@@ -177,8 +203,8 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 0.65rem 1.25rem;
-		background: #1e293b;
-		color: #f8fafc;
+		background: var(--color-nav-bg);
+		color: var(--color-nav-text);
 		font-family: Roboto, system-ui, sans-serif;
 		font-size: 0.95rem;
 	}
@@ -202,7 +228,7 @@
 		gap: 1rem;
 	}
 	.nav a {
-		color: #93c5fd;
+		color: var(--color-nav-link);
 		text-decoration: none;
 	}
 	.nav a:hover {
@@ -214,13 +240,13 @@
 		max-width: min(280px, 40vw);
 	}
 	.user-wrap :global(.identity.nav .sub) {
-		color: #94a3b8;
+		color: var(--color-nav-muted);
 		font-size: 0.72rem;
 	}
 	.linkish {
 		background: none;
 		border: none;
-		color: #93c5fd;
+		color: var(--color-nav-link);
 		cursor: pointer;
 		font: inherit;
 		padding: 0;
@@ -257,13 +283,13 @@
 		.nav-mobile-signin {
 			display: inline-block;
 			margin-left: auto;
-			color: #93c5fd;
+			color: var(--color-nav-link);
 			font-size: 0.9rem;
 		}
 		.nav-mobile-trigger {
 			list-style: none;
 			cursor: pointer;
-			color: #93c5fd;
+			color: var(--color-nav-link);
 			font-size: 0.85rem;
 			font-weight: 500;
 			padding: 0.35rem 0.5rem;
@@ -280,22 +306,22 @@
 			top: calc(100% + 6px);
 			min-width: 200px;
 			padding: 0.65rem 0.85rem;
-			background: #0f172a;
-			border: 1px solid rgba(148, 163, 184, 0.35);
+			background: var(--color-surface-muted);
+			border: 1px solid var(--color-border);
 			border-radius: 8px;
-			box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+			box-shadow: var(--shadow-lg);
 			display: flex;
 			flex-direction: column;
 			gap: 0.65rem;
 			z-index: 100;
 		}
 		.nav-mobile-panel a {
-			color: #93c5fd;
+			color: var(--color-nav-link);
 			text-decoration: none;
 		}
 		.nav-mobile-name {
 			font-size: 0.8rem;
-			color: #94a3b8;
+			color: var(--color-nav-muted);
 			word-break: break-word;
 		}
 		.nav-mobile-out {

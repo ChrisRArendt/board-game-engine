@@ -87,20 +87,17 @@
 		top: 0;
 		z-index: 1;
 		pointer-events: auto;
-		box-shadow:
-			0 10px 50px 8px rgba(0, 0, 0, 0.2),
-			0 30px 50px 0px rgba(0, 0, 0, 0.35),
-			0 0 0 1px rgba(0, 0, 0, 0.15);
+		box-shadow: var(--shadow-lg);
 		border-radius: 4px;
-		background: #fff;
+		border: 1px solid var(--color-border);
+		background: var(--color-window-bg);
 		min-width: 200px;
 	}
 	.titlebar {
 		background: linear-gradient(
 			to bottom,
-			rgba(233, 233, 233, 1) 0%,
-			rgba(214, 214, 214, 1) 40%,
-			rgba(200, 200, 200, 1) 100%
+			var(--color-window-titlebar-start),
+			var(--color-window-titlebar-end)
 		);
 		border-radius: 4px 4px 0 0;
 		position: relative;
@@ -142,7 +139,7 @@
 		background: linear-gradient(#e66, #c44);
 	}
 	.sysbuttons .inactive {
-		background: #ccc;
+		background: var(--color-border-strong);
 		cursor: default;
 	}
 	.title {
@@ -154,7 +151,7 @@
 		font-size: 13px;
 		line-height: 24px;
 		margin: 0;
-		color: #393939;
+		color: var(--color-window-title);
 		cursor: move;
 		user-select: none;
 	}

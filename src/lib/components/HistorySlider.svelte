@@ -139,13 +139,18 @@
 <style>
 	.history-inline {
 		width: 100%;
-		background: linear-gradient(to bottom, rgba(255, 255, 255, 0.97), rgba(235, 235, 235, 0.95));
+		background: linear-gradient(
+			to bottom,
+			var(--color-history-bg),
+			var(--color-history-bg-end)
+		);
 		backdrop-filter: blur(8px);
 		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
 		padding: 6px 12px 8px;
 		font-size: 14px;
 		pointer-events: auto;
-		border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+		border-bottom: 1px solid var(--color-chrome-border);
+		color: var(--color-history-text);
 	}
 	.replay-badge {
 		display: inline-block;
@@ -186,10 +191,10 @@
 		background: linear-gradient(to bottom, #c85, #a62);
 	}
 	.hint {
-		color: #444;
+		color: var(--color-history-hint);
 	}
 	.err {
-		color: #b00;
+		color: var(--color-danger);
 	}
 	.slider-label {
 		flex: 1;
@@ -206,7 +211,7 @@
 		appearance: none;
 		height: 8px;
 		border-radius: 4px;
-		background: linear-gradient(to right, #cbd5e1, #94a3b8);
+		background: var(--color-slider-track);
 		outline: none;
 	}
 	.hist-range::-webkit-slider-thumb {
@@ -231,7 +236,7 @@
 	}
 	.time {
 		font-variant-numeric: tabular-nums;
-		color: #222;
+		color: var(--color-history-text);
 		font-size: 12px;
 	}
 	@media (min-width: 640px) {

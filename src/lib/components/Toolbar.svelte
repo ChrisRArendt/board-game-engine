@@ -100,7 +100,22 @@
 			>
 		</li>
 		<li class="spacer double"></li>
-		<li class="origin"><button type="button" class="tb-btn" onclick={() => g.resetPan()}>O</button></li>
+		<li class="origin">
+			<button
+				type="button"
+				class="tb-btn origin-btn"
+				title="Recenter board"
+				aria-label="Recenter board"
+				onclick={() => g.resetPan()}
+			>
+				<svg class="origin-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+					<path
+						fill="currentColor"
+						d="M5 15H3v4c0 1.1.9 2 2 2h4v-2H5v-4zM5 5h4V3H5c-1.1 0-2 .9-2 2v4h2V5zm14-2h-4v2h4v4h2V5c0-1.1-.9-2-2-2zm0 16h-4v2h4c1.1 0 2-.9 2-2v-4h-2v4zM12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"
+					/>
+				</svg>
+			</button>
+		</li>
 		{#if !mobile}
 			<li class="rulebook">
 				<button
@@ -127,18 +142,46 @@
 			</li>
 		{/if}
 		<li class="history-li">
-			<button
-				type="button"
-				class="tb-btn"
-				class:active={historyReplayActive}
-				onclick={() => void onToggleHistory()}
-			>
-				{historyReplayActive ? 'Exit history' : 'History'}
-			</button>
+			{#if mobile}
+				<button
+					type="button"
+					class="tb-btn icon-tb"
+					class:active={historyReplayActive}
+					title={historyReplayActive ? 'Exit history' : 'History'}
+					aria-label={historyReplayActive ? 'Exit history replay' : 'History'}
+					onclick={() => void onToggleHistory()}
+				>
+					<svg class="tb-icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+						<path
+							fill="currentColor"
+							d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"
+						/>
+					</svg>
+				</button>
+			{:else}
+				<button
+					type="button"
+					class="tb-btn"
+					class:active={historyReplayActive}
+					onclick={() => void onToggleHistory()}
+				>
+					{historyReplayActive ? 'Exit history' : 'History'}
+				</button>
+			{/if}
 		</li>
 		{#if mobile && onOpenMenu}
 			<li class="menu-li">
-				<button type="button" class="tb-btn" onclick={() => onOpenMenu()}>Menu</button>
+				<button
+					type="button"
+					class="tb-btn icon-tb"
+					title="Menu"
+					aria-label="Open menu"
+					onclick={() => onOpenMenu()}
+				>
+					<svg class="tb-icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+						<path fill="currentColor" d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z" />
+					</svg>
+				</button>
 			</li>
 		{/if}
 		<li class="right">
@@ -159,6 +202,16 @@
 							type="button"
 							class="tb-btn voice-tb"
 							disabled={voiceBusy}
+							title={voiceBusy
+								? 'Please wait'
+								: $voiceChatState.joined
+									? 'Leave voice'
+									: 'Join voice'}
+							aria-label={voiceBusy
+								? 'Voice loading'
+								: $voiceChatState.joined
+									? 'Leave voice'
+									: 'Join voice'}
 							onclick={() => void onVoiceToolbarClick()}
 						>
 							<svg class="voice-mic" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
@@ -171,8 +224,8 @@
 								>{voiceBusy
 									? '…'
 									: $voiceChatState.joined
-										? 'Leave voice'
-										: 'Join voice'}</span
+										? 'Leave'
+										: 'Join'}</span
 							>
 						</button>
 					</li>
@@ -285,16 +338,21 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: stretch;
-		background: linear-gradient(to bottom, rgba(255, 255, 255, 0.92), rgba(230, 230, 230, 0.92));
+		background: linear-gradient(
+			to bottom,
+			var(--color-chrome-top),
+			var(--color-chrome-top-end)
+		);
 		backdrop-filter: blur(8px);
 		box-shadow: 0 6px 10px rgba(0, 0, 0, 0.35);
+		border-bottom: 1px solid var(--color-chrome-border);
 	}
 	.toolbar-wrap.mobile .controls.row-main {
 		min-height: 36px;
 	}
 	.row-sel {
 		animation: slideSel 0.15s ease-out;
-		border-top: 1px solid rgba(0, 0, 0, 0.08);
+		border-top: 1px solid var(--color-chrome-border);
 	}
 	.row-sel.desktop-sel {
 		border-top: none;
@@ -329,7 +387,7 @@
 		padding: 0 12px;
 		line-height: 22px;
 		font-size: 15px;
-		color: #333;
+		color: var(--color-toolbar-btn);
 		margin: 0;
 		user-select: none;
 		cursor: pointer;
@@ -342,7 +400,7 @@
 		line-height: 22px;
 	}
 	.tb-btn.active {
-		background: rgba(59, 130, 246, 0.25);
+		background: var(--color-toolbar-active);
 		font-weight: 600;
 	}
 	.zoom-readout {
@@ -352,7 +410,7 @@
 	}
 	.controls > li:hover > .tb-btn,
 	.controls .right .right-inner > li:hover > .tb-btn {
-		background: linear-gradient(to bottom, #aaa, #777);
+		background: var(--color-toolbar-hover-bg);
 		color: #fff;
 	}
 	.spacer {
@@ -379,11 +437,11 @@
 		align-items: center;
 	}
 	.endgame .tb-btn {
-		color: #b45309;
+		color: var(--color-endgame);
 		font-weight: 600;
 	}
 	.voice-tb {
-		color: #1e293b;
+		color: var(--color-toolbar-btn);
 		font-weight: 500;
 	}
 	.voice-tb .voice-mic {
@@ -402,6 +460,35 @@
 	}
 	.voice-tb-label {
 		white-space: nowrap;
+	}
+	.origin-btn {
+		padding: 0 10px;
+		min-width: 44px;
+	}
+	.origin-icon {
+		display: block;
+		flex-shrink: 0;
+	}
+	.toolbar-wrap.mobile .icon-tb {
+		min-width: 44px;
+		padding: 0 10px;
+	}
+	.tb-icon {
+		display: block;
+		flex-shrink: 0;
+	}
+	.toolbar-wrap.mobile .zoomout .tb-btn {
+		padding-right: 4px;
+		padding-left: 12px;
+	}
+	.toolbar-wrap.mobile .zoomin .tb-btn {
+		padding-left: 4px;
+		padding-right: 12px;
+	}
+	.toolbar-wrap.mobile .zoompct .tb-btn.zoom-readout {
+		padding-left: 2px;
+		padding-right: 2px;
+		min-width: 2.75rem;
 	}
 	@media (min-width: 640px) {
 		.row-sel {

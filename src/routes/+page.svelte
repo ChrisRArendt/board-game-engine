@@ -5,6 +5,6 @@
 	.redirecting {
 		font-family: Roboto, system-ui, sans-serif;
 		padding: 2rem;
-		color: #666;
+		color: var(--color-text-muted);
 	}
 </style>

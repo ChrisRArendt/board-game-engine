@@ -7,6 +7,125 @@ body {
 	min-height: 100%;
 }
 
+/* Semantic tokens — effective theme comes from `data-theme` on `<html>` (see `src/lib/theme.ts`). */
+[data-theme='light'] {
+	color-scheme: light;
+	--color-bg: #f1f5f9;
+	--color-text: #0f172a;
+	--color-text-muted: #64748b;
+	--color-surface: #ffffff;
+	--color-surface-muted: #f8fafc;
+	--color-border: #e2e8f0;
+	--color-border-strong: #cbd5e1;
+	--color-accent: #2563eb;
+	--color-accent-contrast: #ffffff;
+	--color-accent-hover: #1d4ed8;
+	--color-danger: #b91c1c;
+	--color-danger-soft-bg: #fef2f2;
+	--color-danger-soft-border: #fecaca;
+	--color-link: #2563eb;
+	--color-nav-bg: #1e293b;
+	--color-nav-text: #f8fafc;
+	--color-nav-muted: #94a3b8;
+	--color-nav-link: #93c5fd;
+	--shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08);
+	--shadow-md: 0 4px 14px rgba(15, 23, 42, 0.1);
+	--shadow-lg: 0 10px 40px rgba(15, 23, 42, 0.12);
+	--color-chrome-top: rgba(255, 255, 255, 0.92);
+	--color-chrome-top-end: rgba(230, 230, 230, 0.92);
+	--color-chrome-border: rgba(0, 0, 0, 0.08);
+	--color-window-bg: #ffffff;
+	--color-window-titlebar-start: #ece9d8;
+	--color-window-titlebar-end: #d5d2c3;
+	--color-window-title: #000;
+	--color-btn-secondary-bg: linear-gradient(to bottom, #f8f8f8, #e8e8e8);
+	--color-btn-secondary-border: #ccc;
+	--color-history-bg: rgba(255, 255, 255, 0.97);
+	--color-history-bg-end: rgba(235, 235, 235, 0.95);
+	--color-history-hint: #444;
+	--color-context-bg: #fff;
+	--color-input-bg: #fff;
+	--theme-color-meta: #1e293b;
+	--color-toolbar-btn: #333333;
+	--color-toolbar-hover-bg: linear-gradient(to bottom, #94a3b8, #64748b);
+	--color-toolbar-spacer: rgba(15, 23, 42, 0.2);
+	--color-toolbar-active: rgba(37, 99, 235, 0.22);
+	--color-endgame: #b45309;
+	--color-slider-track: linear-gradient(to right, #cbd5e1, #94a3b8);
+	--color-history-text: #0f172a;
+	--color-ctx-hover-bg: linear-gradient(to bottom, #94a3b8, #64748b);
+}
+
+[data-theme='dark'] {
+	color-scheme: dark;
+	--color-bg: #0b1120;
+	--color-text: #f1f5f9;
+	--color-text-muted: #94a3b8;
+	--color-surface: #1e293b;
+	--color-surface-muted: #0f172a;
+	--color-border: #334155;
+	--color-border-strong: #475569;
+	--color-accent: #60a5fa;
+	--color-accent-contrast: #0f172a;
+	--color-accent-hover: #3b82f6;
+	--color-danger: #f87171;
+	--color-danger-soft-bg: rgba(127, 29, 29, 0.35);
+	--color-danger-soft-border: #991b1b;
+	--color-link: #93c5fd;
+	--color-nav-bg: #0f172a;
+	--color-nav-text: #f8fafc;
+	--color-nav-muted: #94a3b8;
+	--color-nav-link: #93c5fd;
+	--shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+	--shadow-md: 0 4px 18px rgba(0, 0, 0, 0.45);
+	--shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.55);
+	--color-chrome-top: rgba(30, 41, 59, 0.94);
+	--color-chrome-top-end: rgba(15, 23, 42, 0.94);
+	--color-chrome-border: rgba(148, 163, 184, 0.2);
+	--color-window-bg: #1e293b;
+	--color-window-titlebar-start: #334155;
+	--color-window-titlebar-end: #1e293b;
+	--color-window-title: #f1f5f9;
+	--color-btn-secondary-bg: linear-gradient(to bottom, #334155, #1e293b);
+	--color-btn-secondary-border: #475569;
+	--color-history-bg: rgba(30, 41, 59, 0.97);
+	--color-history-bg-end: rgba(15, 23, 42, 0.95);
+	--color-history-hint: #cbd5e1;
+	--color-context-bg: #1e293b;
+	--color-input-bg: #0f172a;
+	--theme-color-meta: #0f172a;
+	--color-toolbar-btn: #e2e8f0;
+	--color-toolbar-hover-bg: linear-gradient(to bottom, #64748b, #475569);
+	--color-toolbar-spacer: rgba(148, 163, 184, 0.35);
+	--color-toolbar-active: rgba(96, 165, 250, 0.28);
+	--color-endgame: #fbbf24;
+	--color-slider-track: linear-gradient(to right, #475569, #334155);
+	--color-history-text: #f1f5f9;
+	--color-ctx-hover-bg: linear-gradient(to bottom, #64748b, #475569);
+}
+
+html {
+	background: var(--color-bg);
+}
+
+body {
+	background: var(--color-bg);
+	color: var(--color-text);
+	transition:
+		background 0.15s ease,
+		color 0.15s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	body {
+		transition: none;
+	}
+}
+
+:root {
+	--motion-ok: 1;
+}
+
 /* Default until layout hydrates — scrollable */
 body.app-shell {
 	overflow-x: hidden;
@@ -31,10 +150,6 @@ body.app-tabletop {
 	box-sizing: border-box;
 	user-select: none;
 	cursor: default;
-}
-
-:root {
-	--motion-ok: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

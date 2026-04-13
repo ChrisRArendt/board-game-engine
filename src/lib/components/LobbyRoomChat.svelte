@@ -126,22 +126,23 @@
 		margin: 0;
 		font-size: 0.95rem;
 		font-weight: 600;
-		color: #313338;
+		color: var(--color-text);
 	}
 	.log {
 		height: 220px;
 		flex-shrink: 0;
 		overflow-y: auto;
 		overflow-x: hidden;
-		border: 1px solid #e3e5e8;
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		padding: 0.65rem 0.75rem;
-		background: #f2f3f5;
+		background: var(--color-surface-muted);
 		font-size: 0.9375rem;
+		color: var(--color-text);
 	}
 	.empty {
 		margin: 0.5rem 0;
-		color: #72767d;
+		color: var(--color-text-muted);
 		font-size: 0.85rem;
 	}
 	.row {
@@ -152,7 +153,7 @@
 		border-radius: 4px;
 	}
 	.row:hover {
-		background: rgba(0, 0, 0, 0.03);
+		background: var(--color-border);
 	}
 	.avatar {
 		width: 40px;
@@ -190,22 +191,22 @@
 	}
 	.author {
 		font-weight: 600;
-		color: #1e1f22;
+		color: var(--color-text);
 		font-size: 1em;
 	}
 	.self .author {
-		color: #1d4ed8;
+		color: var(--color-accent);
 	}
 	.time {
 		font-size: 0.7rem;
-		color: #72767d;
+		color: var(--color-text-muted);
 		font-weight: 500;
 		flex-shrink: 0;
 	}
 	.content {
 		margin-top: 0.15rem;
 		line-height: 1.375;
-		color: #313338;
+		color: var(--color-text);
 		white-space: pre-wrap;
 		word-break: break-word;
 	}
@@ -216,7 +217,7 @@
 		padding: 0 0.15rem;
 		border-radius: 3px;
 		background: rgba(88, 101, 242, 0.28);
-		color: #4752c4;
+		color: var(--color-link);
 		font-weight: 500;
 	}
 	.composer {
@@ -227,19 +228,21 @@
 		flex: 1;
 		min-width: 0;
 		padding: 0.5rem 0.65rem;
-		border: 1px solid #e3e5e8;
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		font-size: 0.9rem;
-		background: #fff;
+		background: var(--color-input-bg);
+		color: var(--color-text);
 	}
 	.composer input::placeholder {
-		color: #949ba4;
+		color: var(--color-text-muted);
 	}
 	.send {
 		padding: 0.45rem 0.75rem;
 		border-radius: 8px;
-		border: 1px solid #e3e5e8;
-		background: #fff;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: var(--color-text);
 		cursor: pointer;
 		font-size: 0.88rem;
 		font-weight: 500;
@@ -249,6 +252,6 @@
 		cursor: not-allowed;
 	}
 	.send:not(:disabled):hover {
-		background: #f2f3f5;
+		background: var(--color-surface-muted);
 	}
 </style>

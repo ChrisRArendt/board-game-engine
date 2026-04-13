@@ -635,13 +635,14 @@
 		padding: 12px 16px;
 		font-size: 16px;
 		text-align: left;
-		border: 1px solid #ccc;
+		border: 1px solid var(--color-border-strong);
 		border-radius: 8px;
-		background: linear-gradient(to bottom, #fafafa, #eaeaea);
+		background: var(--color-btn-secondary-bg);
+		color: var(--color-text);
 		cursor: pointer;
 	}
 	.play-menu-btn.danger {
-		color: #b45309;
+		color: var(--color-endgame);
 		font-weight: 600;
 	}
 </style>
