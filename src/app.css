@@ -105,6 +105,7 @@ body {
 }
 
 html {
+	height: 100%;
 	background: var(--color-bg);
 }
 
@@ -126,13 +127,15 @@ body {
 	--motion-ok: 1;
 }
 
-/* Default until layout hydrates — scrollable */
+/* Default until layout hydrates — scrollable; flex avoids 100vh + header overflow */
 body.app-shell {
 	overflow-x: hidden;
 	overflow-y: auto;
 	-webkit-overflow-scrolling: touch;
 	position: relative;
 	min-height: 100%;
+	display: flex;
+	flex-direction: column;
 }
 
 /* Tabletop only: fixed viewport for pan/zoom (class set in +layout.svelte on /play) */

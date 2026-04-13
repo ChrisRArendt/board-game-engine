@@ -1,11 +1,17 @@
 <script lang="ts">
 	import PieceProperties from './PieceProperties.svelte';
+	import PieceColorPaletteEditor from './PieceColorPaletteEditor.svelte';
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
 
 	export let gameId: string;
 	export let userId: string;
 	export let onUploadTableBg: (file: File) => Promise<void>;
+
+	function cardInstanceIdFromPieceBg(bg: string): string | null {
+		const m = /^cards\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.png$/i.exec(bg);
+		return m ? m[1] : null;
+	}
 
 	function applyTableDims(w: number, h: number) {
 		g.game.update((s) => ({
@@ -18,6 +24,7 @@
 		!$game.editorTableSelected && $game.selectedIds.size === 1
 			? ($game.pieces.find((p) => $game.selectedIds.has(p.id)) ?? null)
 			: null;
+	$: pieceCardId = pieceSel ? cardInstanceIdFromPieceBg(pieceSel.bg) : null;
 </script>
 
 <div class="inspector">
@@ -61,24 +68,24 @@
 					}}
 				/>
 			</label>
-			<p class="hint">
-				Click the <strong>table</strong> to resize it or change the background. Hold <strong>Space</strong> and
-				drag to pan the view.
-			</p>
+			<PieceColorPaletteEditor
+				palette={$game.pieceColorPalette}
+				onChange={(cols) => g.setPieceColorPalette(cols)}
+			/>
 		</div>
 	{:else if pieceSel}
 		<h4>Piece</h4>
+		{#if pieceCardId}
+			<p class="piece-edit-link">
+				<a href="/editor/{gameId}/pieces/{pieceCardId}">Edit piece</a>
+			</p>
+		{/if}
 		<PieceProperties
 			piece={pieceSel}
 			{gameId}
 			{userId}
 			onChange={(p) => g.replacePieceInstance(p)}
 		/>
-	{:else}
-		<p class="muted">Select the table or a piece on the canvas to edit properties.</p>
-		<p class="hint subtle">
-			<strong>Space</strong>+drag pans. Click empty table area to select the table surface.
-		</p>
 	{/if}
 </div>
 
@@ -117,17 +124,15 @@
 		max-width: 100%;
 		font-size: 12px;
 	}
-	.hint {
-		margin: 0;
+	.piece-edit-link {
+		margin: 0 0 10px;
 		font-size: 12px;
-		line-height: 1.45;
-		color: var(--color-text-muted);
 	}
-	.hint.subtle {
-		margin-top: 4px;
+	.piece-edit-link a {
+		color: var(--color-accent, #3b82f6);
+		text-decoration: none;
 	}
-	.muted {
-		margin: 0;
-		color: var(--color-text-muted);
+	.piece-edit-link a:hover {
+		text-decoration: underline;
 	}
 </style>

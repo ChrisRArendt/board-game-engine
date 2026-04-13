@@ -4,6 +4,7 @@
 import { mount, tick, unmount } from 'svelte';
 import CardPreview from '$lib/components/editor/CardPreview.svelte';
 import type { Json } from '$lib/supabase/database.types';
+import { splitFieldValuesPayload } from './fieldBindings';
 import { rasterizeElementToPng } from './rasterize';
 import { parseBackground, parseLayers } from './types';
 
@@ -14,15 +15,6 @@ export type TemplateRow = {
 	background: Json;
 	layers: Json;
 };
-
-function fieldValuesToStrings(raw: unknown): Record<string, string> {
-	const out: Record<string, string> = {};
-	if (typeof raw !== 'object' || raw === null) return out;
-	for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-		out[k] = typeof v === 'string' ? v : String(v ?? '');
-	}
-	return out;
-}
 
 export async function rasterizeCardInstanceToBlob(
 	template: TemplateRow,
@@ -37,7 +29,7 @@ export async function rasterizeCardInstanceToBlob(
 	wrap.style.zIndex = '-1';
 	document.body.appendChild(wrap);
 
-	const fieldValues = fieldValuesToStrings(fieldValuesRaw);
+	const { values: fieldValues, styles: fieldStyles } = splitFieldValuesPayload(fieldValuesRaw);
 
 	const app = mount(CardPreview, {
 		target: wrap,
@@ -48,6 +40,7 @@ export async function rasterizeCardInstanceToBlob(
 			background: parseBackground(template.background),
 			layers: parseLayers(template.layers),
 			fieldValues,
+			fieldStyles,
 			mediaUrls,
 			displayScale: 1
 		}

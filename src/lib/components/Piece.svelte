@@ -40,6 +40,7 @@
 	style:transform={dragging
 		? `translate3d(${piece.x}px, ${piece.y}px, 0) scale(1.05)`
 		: `translate3d(${piece.x}px, ${piece.y}px, 0)`}
+	style:background-color={showFace && piece.bg_color ? piece.bg_color : undefined}
 	style:background-image={showFace ? `url(${bgUrl})` : undefined}
 	/* outline (not border): border shrinks content with border-box + background-clip: content-box */
 	style:outline={remoteColor ? `3px dashed ${remoteColor}` : undefined}

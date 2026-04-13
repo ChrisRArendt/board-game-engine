@@ -7,6 +7,7 @@ export function registerGameEmit(fn: (type: string, data: Record<string, unknown
 	emitGame = fn;
 }
 import type { GameDataJson, PieceData, PieceInstance } from '$lib/engine/types';
+import { DEFAULT_PIECE_COLOR_PALETTE } from '$lib/engine/types';
 import {
 	arrangeFanned,
 	arrangeStacked,
@@ -35,6 +36,8 @@ export interface GameState {
 	tableBgFilename: string;
 	tableBgRev: number;
 	table: { w: number; h: number };
+	/** Swatches for piece background color (saved in game_data.piece_color_palette). */
+	pieceColorPalette: string[];
 	pieces: PieceInstance[];
 	selectedIds: Set<number>;
 	/** other users' selection highlights */
@@ -81,6 +84,7 @@ function initialState(): GameState {
 		tableBgFilename: 'table-bg.jpg',
 		tableBgRev: 0,
 		table: { w: 3000, h: 3000 },
+		pieceColorPalette: [...DEFAULT_PIECE_COLOR_PALETTE],
 		pieces: [],
 		selectedIds: new Set(),
 		remoteSelection: {},
@@ -150,6 +154,10 @@ export function loadGameData(
 
 		const vp = getViewportSize();
 		const tableBgFilename = json.table_bg?.trim() || 'table-bg.jpg';
+		const pieceColorPalette =
+			json.piece_color_palette && json.piece_color_palette.length > 0
+				? [...json.piece_color_palette]
+				: [...DEFAULT_PIECE_COLOR_PALETTE];
 		return {
 			...s,
 			curGame,
@@ -157,6 +165,7 @@ export function loadGameData(
 			tableBgFilename,
 			tableBgRev: 0,
 			table: { w: json.table.size.w, h: json.table.size.h },
+			pieceColorPalette,
 			pieces,
 			nextPieceId: nextId,
 			selectedIds: new Set(),
@@ -406,6 +415,10 @@ export function deselectAll() {
 }
 
 /** Board editor: select the table surface (clears piece selection). */
+export function setPieceColorPalette(colors: string[]) {
+	game.update((s) => ({ ...s, pieceColorPalette: [...colors] }));
+}
+
 export function selectEditorTable() {
 	game.update((s) => {
 		for (const id of s.selectedIds) {
@@ -1010,6 +1023,8 @@ export type StoredGameSnapshot = {
 	nextPieceId: number;
 	textRegions: Record<string, string>;
 	table: { w: number; h: number };
+	/** Present in newer snapshots; omitted in older saves. */
+	pieceColorPalette?: string[];
 	curGame: string;
 	assetBaseUrl?: string | null;
 	/** Continuous zoom (preferred). */
@@ -1046,6 +1061,7 @@ export function serializeGameState(): StoredGameSnapshot {
 		nextPieceId: s.nextPieceId,
 		textRegions: { ...s.textRegions },
 		table: { ...s.table },
+		pieceColorPalette: [...s.pieceColorPalette],
 		curGame: s.curGame,
 		assetBaseUrl: s.assetBaseUrl,
 		zoom: s.zoom,
@@ -1064,6 +1080,10 @@ export function applyStoredGameSnapshot(
 		nextPieceId: snapshot.nextPieceId,
 		textRegions: { ...snapshot.textRegions },
 		table: { ...snapshot.table },
+		pieceColorPalette:
+			snapshot.pieceColorPalette && snapshot.pieceColorPalette.length > 0
+				? [...snapshot.pieceColorPalette]
+				: s.pieceColorPalette,
 		curGame: snapshot.curGame,
 		assetBaseUrl: snapshot.assetBaseUrl !== undefined ? snapshot.assetBaseUrl : null,
 		zoom: zoomFromSnapshot(snapshot),

@@ -92,6 +92,7 @@
 						fieldValues={fieldPreview}
 						{mediaUrls}
 						displayScale={1}
+						showEmptyPlaceholders={true}
 					/>
 					{#each [...layers].filter((l) => l.visible).sort((a, b) => b.zIndex - a.zIndex) as L (L.id)}
 						<button
@@ -160,14 +161,14 @@
 		position: absolute;
 		padding: 0;
 		margin: 0;
-		border: 1px dashed transparent;
+		border: 1px dashed rgba(255, 255, 255, 0.14);
 		background: transparent;
 		cursor: grab;
 		pointer-events: auto;
 	}
 	.layer-hit.sel {
-		border-color: rgba(59, 130, 246, 0.35);
-		background: rgba(59, 130, 246, 0.06);
+		border-color: rgba(59, 130, 246, 0.45);
+		background: rgba(59, 130, 246, 0.08);
 	}
 	.layer-resize-layer {
 		position: absolute;

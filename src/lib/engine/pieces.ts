@@ -6,6 +6,7 @@ export function pieceFromData(data: PieceData, id: number, curGame: string, offs
 	return {
 		id,
 		bg: data.bg,
+		...(data.bg_color ? { bg_color: data.bg_color } : {}),
 		classes: data.class ?? '',
 		attributes: data.attributes ? [...data.attributes] : [],
 		x: coords.x + offset.x,

@@ -15,20 +15,39 @@
 		return [...layers].sort((a, b) => a.zIndex - b.zIndex);
 	}
 
-	function moveLayer(id: string, dir: -1 | 1) {
-		const list = zSorted();
-		const i = list.findIndex((l) => l.id === id);
-		if (i < 0) return;
-		const j = i + dir;
-		if (j < 0 || j >= list.length) return;
-		const a = list[i];
-		const b = list[j];
-		const next = layers.map((L) => {
-			if (L.id === a.id) return { ...L, zIndex: b.zIndex };
-			if (L.id === b.id) return { ...L, zIndex: a.zIndex };
-			return L;
-		});
+	function reorderFromOrderedList(ordered: CardLayer[]) {
+		const next = ordered.map((x, i) => ({ ...x, zIndex: i }));
 		onReorder(next);
+	}
+
+	function onDragStart(id: string, e: DragEvent) {
+		dragId = id;
+		e.dataTransfer?.setData('text/plain', id);
+		e.dataTransfer!.effectAllowed = 'move';
+	}
+
+	function onDragEnd() {
+		dragId = null;
+	}
+
+	function onDragOver(e: DragEvent) {
+		e.preventDefault();
+		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+	}
+
+	function onDrop(targetId: string, e: DragEvent) {
+		e.preventDefault();
+		const fromId = dragId ?? e.dataTransfer?.getData('text/plain') ?? '';
+		dragId = null;
+		if (!fromId || fromId === targetId) return;
+		const ord = zSorted();
+		const from = ord.findIndex((x) => x.id === fromId);
+		const to = ord.findIndex((x) => x.id === targetId);
+		if (from < 0 || to < 0) return;
+		const cp = [...ord];
+		const [item] = cp.splice(from, 1);
+		cp.splice(to, 0, item);
+		reorderFromOrderedList(cp);
 	}
 </script>
 
@@ -37,24 +56,20 @@
 		<li
 			class="row"
 			class:sel={selectedId === L.id}
-			draggable={true}
-			ondragstart={() => (dragId = L.id)}
-			ondragover={(e) => e.preventDefault()}
-			ondrop={() => {
-				if (!dragId || dragId === L.id) return;
-				const ord = zSorted();
-				const from = ord.findIndex((x) => x.id === dragId);
-				const to = ord.findIndex((x) => x.id === L.id);
-				if (from < 0 || to < 0) return;
-				const cp = [...ord];
-				const [item] = cp.splice(from, 1);
-				cp.splice(to, 0, item);
-				const z = cp.map((x, i) => ({ ...x, zIndex: i }));
-				const map = new Map(z.map((x) => [x.id, x]));
-				onReorder(layers.map((x) => map.get(x.id) ?? x));
-				dragId = null;
-			}}
+			class:dragging={dragId === L.id}
+			ondragover={onDragOver}
+			ondrop={(e) => onDrop(L.id, e)}
 		>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<span
+				class="drag-handle"
+				role="presentation"
+				tabindex="-1"
+				draggable="true"
+				ondragstart={(e) => onDragStart(L.id, e)}
+				ondragend={onDragEnd}
+				title="Drag to reorder"
+			>⠿</span>
 			<button type="button" class="eye" title="Visibility" onclick={() => onToggleVis(L.id)}>
 				{L.visible ? '👁' : '◌'}
 			</button>
@@ -64,8 +79,6 @@
 			<button type="button" class="lock" title="Lock" onclick={() => onToggleLock(L.id)}>
 				{L.locked ? '🔒' : '🔓'}
 			</button>
-			<button type="button" class="mini" onclick={() => moveLayer(L.id, 1)} title="Down">↓</button>
-			<button type="button" class="mini" onclick={() => moveLayer(L.id, -1)} title="Up">↑</button>
 			<button type="button" class="del" onclick={() => onDelete(L.id)} title="Delete">×</button>
 		</li>
 	{/each}
@@ -82,17 +95,30 @@
 	}
 	.row {
 		display: grid;
-		grid-template-columns: 28px 1fr 28px 24px 24px 24px;
+		grid-template-columns: 22px 28px 1fr 28px 24px;
 		gap: 4px;
 		align-items: center;
 		padding: 6px 8px;
 		border-radius: 6px;
 		border: 1px solid transparent;
-		cursor: grab;
 	}
 	.row.sel {
 		border-color: var(--editor-selection, #3b82f6);
 		background: rgba(59, 130, 246, 0.1);
+	}
+	.row.dragging {
+		opacity: 0.55;
+	}
+	.drag-handle {
+		cursor: grab;
+		user-select: none;
+		font-size: 14px;
+		line-height: 1;
+		color: var(--color-text-muted);
+		text-align: center;
+	}
+	.drag-handle:active {
+		cursor: grabbing;
 	}
 	.row button {
 		background: transparent;

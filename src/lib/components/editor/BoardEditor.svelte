@@ -51,7 +51,8 @@
 		try {
 			const st = $game;
 			const json = piecesToGameDataJson(st.pieces, st.table, {
-				table_bg: st.assetBaseUrl ? st.tableBgFilename : undefined
+				table_bg: st.assetBaseUrl ? st.tableBgFilename : undefined,
+				piece_color_palette: st.pieceColorPalette
 			});
 			const { error } = await supabase
 				.from('custom_board_games')
@@ -144,11 +145,6 @@
 		{#if errMsg}
 			<p class="err">{errMsg}</p>
 		{/if}
-		<p class="hint">
-			Canvas shows the <strong>real layout</strong> saved for play. Add pieces from the left. Use
-			<strong>Settings</strong> / <strong>Templates</strong> / <strong>Pieces</strong> / <strong>Media</strong> for
-			other editor sections.
-		</p>
 	</header>
 	<div class="main">
 		<aside class="left">
@@ -184,8 +180,9 @@
 	.bed {
 		display: flex;
 		flex-direction: column;
-		height: 100vh;
+		flex: 1 1 auto;
 		min-height: 0;
+		width: 100%;
 		background: var(--color-bg);
 		color: var(--color-text);
 	}
@@ -225,13 +222,6 @@
 		color: #f87171;
 		margin: 8px 0 0;
 		font-size: 13px;
-	}
-	.hint {
-		margin: 8px 0 0;
-		font-size: 12px;
-		color: var(--color-text-muted);
-		max-width: 72ch;
-		line-height: 1.4;
 	}
 	.main {
 		flex: 1;

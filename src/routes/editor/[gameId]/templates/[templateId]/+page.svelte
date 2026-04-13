@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { browser } from '$app/environment';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import TemplateCanvas from '$lib/components/editor/TemplateCanvas.svelte';
 	import LayerPanel from '$lib/components/editor/LayerPanel.svelte';
@@ -96,6 +98,69 @@
 	}
 
 	const fieldPreview: Record<string, string> = {};
+
+	const PANEL_STORAGE_KEY = 'templateEditor.panelWidths.v1';
+
+	let leftPanelW = $state(240);
+	let rightPanelW = $state(280);
+
+	function clampPanel(n: number, lo: number, hi: number) {
+		return Math.min(hi, Math.max(lo, n));
+	}
+
+	function persistPanelWidths() {
+		if (!browser) return;
+		try {
+			localStorage.setItem(PANEL_STORAGE_KEY, JSON.stringify({ left: leftPanelW, right: rightPanelW }));
+		} catch {
+			/* quota */
+		}
+	}
+
+	onMount(() => {
+		if (!browser) return;
+		try {
+			const raw = localStorage.getItem(PANEL_STORAGE_KEY);
+			if (!raw) return;
+			const j = JSON.parse(raw) as { left?: number; right?: number };
+			if (typeof j.left === 'number') leftPanelW = clampPanel(j.left, 160, 560);
+			if (typeof j.right === 'number') rightPanelW = clampPanel(j.right, 180, 560);
+		} catch {
+			/* ignore */
+		}
+	});
+
+	let resizeKind = $state<'left' | 'right' | null>(null);
+	let resizeStartX = 0;
+	let resizeStartLeft = 0;
+	let resizeStartRight = 0;
+
+	function beginResize(which: 'left' | 'right', e: MouseEvent) {
+		e.preventDefault();
+		resizeKind = which;
+		resizeStartX = e.clientX;
+		resizeStartLeft = leftPanelW;
+		resizeStartRight = rightPanelW;
+		window.addEventListener('mousemove', onResizeMove);
+		window.addEventListener('mouseup', onResizeUp);
+	}
+
+	function onResizeMove(e: MouseEvent) {
+		if (!resizeKind) return;
+		const dx = e.clientX - resizeStartX;
+		if (resizeKind === 'left') {
+			leftPanelW = clampPanel(resizeStartLeft + dx, 160, 560);
+		} else {
+			rightPanelW = clampPanel(resizeStartRight - dx, 180, 560);
+		}
+	}
+
+	function onResizeUp() {
+		if (resizeKind) persistPanelWidths();
+		resizeKind = null;
+		window.removeEventListener('mousemove', onResizeMove);
+		window.removeEventListener('mouseup', onResizeUp);
+	}
 </script>
 
 <div class="shell">
@@ -142,8 +207,8 @@
 		{/if}
 	</div>
 
-	<div class="main">
-		<aside class="left">
+	<div class="main" class:resizing={resizeKind !== null}>
+		<aside class="left" style:width="{leftPanelW}px">
 			<div class="add">
 				<span>Add layer</span>
 				<button type="button" onclick={() => addLayer('text')}>Text</button>
@@ -167,6 +232,15 @@
 				}}
 			/>
 		</aside>
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+		<div
+			class="gutter"
+			role="separator"
+			aria-orientation="vertical"
+			aria-label="Resize layers panel"
+			onmousedown={(e) => beginResize('left', e)}
+		></div>
+		<div class="canvas-wrap">
 		<TemplateCanvas
 			canvasWidth={canvasW}
 			canvasHeight={canvasH}
@@ -198,7 +272,16 @@
 				);
 			}}
 		/>
-		<aside class="right">
+		</div>
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+		<div
+			class="gutter"
+			role="separator"
+			aria-orientation="vertical"
+			aria-label="Resize properties panel"
+			onmousedown={(e) => beginResize('right', e)}
+		></div>
+		<aside class="right" style:width="{rightPanelW}px">
 			<LayerProperties layer={selectedLayer()} onChange={patchLayer} />
 		</aside>
 	</div>
@@ -208,8 +291,9 @@
 	.shell {
 		display: flex;
 		flex-direction: column;
-		height: calc(100vh - 96px);
-		min-height: 400px;
+		flex: 1 1 auto;
+		min-height: 0;
+		width: 100%;
 	}
 	.top {
 		display: flex;
@@ -263,19 +347,57 @@
 	.main {
 		flex: 1;
 		min-height: 0;
-		display: grid;
-		grid-template-columns: 240px 1fr 280px;
+		display: flex;
+		flex-direction: row;
+		align-items: stretch;
+	}
+	.main.resizing {
+		cursor: col-resize;
+		user-select: none;
 	}
 	.left,
 	.right {
+		flex-shrink: 0;
 		overflow: auto;
 		padding: 12px;
+		min-width: 0;
+		box-sizing: border-box;
 		background: var(--color-surface);
 		border-right: 1px solid var(--color-border);
 	}
+	.canvas-wrap {
+		flex: 1;
+		min-width: 0;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
 	.right {
 		border-right: none;
-		border-left: 1px solid var(--color-border);
+		border-left: none;
+	}
+	.gutter {
+		flex-shrink: 0;
+		width: 6px;
+		margin: 0 -3px;
+		cursor: col-resize;
+		background: transparent;
+		position: relative;
+		z-index: 2;
+	}
+	.gutter:hover {
+		background: rgba(59, 130, 246, 0.15);
+	}
+	.gutter::after {
+		content: '';
+		position: absolute;
+		left: 50%;
+		top: 0;
+		bottom: 0;
+		width: 1px;
+		transform: translateX(-50%);
+		background: var(--color-border);
+		pointer-events: none;
 	}
 	.add {
 		display: flex;

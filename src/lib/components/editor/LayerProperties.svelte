@@ -70,18 +70,23 @@
 				onchange={(e) => {
 					const on = (e.currentTarget as HTMLInputElement).checked;
 					if (on) {
+						const fromText = layer.type === 'text' ? (layer as TextLayer).content ?? '' : '';
+						const fromImage =
+							layer.type === 'image' ? (layer as ImageLayer).mediaId ?? '' : '';
+						const defaultType =
+							layer.type === 'image' ? ('image' as FieldType) : ('text' as FieldType);
 						patch({
 							fieldBinding: {
 								fieldName: 'field_1',
 								fieldLabel: 'Field',
-								fieldType: 'text',
-								defaultValue: ''
+								fieldType: defaultType,
+								defaultValue: fromText || fromImage
 							}
 						});
 					} else patch({ fieldBinding: null });
 				}}
 			/>
-			<span>This layer varies per card</span>
+			<span>Per-piece field</span>
 		</label>
 		{#if layer.fieldBinding}
 			<label class="row">
@@ -130,6 +135,59 @@
 					<option value="color">color</option>
 					<option value="image">image</option>
 				</select>
+			</label>
+			<label class="row">
+				<span>Default</span>
+				{#if layer.fieldBinding.fieldType === 'textarea'}
+					<textarea
+						class="default-area"
+						style="min-height: {Math.min(280, Math.max(72, layer.height))}px"
+						value={layer.fieldBinding.defaultValue ?? ''}
+						oninput={(e) =>
+							patch({
+								fieldBinding: {
+									...layer.fieldBinding!,
+									defaultValue: (e.currentTarget as HTMLTextAreaElement).value
+								}
+							})}
+					></textarea>
+				{:else if layer.fieldBinding.fieldType === 'image'}
+					<input
+						type="text"
+						placeholder="game_media id"
+						value={layer.fieldBinding.defaultValue ?? ''}
+						oninput={(e) =>
+							patch({
+								fieldBinding: {
+									...layer.fieldBinding!,
+									defaultValue: (e.currentTarget as HTMLInputElement).value
+								}
+							})}
+					/>
+				{:else if layer.fieldBinding.fieldType === 'color'}
+					<ColorPicker
+						value={layer.fieldBinding.defaultValue || '#334155'}
+						onValueChange={(c) =>
+							patch({
+								fieldBinding: {
+									...layer.fieldBinding!,
+									defaultValue: c
+								}
+							})}
+					/>
+				{:else}
+					<input
+						type={layer.fieldBinding.fieldType === 'number' ? 'number' : 'text'}
+						value={layer.fieldBinding.defaultValue ?? ''}
+						oninput={(e) =>
+							patch({
+								fieldBinding: {
+									...layer.fieldBinding!,
+									defaultValue: (e.currentTarget as HTMLInputElement).value
+								}
+							})}
+					/>
+				{/if}
 			</label>
 		{/if}
 
@@ -269,12 +327,20 @@
 		gap: 4px;
 	}
 	.row input,
-	.row select {
+	.row select,
+	.row textarea {
 		padding: 6px 8px;
 		border-radius: 4px;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
 		color: inherit;
+	}
+	.default-area {
+		width: 100%;
+		resize: vertical;
+		font: inherit;
+		line-height: 1.4;
+		box-sizing: border-box;
 	}
 	.check {
 		display: flex;

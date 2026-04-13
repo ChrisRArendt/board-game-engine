@@ -195,7 +195,7 @@
 	</header>
 {/if}
 
-<main class:pad={!hideNav}>
+<main class="app-main">
 	<slot />
 </main>
 
@@ -256,8 +256,13 @@
 	.linkish:hover {
 		text-decoration: underline;
 	}
-	main.pad {
-		min-height: calc(100vh - 48px);
+	.app-main {
+		flex: 1 1 auto;
+		min-height: 0;
+		width: 100%;
+		display: flex;
+		flex-direction: column;
+		box-sizing: border-box;
 	}
 	.nav-mobile,
 	.nav-mobile-signin {

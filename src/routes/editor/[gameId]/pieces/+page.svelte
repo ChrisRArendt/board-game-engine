@@ -78,7 +78,7 @@
 		const uid = data.session?.user?.id;
 		if (!uid) return;
 		if (!staleCards.length) return;
-		if (!confirm(`Re-render ${staleCards.length} stale card(s)? This may take a minute.`)) return;
+		if (!confirm(`Re-render ${staleCards.length} stale piece(s)? This may take a minute.`)) return;
 		busy = true;
 		err = '';
 		try {
@@ -177,7 +177,7 @@
 				.insert({
 					game_id: data.game.id,
 					template_id: templateId,
-					name: 'New card',
+					name: 'New piece',
 					field_values: {},
 					render_stale: true
 				})
@@ -199,9 +199,6 @@
 
 <div class="page">
 	<h1>Pieces</h1>
-	<p class="hint">
-		Rendered card assets you can place on the board. Create from a template, fill fields, then render to PNG.
-	</p>
 
 	<div class="list-controls">
 		<label>
@@ -237,7 +234,7 @@
 
 	{#if staleCards.length}
 		<div class="stale-banner">
-			<span>{staleCards.length} card(s) need re-render after a template change.</span>
+			<span>{staleCards.length} piece(s) need re-render after a template change.</span>
 			<button type="button" class="btn primary" disabled={busy} onclick={() => void rerenderAllStale()}>
 				{busy ? 'Working…' : `Re-render all stale (${staleCards.length})`}
 			</button>
@@ -269,7 +266,10 @@
 							{:else}
 								<div class="ph">No render</div>
 							{/if}
-							<a href="/editor/{data.game.id}/pieces/{card.id}">{card.name}</a>
+							<div class="row-actions">
+								<a href="/editor/{data.game.id}/pieces/{card.id}" title="Edit piece">{card.name}</a>
+								<a class="row-sublink" href="/editor/{data.game.id}/templates/{t.id}">Open template</a>
+							</div>
 							{#if card.render_stale}<span class="stale">Stale</span>{/if}
 						</li>
 					{:else}
@@ -313,8 +313,11 @@
 							<div class="ph">No render</div>
 						{/if}
 						<div class="card-meta">
-							<a href="/editor/{data.game.id}/pieces/{card.id}">{card.name}</a>
+							<a href="/editor/{data.game.id}/pieces/{card.id}" title="Edit piece">{card.name}</a>
 							<span class="tmpl-tag">{tmpl?.name ?? '—'}</span>
+							{#if tmpl}
+								<a class="row-sublink" href="/editor/{data.game.id}/templates/{tmpl.id}">Open template</a>
+							{/if}
 						</div>
 						{#if card.render_stale}<span class="stale">Stale</span>{/if}
 					</li>
@@ -335,10 +338,6 @@
 	}
 	h1 {
 		margin-top: 0;
-	}
-	.hint {
-		color: var(--color-text-muted);
-		margin-bottom: 1.5rem;
 	}
 	.list-controls {
 		display: flex;
@@ -376,6 +375,21 @@
 		background: var(--color-surface);
 		color: inherit;
 		min-width: 220px;
+	}
+	.row-actions {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 4px;
+		min-width: 0;
+	}
+	.row-sublink {
+		font-size: 12px;
+		color: var(--color-accent, #3b82f6);
+		text-decoration: none;
+	}
+	.row-sublink:hover {
+		text-decoration: underline;
 	}
 	.card-meta {
 		display: flex;

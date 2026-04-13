@@ -14,7 +14,8 @@
 		open?: boolean;
 		gameId: string;
 		onClose: () => void;
-		onPick: (mediaId: string) => void;
+		/** `filePath` lets callers show the image in previews before a full media list refresh. */
+		onPick: (mediaId: string, filePath?: string) => void;
 	} = $props();
 
 	const supabase = createSupabaseBrowserClient();
@@ -62,7 +63,7 @@
 							type="button"
 							class="cell"
 							onclick={() => {
-								onPick(m.id);
+								onPick(m.id, m.file_path);
 								onClose();
 							}}
 						>

@@ -16,7 +16,7 @@
 		<button type="button" class="add primary" onclick={onAddPiece}>Add image piece</button>
 		{#if cardsForBoard.length && onAddFromCard}
 			<label class="from-card">
-				<span>Add from rendered piece (card)</span>
+				<span>Add from rendered piece</span>
 				<select
 					class="sel"
 					onchange={(e) => {

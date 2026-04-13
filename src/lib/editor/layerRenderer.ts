@@ -39,9 +39,12 @@ export function resolveImageMediaId(
 	layer: ImageLayer,
 	fieldValues: Record<string, string>
 ): string | null {
-	if (layer.fieldBinding && layer.fieldBinding.fieldType === 'image') {
+	/** Any bound image layer reads its media id from field_values (per-piece). Do not require fieldType === 'image' — new bindings default to "text" in the template UI, which would otherwise skip field_values and fall back to layer.mediaId (usually null). */
+	if (layer.fieldBinding) {
 		const v = fieldValues[layer.fieldBinding.fieldName];
-		return v ?? layer.fieldBinding.defaultValue ?? null;
+		if (v != null && String(v).trim() !== '') return String(v).trim();
+		const d = layer.fieldBinding.defaultValue;
+		if (d != null && String(d).trim() !== '') return String(d).trim();
 	}
 	return layer.mediaId;
 }
