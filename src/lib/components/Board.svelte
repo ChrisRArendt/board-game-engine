@@ -75,6 +75,19 @@
 
 	let pointerEngine: PointerEngine | null = null;
 	let pressingPieceId: number | null = null;
+	/** Coalesce drag sync to one `piece_moves_batch` per animation frame (not N messages per frame). */
+	let dragMoveEmitRaf: number | null = null;
+
+	function emitDragMovesBatch() {
+		const st = get(game);
+		const moves: Array<{ id: number; x: number; y: number }> = [];
+		for (const p of st.pieces) {
+			if (st.selectedIds.has(p.id) && p.attributes.includes('move')) {
+				moves.push({ id: p.id, x: p.x, y: p.y });
+			}
+		}
+		if (moves.length > 0) emit('piece_moves_batch', { moves });
+	}
 
 	let zoomHudVisible = false;
 	let zoomHudTimer: ReturnType<typeof setTimeout> | null = null;
@@ -302,19 +315,27 @@
 			},
 			onPieceDragMove: (x, y) => {
 				g.moveDragTo(x, y);
-				const st2 = get(game);
-				if (!editorMode) {
-					for (const p of st2.pieces) {
-						if (st2.selectedIds.has(p.id) && p.attributes.includes('move')) {
-							emit('piece_move', { id: p.id, x: p.x, y: p.y });
-						}
-					}
-				}
+				if (editorMode) return;
+				if (dragMoveEmitRaf != null) cancelAnimationFrame(dragMoveEmitRaf);
+				dragMoveEmitRaf = requestAnimationFrame(() => {
+					dragMoveEmitRaf = null;
+					emitDragMovesBatch();
+				});
 			},
 			onPieceDragEnd: () => {
+				if (dragMoveEmitRaf != null) {
+					cancelAnimationFrame(dragMoveEmitRaf);
+					dragMoveEmitRaf = null;
+				}
+				emitDragMovesBatch();
 				g.endMoveDrag();
 			},
 			onPieceDragCancel: () => {
+				if (dragMoveEmitRaf != null) {
+					cancelAnimationFrame(dragMoveEmitRaf);
+					dragMoveEmitRaf = null;
+				}
+				emitDragMovesBatch();
 				g.cancelMoveDrag();
 			},
 			onLongPress: (pieceId, x, y) => {
@@ -357,16 +378,19 @@
 						const r = el.getBoundingClientRect();
 						rects.set(id, { x: r.left, y: r.top, w: r.width, h: r.height });
 					});
-					document.querySelectorAll<HTMLElement>('[data-board-widget-id]').forEach((el) => {
-						const id = parseInt(el.dataset.boardWidgetId ?? '', 10);
-						if (Number.isNaN(id)) return;
-						const r = el.getBoundingClientRect();
-						widgetRects.set(id, { x: r.left, y: r.top, w: r.width, h: r.height });
-					});
+					/** Play mode: marquee selects pieces only (widgets are not interactable on the board). */
+					if (editorMode) {
+						document.querySelectorAll<HTMLElement>('[data-board-widget-id]').forEach((el) => {
+							const id = parseInt(el.dataset.boardWidgetId ?? '', 10);
+							if (Number.isNaN(id)) return;
+							const r = el.getBoundingClientRect();
+							widgetRects.set(id, { x: r.left, y: r.top, w: r.width, h: r.height });
+						});
+					}
 				}
 				g.updateSelectionBox(x, y, rects, {
 					canSelectPiece: canViewerSelectPiece,
-					widgetRects
+					widgetRects: editorMode ? widgetRects : undefined
 				});
 			},
 			onSelectionBoxEnd: () => {
@@ -510,32 +534,16 @@
 		($game.assetBaseUrl
 			? `${$game.assetBaseUrl}${$game.envBgFilename}?v=${$game.envBgRev}`
 			: `/data/${$game.curGame}/images/${$game.envBgFilename}?v=${$game.envBgRev}`);
-	/** World-space bounds for the repeating env layer (under table + padding from content). */
+	/** World-space bounds for the repeating env layer around the table. Anchored to the table only — do not grow from piece/widget positions or the plane shifts and the tiled background appears to slide when cards move past the table edge. */
 	$: envPlaneRect = (() => {
 		const tw = $game.table.w;
 		const th = $game.table.h;
-		let minX = 0;
-		let minY = 0;
-		let maxX = tw;
-		let maxY = th;
-		for (const p of $game.pieces) {
-			minX = Math.min(minX, p.x);
-			minY = Math.min(minY, p.y);
-			maxX = Math.max(maxX, p.x + p.initial_size.w);
-			maxY = Math.max(maxY, p.y + p.initial_size.h);
-		}
-		for (const w of $game.widgets) {
-			minX = Math.min(minX, w.x);
-			minY = Math.min(minY, w.y);
-			maxX = Math.max(maxX, w.x + w.w);
-			maxY = Math.max(maxY, w.y + w.h);
-		}
 		const pad = 8000;
 		return {
-			x: minX - pad,
-			y: minY - pad,
-			w: maxX - minX + pad * 2,
-			h: maxY - minY + pad * 2
+			x: -pad,
+			y: -pad,
+			w: tw + pad * 2,
+			h: th + pad * 2
 		};
 	})();
 	/** Single selected piece in board editor — show handles (disabled when locked so state is obvious). */
@@ -725,6 +733,7 @@
 							curGame={$game.curGame}
 							assetBaseUrl={$game.assetBaseUrl}
 							replayMode={replayMode}
+							smoothPosition={!editorMode && !replayMode}
 							editorMode={editorMode}
 							onEditorContextMenu={editorMode ? onEditorPieceContextMenu : undefined}
 							faceHidden={editorMode

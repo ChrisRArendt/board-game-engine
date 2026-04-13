@@ -401,6 +401,12 @@ export async function connectGameChannel(
 		game.remotePieceMove(p.id, p.x, p.y);
 	});
 
+	ch.on('broadcast', { event: 'piece_moves_batch' }, ({ payload }) => {
+		const p = payload as { moves?: Array<{ id: number; x: number; y: number }> };
+		if (!Array.isArray(p?.moves) || p.moves.length === 0) return;
+		game.remotePieceMovesBatch(p.moves);
+	});
+
 	ch.on('broadcast', { event: 'piece_flip' }, ({ payload }) => {
 		const p = payload as { id: number; isFlipped: boolean };
 		game.remotePieceFlip(p.id, p.isFlipped);

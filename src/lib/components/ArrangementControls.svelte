@@ -1,31 +1,65 @@
 <script lang="ts">
 	import type { PlacementLayout } from '$lib/engine/types';
-	import type { PlacementSpacingMode } from '$lib/editor/placementLayouts';
+	import { arrangementPrefs, patchArrangementPrefs } from '$lib/stores/arrangementPrefs';
 	import * as g from '$lib/stores/game';
+	import { get } from 'svelte/store';
 
 	/** Piece library: quantity for multi-drop (bind from parent when `showQuantity`). */
 	export let quantity = 1;
 	export let showQuantity = false;
 
-	export let layout: PlacementLayout = 'grid';
-	export let spacingMode: PlacementSpacingMode = 'overlap';
-	export let cols = 3;
-	export let offset = 32;
-
 	export let showApplyButton = true;
+	/** In-game context menu: small/medium/large gap presets (30 / 90 / 270 px) instead of a numeric offset. */
+	export let gapPresetMode = false;
 	/** Tighter padding and type for context menu. */
 	export let compact = false;
 	/** Editor / menu: warn when fewer than two unlocked pieces in selection. */
 	export let useSelectionUnlockedHint = false;
 	export let unlockedCount = 0;
 	export let selectedCount = 0;
+	/** Selected pieces with the flip attribute — show Face row when non-zero and applying. */
+	export let flipCapableCount = 0;
 
 	export let onAfterApply: (() => void) | undefined = undefined;
 
+	const GAP_PRESETS = { small: 30, medium: 90, large: 270 } as const;
+	type GapPreset = keyof typeof GAP_PRESETS;
+
+	function nearestGapPreset(v: number): GapPreset {
+		let best: GapPreset = 'medium';
+		let bestDist = Infinity;
+		for (const k of Object.keys(GAP_PRESETS) as GapPreset[]) {
+			const d = Math.abs(v - GAP_PRESETS[k]);
+			if (d < bestDist) {
+				bestDist = d;
+				best = k;
+			}
+		}
+		return best;
+	}
+
+	function setGapPreset(p: GapPreset) {
+		patchArrangementPrefs({ offset: GAP_PRESETS[p] });
+	}
+
 	function apply() {
-		const ok = g.applyPlacementArrangementToSelection(layout, spacingMode, cols, offset);
+		const { layout, spacingMode, cols, offset, arrangeFaceUp } = get(arrangementPrefs);
+		const ok = g.applyPlacementArrangementToSelection(
+			layout,
+			spacingMode,
+			cols,
+			offset,
+			arrangeFaceUp
+		);
 		if (ok) onAfterApply?.();
 	}
+
+	const LAYOUT_CHOICES: { id: PlacementLayout; label: string }[] = [
+		{ id: 'stack', label: 'Stack' },
+		{ id: 'grid', label: 'Grid' },
+		{ id: 'honeycomb', label: 'Honey' },
+		{ id: 'fan', label: 'Fan' }
+	];
 </script>
 
 <div class="arrangement-controls" class:compact>
@@ -36,18 +70,178 @@
 		</label>
 	{/if}
 
-	<label class="row">
+	<div class="row layout-row">
 		<span>Layout</span>
-		<select bind:value={layout}>
-			<option value="stack">Stack</option>
-			<option value="grid">Grid</option>
-			<option value="honeycomb">Honeycomb</option>
-		</select>
-	</label>
-	{#if layout === 'grid' || layout === 'honeycomb'}
+		<div class="layout-grid" role="group" aria-label="Layout">
+			{#each LAYOUT_CHOICES as L}
+				<button
+					type="button"
+					class="layout-btn"
+					class:active={$arrangementPrefs.layout === L.id}
+					aria-pressed={$arrangementPrefs.layout === L.id}
+					onclick={() => patchArrangementPrefs({ layout: L.id })}
+				>
+					{#if L.id === 'stack'}
+						<svg class="layout-icon" viewBox="0 0 24 24" aria-hidden="true">
+							<rect
+								x="5"
+								y="13"
+								width="11"
+								height="7"
+								rx="1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+							/>
+							<rect
+								x="6.5"
+								y="9"
+								width="11"
+								height="7"
+								rx="1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+							/>
+							<rect
+								x="8"
+								y="5"
+								width="11"
+								height="7"
+								rx="1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+							/>
+						</svg>
+					{:else if L.id === 'grid'}
+						<svg class="layout-icon" viewBox="0 0 24 24" aria-hidden="true">
+							<rect
+								x="3"
+								y="3"
+								width="7"
+								height="7"
+								rx="1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+							/>
+							<rect
+								x="14"
+								y="3"
+								width="7"
+								height="7"
+								rx="1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+							/>
+							<rect
+								x="3"
+								y="14"
+								width="7"
+								height="7"
+								rx="1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+							/>
+							<rect
+								x="14"
+								y="14"
+								width="7"
+								height="7"
+								rx="1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+							/>
+						</svg>
+					{:else if L.id === 'honeycomb'}
+						<svg class="layout-icon" viewBox="0 0 24 24" aria-hidden="true">
+							<path
+								d="M12 4l4 2.5v5L12 14l-4-2.5v-5L12 4z"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linejoin="round"
+							/>
+							<path
+								d="M6 10l4 2.5v5L6 20l-4-2.5v-5L6 10z"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linejoin="round"
+							/>
+							<path
+								d="M18 10l4 2.5v5L18 20l-4-2.5v-5L18 10z"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linejoin="round"
+							/>
+						</svg>
+					{:else}
+						<svg class="layout-icon" viewBox="0 0 24 24" aria-hidden="true">
+							<path
+								d="M5 18 Q12 7 19 18"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+							/>
+							<rect
+								x="3"
+								y="13"
+								width="7"
+								height="7"
+								rx="1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								transform="rotate(-28 6.5 16.5)"
+							/>
+							<rect
+								x="8.5"
+								y="6"
+								width="7"
+								height="7"
+								rx="1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+							/>
+							<rect
+								x="14"
+								y="13"
+								width="7"
+								height="7"
+								rx="1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								transform="rotate(28 17.5 16.5)"
+							/>
+						</svg>
+					{/if}
+					<span class="layout-label">{L.label}</span>
+				</button>
+			{/each}
+		</div>
+	</div>
+	{#if $arrangementPrefs.layout === 'grid' || $arrangementPrefs.layout === 'honeycomb'}
 		<label class="row">
 			<span>Columns</span>
-			<input type="number" min="1" max="99" bind:value={cols} />
+			<input
+				type="number"
+				min="1"
+				max="99"
+				value={$arrangementPrefs.cols}
+				oninput={(e) =>
+					patchArrangementPrefs({
+						cols: parseInt((e.currentTarget as HTMLInputElement).value, 10) || 1
+					})}
+			/>
 		</label>
 	{/if}
 	<label class="row toggle-row">
@@ -55,29 +249,83 @@
 		<div class="segmented" role="group" aria-label="Arrangement spacing">
 			<button
 				type="button"
-				class:active={spacingMode === 'overlap'}
-				onclick={() => (spacingMode = 'overlap')}
+				class:active={$arrangementPrefs.spacingMode === 'overlap'}
+				onclick={() => patchArrangementPrefs({ spacingMode: 'overlap' })}
 			>
 				Overlap
 			</button>
 			<button
 				type="button"
-				class:active={spacingMode === 'separate'}
-				onclick={() => (spacingMode = 'separate')}
+				class:active={$arrangementPrefs.spacingMode === 'separate'}
+				onclick={() => patchArrangementPrefs({ spacingMode: 'separate' })}
 			>
 				Separate
 			</button>
 		</div>
 	</label>
-	<label class="row">
-		<span>{spacingMode === 'separate' ? 'Gap (px)' : 'Offset (px)'}</span>
-		<input
-			type="number"
-			min={spacingMode === 'separate' ? 0 : 1}
-			max="500"
-			bind:value={offset}
-		/>
-	</label>
+	{#if gapPresetMode}
+		<label class="row toggle-row">
+			<span>{$arrangementPrefs.spacingMode === 'separate' ? 'Gap' : 'Offset'}</span>
+			<div class="segmented gap-presets" role="group" aria-label="Gap size">
+				<button
+					type="button"
+					class:active={nearestGapPreset($arrangementPrefs.offset) === 'small'}
+					onclick={() => setGapPreset('small')}
+				>
+					Small
+				</button>
+				<button
+					type="button"
+					class:active={nearestGapPreset($arrangementPrefs.offset) === 'medium'}
+					onclick={() => setGapPreset('medium')}
+				>
+					Medium
+				</button>
+				<button
+					type="button"
+					class:active={nearestGapPreset($arrangementPrefs.offset) === 'large'}
+					onclick={() => setGapPreset('large')}
+				>
+					Large
+				</button>
+			</div>
+		</label>
+	{:else}
+		<label class="row">
+			<span>{$arrangementPrefs.spacingMode === 'separate' ? 'Gap (px)' : 'Offset (px)'}</span>
+			<input
+				type="number"
+				min={$arrangementPrefs.spacingMode === 'separate' ? 0 : 1}
+				max="500"
+				value={$arrangementPrefs.offset}
+				oninput={(e) =>
+					patchArrangementPrefs({
+						offset: parseFloat((e.currentTarget as HTMLInputElement).value) || 0
+					})}
+			/>
+		</label>
+	{/if}
+	{#if showApplyButton && flipCapableCount > 0}
+		<label class="row toggle-row">
+			<span>Face</span>
+			<div class="segmented" role="group" aria-label="Card face after arrange">
+				<button
+					type="button"
+					class:active={$arrangementPrefs.arrangeFaceUp}
+					onclick={() => patchArrangementPrefs({ arrangeFaceUp: true })}
+				>
+					Up
+				</button>
+				<button
+					type="button"
+					class:active={!$arrangementPrefs.arrangeFaceUp}
+					onclick={() => patchArrangementPrefs({ arrangeFaceUp: false })}
+				>
+					Down
+				</button>
+			</div>
+		</label>
+	{/if}
 	{#if showApplyButton}
 		<button
 			type="button"
@@ -109,27 +357,81 @@
 		flex-direction: column;
 		gap: 4px;
 	}
-	.row span {
+	/* Direct child only — not .layout-label inside layout buttons */
+	.row > span {
 		font-size: 11px;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: var(--color-text-muted);
 	}
-	.compact .row span {
+	.compact .row > span {
 		font-size: 10px;
 	}
-	.row input[type='number'],
-	.row select {
+	.row input[type='number'] {
 		padding: 6px 8px;
 		border-radius: 4px;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
 		color: inherit;
 	}
-	.compact .row input[type='number'],
-	.compact .row select {
+	.compact .row input[type='number'] {
 		padding: 5px 6px;
 		font-size: 12px;
+	}
+	.layout-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 6px;
+	}
+	.layout-btn {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		padding: 8px 6px;
+		border-radius: 6px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: var(--color-text-muted);
+		cursor: pointer;
+		font: inherit;
+	}
+	.layout-btn:not(.active):hover {
+		background: var(--color-ctx-hover-bg, rgba(255, 255, 255, 0.06));
+		color: var(--color-text);
+	}
+	.layout-btn.active {
+		background: var(--color-accent, #3b82f6);
+		border-color: var(--color-accent, #3b82f6);
+		color: #fff;
+	}
+	.layout-btn.active .layout-label {
+		color: #fff;
+	}
+	.layout-icon {
+		width: 28px;
+		height: 28px;
+		flex-shrink: 0;
+	}
+	.compact .layout-icon {
+		width: 24px;
+		height: 24px;
+	}
+	.layout-label {
+		font-size: 11px;
+		font-weight: 500;
+		line-height: 1.15;
+		text-transform: none;
+		letter-spacing: normal;
+		color: inherit;
+	}
+	.compact .layout-btn {
+		padding: 6px 4px;
+		gap: 4px;
+	}
+	.compact .layout-label {
+		font-size: 10px;
 	}
 	.toggle-row .segmented {
 		display: flex;

@@ -256,6 +256,7 @@
 		const el =
 			raw instanceof Element ? raw : raw instanceof Node ? raw.parentElement : null;
 		if (el?.closest?.('[data-toolbar]')) return;
+		if (el?.closest?.('[data-bge-context-menu]')) return;
 		ctxOpen = false;
 	}
 

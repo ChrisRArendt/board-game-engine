@@ -962,11 +962,7 @@ export function runArrangeFanned() {
 		});
 		return { ...s, pieces };
 	});
-	const s = get(game);
-	for (const id of s.selectedIds) {
-		const p = s.pieces.find((x) => x.id === id);
-		if (p) emitGame?.('piece_move', { id: p.id, x: p.x, y: p.y });
-	}
+	emitMovesForSelected();
 }
 
 export function runArrangeStacked() {
@@ -978,30 +974,36 @@ export function runArrangeStacked() {
 		});
 		return { ...s, pieces };
 	});
-	const s = get(game);
-	for (const id of s.selectedIds) {
-		const p = s.pieces.find((x) => x.id === id);
-		if (p) emitGame?.('piece_move', { id: p.id, x: p.x, y: p.y });
-	}
+	emitMovesForSelected();
+}
+
+/** One broadcast with many moves — avoids N realtime messages when dragging 100+ cards. */
+export function emitPieceMovesBatch(moves: Array<{ id: number; x: number; y: number }>) {
+	if (moves.length === 0) return;
+	emitGame?.('piece_moves_batch', { moves });
 }
 
 function emitMovesForSelected() {
 	const s = get(game);
+	const moves: Array<{ id: number; x: number; y: number }> = [];
 	for (const id of s.selectedIds) {
 		const p = s.pieces.find((x) => x.id === id);
-		if (p) emitGame?.('piece_move', { id: p.id, x: p.x, y: p.y });
+		if (p) moves.push({ id: p.id, x: p.x, y: p.y });
 	}
+	emitPieceMovesBatch(moves);
 }
 
 /**
  * Reposition selected pieces using the same placement math as the editor / piece library.
- * Order follows layer order (back → front). Locked pieces are skipped. Emits `piece_move` for play sync.
+ * Order follows layer order (back → front). Locked pieces are skipped. Emits `piece_moves_batch` for play sync.
+ * For flip-capable pieces, `faceUp` sets face-up (front) vs face-down (back) after arranging.
  */
 export function applyPlacementArrangementToSelection(
 	layout: PlacementLayout,
 	spacingMode: PlacementSpacingMode,
 	cols: number,
-	offset: number
+	offset: number,
+	faceUp = true
 ): boolean {
 	const st = get(game);
 	const pieces: PieceInstance[] = [...st.selectedIds]
@@ -1015,6 +1017,8 @@ export function applyPlacementArrangementToSelection(
 	const maxH = Math.max(...pieces.map((p) => p.initial_size.h), 1);
 	const minX = Math.min(...pieces.map((p) => p.x));
 	const minY = Math.min(...pieces.map((p) => p.y));
+	const baseX = layout === 'fan' ? pieces[0].x : minX;
+	const baseY = layout === 'fan' ? pieces[0].y : minY;
 
 	const off =
 		spacingMode === 'separate'
@@ -1025,8 +1029,8 @@ export function applyPlacementArrangementToSelection(
 	const positions = computePlacementPositions({
 		layout,
 		count,
-		baseX: minX,
-		baseY: minY,
+		baseX,
+		baseY,
 		offset: off,
 		spacingMode,
 		pieceW: maxW,
@@ -1034,12 +1038,32 @@ export function applyPlacementArrangementToSelection(
 		cols: layout === 'grid' || layout === 'honeycomb' ? c : undefined
 	});
 
-	for (let i = 0; i < pieces.length; i++) {
-		const pos = positions[i];
-		if (!pos) continue;
-		replacePieceInstance({ ...pieces[i], x: pos.x, y: pos.y });
-	}
+	const flippedTarget = !faceUp;
+	const byId = new Map(pieces.map((p, i) => [p.id, i]));
+
+	game.update((s) => ({
+		...s,
+		pieces: s.pieces.map((p) => {
+			const idx = byId.get(p.id);
+			if (idx === undefined) return p;
+			const pos = positions[idx];
+			if (!pos) return p;
+			let next: PieceInstance = { ...p, x: pos.x, y: pos.y };
+			if (hasAttr(p, 'flip')) {
+				next = { ...next, flipped: flippedTarget };
+			}
+			return next;
+		})
+	}));
+
 	emitMovesForSelected();
+	for (const p of pieces) {
+		if (!hasAttr(p, 'flip')) continue;
+		const np = getPieceById(p.id);
+		if (np && np.flipped !== p.flipped) {
+			emitGame?.('piece_flip', { id: p.id, isFlipped: np.flipped });
+		}
+	}
 	return true;
 }
 
@@ -1111,13 +1135,15 @@ export function runShuffleStackToolbar() {
 		return { ...s, pieces };
 	});
 	const st = get(game);
+	const moveBatch: Array<{ id: number; x: number; y: number }> = [];
 	for (const id of st.selectedIds) {
 		const p = st.pieces.find((x) => x.id === id);
 		if (!p) continue;
 		emitGame?.('piece_flip', { id: p.id, isFlipped: p.flipped });
 		emitGame?.('piece_shuffle', { id: p.id, zindex: p.zIndex, x: p.x, y: p.y });
-		emitGame?.('piece_move', { id: p.id, x: p.x, y: p.y });
+		moveBatch.push({ id: p.id, x: p.x, y: p.y });
 	}
+	emitPieceMovesBatch(moveBatch);
 }
 
 export function setEditorBoardSnap(enabled: boolean) {
@@ -1538,6 +1564,19 @@ export function applyEdgePanStep() {
 /** Remote multiplayer visual updates */
 export function remotePieceMove(id: number, x: number, y: number) {
 	movePieceTo(id, x, y);
+}
+
+/** Apply many position updates in one store write (matches `piece_moves_batch` broadcast). */
+export function remotePieceMovesBatch(moves: Array<{ id: number; x: number; y: number }>) {
+	if (moves.length === 0) return;
+	const byId = new Map(moves.map((m) => [m.id, m]));
+	game.update((s) => ({
+		...s,
+		pieces: s.pieces.map((p) => {
+			const u = byId.get(p.id);
+			return u ? { ...p, x: u.x, y: u.y } : p;
+		})
+	}));
 }
 
 export function remotePieceFlip(id: number, isFlipped: boolean) {
@@ -2153,7 +2192,7 @@ const DEAL_ANIM_DELAY_MS = 72;
 
 /**
  * Deal selected movable pieces (highest z first) round-robin to stash roster indices.
- * Emits `piece_move` and `piece_zindexchange` per card.
+ * Emits `piece_moves_batch` (or per-step batch when animated) and `piece_zindexchange` per card.
  */
 export async function runDealCardsToRoster(
 	rosterIndices: number[],
@@ -2176,6 +2215,7 @@ export async function runDealCardsToRoster(
 	const perTarget = new Map<number, number>();
 	const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+	const dealMoveBatch: Array<{ id: number; x: number; y: number }> = [];
 	for (let step = 0; step < pieces.length; step++) {
 		const p = pieces[step];
 		const ri = uniq[step % uniq.length];
@@ -2189,10 +2229,15 @@ export async function runDealCardsToRoster(
 		const y = rect.y + rect.h / 2 - p.initial_size.h / 2 + oy;
 		const np = { ...p, x, y, zIndex: zNext++ };
 		replacePieceInstance(np);
-		emitGame?.('piece_move', { id: np.id, x: np.x, y: np.y });
 		emitGame?.('piece_zindexchange', { id: np.id, zindex: np.zIndex });
+		if (delayMs === 0) {
+			dealMoveBatch.push({ id: np.id, x: np.x, y: np.y });
+		} else {
+			emitPieceMovesBatch([{ id: np.id, x: np.x, y: np.y }]);
+		}
 		if (delayMs > 0 && step < pieces.length - 1) await wait(delayMs);
 	}
+	if (delayMs === 0 && dealMoveBatch.length > 0) emitPieceMovesBatch(dealMoveBatch);
 }
 
 /**

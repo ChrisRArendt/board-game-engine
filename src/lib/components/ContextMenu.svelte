@@ -68,6 +68,8 @@
 		return p != null && !p.locked;
 	}).length;
 
+	$: arrangeFlipCapableCount = sel.filter((p) => hasAttr(p, 'flip')).length;
+
 	$: showSpacerAfterFlip = showFlip && (showArrange || showDeal);
 	$: showSpacerBeforeDeal = showDeal && (showFlip || showArrange);
 </script>
@@ -87,10 +89,17 @@
 
 {#if open && (showFlip || showArrange || showDeal)}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<ul class="ctx" style:top="{clip.top}px" style:left="{clip.left}px">
+	<ul
+		class="ctx"
+		data-bge-context-menu
+		style:top="{clip.top}px"
+		style:left="{clip.left}px"
+		onclick={(e) => e.stopPropagation()}
+		onpointerdown={(e) => e.stopPropagation()}
+	>
 		{#if showFlip}
 			<li
-				on:pointerdown={() => {
+				onpointerdown={() => {
 					sel.forEach((p) => hasAttr(p, 'flip') && g.flipPiece(p.id));
 					open = false;
 				}}
@@ -103,13 +112,15 @@
 		{/if}
 		{#if showArrange}
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<li class="embed" on:pointerdown|stopPropagation>
+			<li class="embed" onpointerdown={(e) => e.stopPropagation()}>
 				<p class="embed-title">Arrangement</p>
 				<ArrangementControls
 					compact
+					gapPresetMode
 					useSelectionUnlockedHint
 					unlockedCount={arrangeUnlockedCount}
 					selectedCount={$game.selectedIds.size}
+					flipCapableCount={arrangeFlipCapableCount}
 					onAfterApply={() => (open = false)}
 				/>
 			</li>
@@ -119,7 +130,7 @@
 		{/if}
 		{#if showDeal}
 			<li
-				on:pointerdown={() => {
+				onpointerdown={() => {
 					open = false;
 					dealOpen = true;
 				}}

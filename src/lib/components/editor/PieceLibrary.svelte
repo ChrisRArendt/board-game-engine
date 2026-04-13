@@ -4,6 +4,8 @@
 	import type { CardForBoardPiece } from '$lib/editor/types';
 	import type { PlacementLayout, WidgetType } from '$lib/engine/types';
 	import type { PlacementSpacingMode } from '$lib/editor/placementLayouts';
+	import { arrangementPrefs } from '$lib/stores/arrangementPrefs';
+	import { get } from 'svelte/store';
 
 	export let cardsForBoard: CardForBoardPiece[] = [];
 	export let onAddBlank: () => void;
@@ -25,10 +27,6 @@
 	) => void;
 
 	let quantity = 1;
-	let layout: PlacementLayout = 'grid';
-	let spacingMode: PlacementSpacingMode = 'overlap';
-	let cols = 3;
-	let offset = 32;
 	let dragCard: CardForBoardPiece | null = null;
 	let dragX = 0;
 	let dragY = 0;
@@ -67,6 +65,7 @@
 		const canvas = el?.closest?.('[data-board-editor-canvas]');
 		if (!canvas) return;
 		const q = Math.max(1, Math.min(99, Math.floor(quantity) || 1));
+		const { layout, spacingMode, cols, offset } = get(arrangementPrefs);
 		const off =
 			spacingMode === 'separate'
 				? Math.max(0, Math.min(500, Number(offset) || 0))
@@ -108,15 +107,7 @@
 	{/if}
 
 	<div class="defaults">
-		<ArrangementControls
-			showQuantity
-			bind:quantity
-			bind:layout
-			bind:spacingMode
-			bind:cols
-			bind:offset
-			showApplyButton={false}
-		/>
+		<ArrangementControls showQuantity bind:quantity showApplyButton={false} />
 	</div>
 
 	{#if cardsForBoard.length}

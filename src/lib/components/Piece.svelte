@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tweened } from 'svelte/motion';
 	import type { PieceInstance } from '$lib/engine/types';
 	import { hasAttr } from '$lib/engine/pieces';
 
@@ -19,6 +20,22 @@
 	export let editorMode = false;
 	/** Board editor: right-click on piece (browser context menu suppressed). */
 	export let onEditorContextMenu: ((e: MouseEvent, pieceId: number) => void) | undefined = undefined;
+	/** Play mode: glide toward networked positions instead of jumping (local drag uses raw coords). */
+	export let smoothPosition = false;
+
+	const posX = tweened(0);
+	const posY = tweened(0);
+	const POS_SMOOTH_MS = 120;
+
+	let lastPieceId = -1;
+
+	$: {
+		const idChanged = piece.id !== lastPieceId;
+		if (idChanged) lastPieceId = piece.id;
+		const snap = dragging || !smoothPosition || idChanged;
+		posX.set(piece.x, { duration: snap ? 0 : POS_SMOOTH_MS });
+		posY.set(piece.y, { duration: snap ? 0 : POS_SMOOTH_MS });
+	}
 
 	$: canFlip = hasAttr(piece, 'flip');
 	$: rot = piece.rotation ?? 0;
@@ -45,7 +62,7 @@
 	style:transform-origin="center center"
 	style:transform={dragging
 		? `translate3d(${piece.x}px, ${piece.y}px, 0) rotate(${rot}deg) scale(1.05)`
-		: `translate3d(${piece.x}px, ${piece.y}px, 0) rotate(${rot}deg)`}
+		: `translate3d(${Math.round($posX)}px, ${Math.round($posY)}px, 0) rotate(${rot}deg)`}
 	style:background-color={showFace && piece.bg_color ? piece.bg_color : undefined}
 	style:background-image={showFace ? `url(${bgUrl})` : undefined}
 	/* outline (not border): border shrinks content with border-box + background-clip: content-box */

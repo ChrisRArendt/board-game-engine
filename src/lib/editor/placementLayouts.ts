@@ -30,7 +30,64 @@ export function computePlacementPositions(opts: PlacementLayoutOptions): { x: nu
 		return computeStackPositions(count, gap, baseX, baseY, sep, pw, ph);
 	if (layout === 'honeycomb')
 		return computeHoneycombPositions(count, gap, baseX, baseY, cols, sep, pw, ph);
+	if (layout === 'fan')
+		return computeFanPositions(count, gap, baseX, baseY, sep, pw, ph);
 	return computeGridPositions(count, gap, baseX, baseY, cols, sep, pw, ph);
+}
+
+/**
+ * Fan: piece centers lie on a circular arc (pivot below the arc). Only x/y are set — no rotation.
+ * The arc is centered: lowest pieces at the left and right, highest at the middle (like a shallow ∩).
+ * (baseX, baseY) is the top-left of the back piece (layer order); that piece sits on the left end of the arc.
+ */
+export function computeFanPositions(
+	count: number,
+	offset: number,
+	baseX: number,
+	baseY: number,
+	separate: boolean,
+	pieceW: number,
+	pieceH: number
+): { x: number; y: number }[] {
+	const out: { x: number; y: number }[] = [];
+	if (count <= 0) return out;
+	const pw = Math.max(1, pieceW);
+	const ph = Math.max(1, pieceH);
+	if (count === 1) {
+		return [{ x: baseX, y: baseY }];
+	}
+
+	const gap = Math.max(0, offset);
+	/** Arc length between consecutive piece centers along the curve. */
+	const arcLen = separate ? pw + gap : Math.max(8, offset * 0.55);
+
+	/** Max total sweep (~50°) so the fan stays a gentle curve. */
+	const maxTotalAngle = (50 * Math.PI) / 180;
+
+	let R = Math.max(100, separate ? ph + gap * 2 : 80 + offset * 1.25);
+	let totalAngle = ((count - 1) * arcLen) / R;
+	if (totalAngle > maxTotalAngle) {
+		R = ((count - 1) * arcLen) / maxTotalAngle;
+		totalAngle = maxTotalAngle;
+	}
+
+	const half = (count - 1) / 2;
+	const angleStep = totalAngle / (count - 1);
+
+	// Circle center so theta = -totalAngle/2 places the back piece at (baseX, baseY); theta = 0 is the arc peak.
+	const cx = baseX + pw / 2 + R * Math.sin(totalAngle / 2);
+	const cy = baseY + ph / 2 + R * Math.cos(totalAngle / 2);
+
+	for (let i = 0; i < count; i++) {
+		const theta = (i - half) * angleStep;
+		const ccx = cx + R * Math.sin(theta);
+		const ccy = cy - R * Math.cos(theta);
+		out.push({
+			x: ccx - pw / 2,
+			y: ccy - ph / 2
+		});
+	}
+	return out;
 }
 
 /** Stacked: overlap = diagonal fan; separate = horizontal row with piece width + gap. */

@@ -6,6 +6,7 @@
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
 	import type { BoardWidget } from '$lib/engine/types';
+	import { hasAttr } from '$lib/engine/pieces';
 
 	export let gameId: string;
 	export let userId: string;
@@ -51,6 +52,11 @@
 	$: arrangeUnlockedCount = [...$game.selectedIds].filter((id) => {
 		const p = $game.pieces.find((x) => x.id === id);
 		return p != null && !p.locked;
+	}).length;
+
+	$: arrangeFlipCapableCount = [...$game.selectedIds].filter((id) => {
+		const p = $game.pieces.find((x) => x.id === id);
+		return p != null && hasAttr(p, 'flip');
 	}).length;
 
 	/** Legacy table image not linked to `game_media` — still show preview. */
@@ -164,6 +170,7 @@
 				useSelectionUnlockedHint
 				unlockedCount={arrangeUnlockedCount}
 				selectedCount={$game.selectedIds.size}
+				flipCapableCount={arrangeFlipCapableCount}
 				onAfterApply={onAfterEdit}
 			/>
 		</div>

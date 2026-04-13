@@ -7,7 +7,7 @@ export interface TableSize {
 	h: number;
 }
 
-export type PlacementLayout = 'stack' | 'grid' | 'honeycomb';
+export type PlacementLayout = 'stack' | 'grid' | 'honeycomb' | 'fan';
 
 export interface Placement {
 	coords?: { x: number; y: number };
