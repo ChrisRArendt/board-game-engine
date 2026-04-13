@@ -393,6 +393,18 @@
 			const snap = data.storedSnapshot;
 			if (snap && g.isStoredGameSnapshot(snap)) {
 				g.applyStoredGameSnapshot(snap);
+				/** Older DB snapshots only had pieces/zoom/pan — restore table media, zones, initial view from game JSON. */
+				if (g.snapshotNeedsLayoutHydration(snap)) {
+					if (data.customGame) {
+						g.mergeGameLayoutFromGameData(data.customGame.gameData, {
+							assetBaseUrl: data.customGame.assetBaseUrl
+						});
+					} else {
+						const r = await fetch(`/data/${data.lobby.game_key}/pieces.json`);
+						const j = (await r.json()) as GameDataJson;
+						g.mergeGameLayoutFromGameData(j, { assetBaseUrl: null });
+					}
+				}
 			} else if (data.customGame) {
 				g.loadGameData(data.customGame.gameData, {
 					curGame: data.lobby.game_key,

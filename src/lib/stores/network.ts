@@ -1,6 +1,9 @@
 import { browser } from '$app/environment';
 import { writable, get } from 'svelte/store';
 import * as game from './game';
+import type { StoredGameSnapshot } from './game';
+import { isCustomGameKey } from '$lib/customGames';
+import type { GameDataJson } from '$lib/engine/types';
 import { clearRollerLog } from './rollerLog';
 import { settings } from './settings';
 import { users } from './users';
@@ -546,7 +549,20 @@ export async function connectGameChannel(
 		const myId = get(activeUserId);
 		if (!myId || p.forUserId !== myId) return;
 		if (!game.isStoredGameSnapshot(p.snapshot)) return;
-		game.applyStoredGameSnapshot(p.snapshot);
+		const snap = p.snapshot as StoredGameSnapshot;
+		game.applyStoredGameSnapshot(snap);
+		/** Legacy snapshots from older clients lack layout fields; stock games can hydrate from static JSON. */
+		if (game.snapshotNeedsLayoutHydration(snap)) {
+			const curGame = get(game.game).curGame;
+			if (!isCustomGameKey(curGame)) {
+				void fetch(`/data/${curGame}/pieces.json`)
+					.then((r) => r.json())
+					.then((j) =>
+						game.mergeGameLayoutFromGameData(j as GameDataJson, { assetBaseUrl: null })
+					)
+					.catch(() => {});
+			}
+		}
 	});
 
 	ch.on('presence', { event: 'sync' }, () => applyPresenceToUsers(ch, presence.userId));

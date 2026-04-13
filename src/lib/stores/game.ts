@@ -13,6 +13,7 @@ import type {
 	InitialPlayViewState,
 	PieceData,
 	PieceInstance,
+	PlacementLayout,
 	PlayerSlotZones,
 	WidgetData
 } from '$lib/engine/types';
@@ -52,6 +53,10 @@ import {
 	parsePlayerSlotsFromJson,
 	PLAYER_SLOT_MAX
 } from '$lib/engine/stash';
+import {
+	computePlacementPositions,
+	type PlacementSpacingMode
+} from '$lib/editor/placementLayouts';
 
 export interface GameState {
 	curGame: string;
@@ -988,6 +993,56 @@ function emitMovesForSelected() {
 	}
 }
 
+/**
+ * Reposition selected pieces using the same placement math as the editor / piece library.
+ * Order follows layer order (back → front). Locked pieces are skipped. Emits `piece_move` for play sync.
+ */
+export function applyPlacementArrangementToSelection(
+	layout: PlacementLayout,
+	spacingMode: PlacementSpacingMode,
+	cols: number,
+	offset: number
+): boolean {
+	const st = get(game);
+	const pieces: PieceInstance[] = [...st.selectedIds]
+		.map((id) => st.pieces.find((p) => p.id === id))
+		.filter((p): p is PieceInstance => p != null && !p.locked)
+		.sort((a, b) => a.zIndex - b.zIndex || a.id - b.id);
+	if (pieces.length < 2) return false;
+
+	const count = pieces.length;
+	const maxW = Math.max(...pieces.map((p) => p.initial_size.w), 1);
+	const maxH = Math.max(...pieces.map((p) => p.initial_size.h), 1);
+	const minX = Math.min(...pieces.map((p) => p.x));
+	const minY = Math.min(...pieces.map((p) => p.y));
+
+	const off =
+		spacingMode === 'separate'
+			? Math.max(0, Math.min(500, Number(offset) || 0))
+			: Math.max(1, Math.min(500, Math.floor(Number(offset)) || 32));
+	const c = Math.max(1, Math.min(99, Math.floor(cols) || 3));
+
+	const positions = computePlacementPositions({
+		layout,
+		count,
+		baseX: minX,
+		baseY: minY,
+		offset: off,
+		spacingMode,
+		pieceW: maxW,
+		pieceH: maxH,
+		cols: layout === 'grid' || layout === 'honeycomb' ? c : undefined
+	});
+
+	for (let i = 0; i < pieces.length; i++) {
+		const pos = positions[i];
+		if (!pos) continue;
+		replacePieceInstance({ ...pieces[i], x: pos.x, y: pos.y });
+	}
+	emitMovesForSelected();
+	return true;
+}
+
 export function runSpreadHorizontal() {
 	game.update((s) => {
 		const u = spreadHorizontal(s.pieces, s.selectedIds);
@@ -1900,6 +1955,15 @@ export type StoredGameSnapshot = {
 	panY: number;
 	/** Per-player slot scores in play; omitted in older saves. */
 	playerSlotScores?: number[];
+	/** Table / env media (custom games under assetBaseUrl); omitted in older saves. */
+	tableBgFilename?: string;
+	tableBgRev?: number;
+	envBgFilename?: string;
+	envBgRev?: number;
+	/** Safe / deal / score zones; omitted in older saves. */
+	playerSlots?: PlayerSlotZones[] | null;
+	/** Saved play framing; omitted in older saves. */
+	initialPlayView?: InitialPlayViewState | null;
 };
 
 function zoomFromSnapshot(snapshot: StoredGameSnapshot): number {
@@ -1921,6 +1985,15 @@ export function isStoredGameSnapshot(x: unknown): x is StoredGameSnapshot {
 	);
 }
 
+function clonePlayerSlotsForSnapshot(slots: PlayerSlotZones[] | null): PlayerSlotZones[] | null {
+	if (!slots) return null;
+	return slots.map((z) => ({
+		safe: { ...z.safe },
+		deal: { ...z.deal },
+		score: { ...z.score }
+	}));
+}
+
 export function serializeGameState(): StoredGameSnapshot {
 	const s = get(game);
 	return {
@@ -1935,59 +2008,132 @@ export function serializeGameState(): StoredGameSnapshot {
 		zoom: s.zoom,
 		panX: s.panX,
 		panY: s.panY,
-		playerSlotScores: [...s.playerSlotScores]
+		playerSlotScores: [...s.playerSlotScores],
+		tableBgFilename: s.tableBgFilename,
+		tableBgRev: s.tableBgRev,
+		envBgFilename: s.envBgFilename,
+		envBgRev: s.envBgRev,
+		playerSlots: clonePlayerSlotsForSnapshot(s.playerSlots),
+		initialPlayView: s.initialPlayView
+			? { world_rect: { ...s.initialPlayView.world_rect } }
+			: null
 	};
+}
+
+/**
+ * True when the snapshot was saved before layout/background fields existed.
+ * In that case we merge from `game_data` (custom) or `/data/.../pieces.json` (stock).
+ */
+export function snapshotNeedsLayoutHydration(snap: StoredGameSnapshot): boolean {
+	return (
+		snap.tableBgFilename === undefined ||
+		snap.playerSlots === undefined ||
+		snap.envBgFilename === undefined ||
+		snap.initialPlayView === undefined
+	);
+}
+
+/** Apply static layout from game JSON without replacing pieces/widgets (used after resume snapshot). */
+export function mergeGameLayoutFromGameData(
+	json: GameDataJson,
+	opts: { assetBaseUrl: string | null }
+) {
+	game.update((s) => {
+		const tableBgFilename = json.table_bg?.trim() || 'table-bg.jpg';
+		const envBgFilename = json.environment_bg?.trim() || '';
+		const playerSlots = parsePlayerSlotsFromJson(json.player_slots) ?? null;
+		const ipv = parseInitialPlayViewJson(json.initial_play_view);
+		const pieceColorPalette =
+			json.piece_color_palette && json.piece_color_palette.length > 0
+				? [...json.piece_color_palette]
+				: s.pieceColorPalette;
+		return {
+			...s,
+			assetBaseUrl: opts.assetBaseUrl,
+			tableBgFilename,
+			tableBgRev: s.tableBgRev + 1,
+			envBgFilename,
+			envBgRev: s.envBgRev + 1,
+			playerSlots,
+			initialPlayView: ipv ?? s.initialPlayView,
+			pieceColorPalette
+		};
+	});
 }
 
 export function applyStoredGameSnapshot(
 	snapshot: StoredGameSnapshot,
 	opts?: { skipCenter?: boolean }
 ) {
-	game.update((s) => ({
-		...s,
-		pieces: snapshot.pieces.map((p) => ({ ...p })),
-		nextPieceId: snapshot.nextPieceId,
-		widgets: Array.isArray(snapshot.widgets)
-			? snapshot.widgets.map((w) => ({ ...w, config: { ...w.config } }))
-			: [],
-		nextWidgetId: (() => {
-			const w = Array.isArray(snapshot.widgets) ? snapshot.widgets : [];
-			const nw =
-				typeof snapshot.nextWidgetId === 'number' ? snapshot.nextWidgetId : 0;
-			if (w.length === 0) return nw;
-			const maxId = Math.max(...w.map((x) => x.id));
-			return Math.max(nw, maxId + 1);
-		})(),
-		table: { ...snapshot.table },
-		pieceColorPalette:
-			snapshot.pieceColorPalette && snapshot.pieceColorPalette.length > 0
-				? [...snapshot.pieceColorPalette]
-				: s.pieceColorPalette,
-		curGame: snapshot.curGame,
-		assetBaseUrl: snapshot.assetBaseUrl !== undefined ? snapshot.assetBaseUrl : null,
-		zoom: zoomFromSnapshot(snapshot),
-		panX: snapshot.panX,
-		panY: snapshot.panY,
-		selectedIds: new Set(),
-		selectedWidgetIds: new Set(),
-		remoteSelection: {},
-		loaded: true,
-		moveDrag: null,
-		selectionBox: null,
-		selectBoxAnchor: null,
-		selectingBox: false,
-		selectBoxStartItems: new Set(),
-		selectBoxStartWidgetItems: new Set(),
-		edgePan: { x: 0, y: 0 },
-		zSorted: false,
-		spacePanHeld: false,
-		panPointerStart: null,
-		handscroll: false,
-		editorSnapGuides: null,
-		editorSnapToGrid: false,
-		editorGridSize: 20,
-		playerSlotScores: normalizePlayerSlotScores(snapshot.playerSlotScores)
-	}));
+	game.update((s) => {
+		const playerSlots =
+			snapshot.playerSlots === undefined
+				? s.playerSlots
+				: snapshot.playerSlots === null
+					? null
+					: snapshot.playerSlots.map((z) => ({
+							safe: { ...z.safe },
+							deal: { ...z.deal },
+							score: { ...z.score }
+						}));
+		const initialPlayView =
+			snapshot.initialPlayView === undefined
+				? s.initialPlayView
+				: snapshot.initialPlayView === null
+					? null
+					: { world_rect: { ...snapshot.initialPlayView.world_rect } };
+		return {
+			...s,
+			pieces: snapshot.pieces.map((p) => ({ ...p })),
+			nextPieceId: snapshot.nextPieceId,
+			widgets: Array.isArray(snapshot.widgets)
+				? snapshot.widgets.map((w) => ({ ...w, config: { ...w.config } }))
+				: [],
+			nextWidgetId: (() => {
+				const w = Array.isArray(snapshot.widgets) ? snapshot.widgets : [];
+				const nw =
+					typeof snapshot.nextWidgetId === 'number' ? snapshot.nextWidgetId : 0;
+				if (w.length === 0) return nw;
+				const maxId = Math.max(...w.map((x) => x.id));
+				return Math.max(nw, maxId + 1);
+			})(),
+			table: { ...snapshot.table },
+			pieceColorPalette:
+				snapshot.pieceColorPalette && snapshot.pieceColorPalette.length > 0
+					? [...snapshot.pieceColorPalette]
+					: s.pieceColorPalette,
+			curGame: snapshot.curGame,
+			assetBaseUrl: snapshot.assetBaseUrl !== undefined ? snapshot.assetBaseUrl : null,
+			tableBgFilename: snapshot.tableBgFilename ?? s.tableBgFilename,
+			tableBgRev: snapshot.tableBgRev ?? s.tableBgRev,
+			envBgFilename: snapshot.envBgFilename ?? s.envBgFilename,
+			envBgRev: snapshot.envBgRev ?? s.envBgRev,
+			playerSlots,
+			initialPlayView,
+			zoom: zoomFromSnapshot(snapshot),
+			panX: snapshot.panX,
+			panY: snapshot.panY,
+			selectedIds: new Set(),
+			selectedWidgetIds: new Set(),
+			remoteSelection: {},
+			loaded: true,
+			moveDrag: null,
+			selectionBox: null,
+			selectBoxAnchor: null,
+			selectingBox: false,
+			selectBoxStartItems: new Set(),
+			selectBoxStartWidgetItems: new Set(),
+			edgePan: { x: 0, y: 0 },
+			zSorted: false,
+			spacePanHeld: false,
+			panPointerStart: null,
+			handscroll: false,
+			editorSnapGuides: null,
+			editorSnapToGrid: false,
+			editorGridSize: 20,
+			playerSlotScores: normalizePlayerSlotScores(snapshot.playerSlotScores)
+		};
+	});
 	if (!opts?.skipCenter) centerCamToVP();
 }
 

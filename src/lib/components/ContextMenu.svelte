@@ -3,7 +3,7 @@
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
 	import { hasAttr } from '$lib/engine/pieces';
-	import SpreadCustomDialog from '$lib/components/SpreadCustomDialog.svelte';
+	import ArrangementControls from '$lib/components/ArrangementControls.svelte';
 	import DealToDialog from '$lib/components/DealToDialog.svelte';
 	import { users } from '$lib/stores/users';
 	import { settings } from '$lib/stores/settings';
@@ -20,10 +20,9 @@
 	export let y = 0;
 	export let selfDisplayName = 'You';
 
-	const MENU_W = 220;
-	const MENU_H = 480;
+	const MENU_W = 280;
+	const MENU_H = 520;
 
-	let spreadCustomOpen = false;
 	let dealOpen = false;
 
 	function prefersReducedMotion(): boolean {
@@ -60,23 +59,18 @@
 
 	$: sel = $game.pieces.filter((p) => $game.selectedIds.has(p.id));
 	$: showFlip = sel.some((p) => hasAttr(p, 'flip'));
-	$: showShuf = sel.length > 1 && sel.every((p) => hasAttr(p, 'shuffle'));
-	$: showFan = sel.length > 1;
-	$: showStack = sel.length > 1;
-	$: showSpread = sel.length > 1 && sel.every((p) => hasAttr(p, 'move'));
+	$: showArrange = sel.length > 1 && sel.every((p) => hasAttr(p, 'move'));
 	$: showDeal =
 		sel.length >= 1 && sel.every((p) => hasAttr(p, 'move')) && stashRoster.length > 0;
-	$: showSpacer = (showFlip || showShuf) && (showFan || showStack || showSpread);
-	$: showSpacer2 = showSpread && (showFan || showStack);
-	$: showSpacerBeforeDeal =
-		showDeal && (showFlip || showShuf || showSpread || showFan || showStack);
-</script>
 
-<SpreadCustomDialog
-	open={spreadCustomOpen}
-	onApply={(gap: number, angle: number) => g.runSpreadCustom(gap, angle)}
-	onClose={() => (spreadCustomOpen = false)}
-/>
+	$: arrangeUnlockedCount = [...$game.selectedIds].filter((id) => {
+		const p = $game.pieces.find((x) => x.id === id);
+		return p != null && !p.locked;
+	}).length;
+
+	$: showSpacerAfterFlip = showFlip && (showArrange || showDeal);
+	$: showSpacerBeforeDeal = showDeal && (showFlip || showArrange);
+</script>
 
 <DealToDialog
 	open={dealOpen}
@@ -91,7 +85,7 @@
 	onClose={() => (dealOpen = false)}
 />
 
-{#if open && (showFlip || showShuf || showFan || showStack || showSpread || showDeal)}
+{#if open && (showFlip || showArrange || showDeal)}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<ul class="ctx" style:top="{clip.top}px" style:left="{clip.left}px">
 		{#if showFlip}
@@ -101,69 +95,23 @@
 					open = false;
 				}}
 			>
-				Flip
+				{sel.filter((p) => hasAttr(p, 'flip')).length > 1 ? 'Flip all' : 'Flip'}
 			</li>
 		{/if}
-		{#if showShuf}
-			<li
-				on:pointerdown={() => {
-					g.runShuffleSelected();
-					open = false;
-				}}
-			>
-				Shuffle
-			</li>
-		{/if}
-		{#if showSpacer}
+		{#if showSpacerAfterFlip}
 			<li class="spacer"></li>
 		{/if}
-		{#if showSpread}
-			<li
-				on:pointerdown={() => {
-					g.runSpreadHorizontal();
-					open = false;
-				}}
-			>
-				Spread horizontal
-			</li>
-			<li
-				on:pointerdown={() => {
-					g.runSpreadVertical();
-					open = false;
-				}}
-			>
-				Spread vertical
-			</li>
-			<li
-				on:pointerdown={() => {
-					open = false;
-					spreadCustomOpen = true;
-				}}
-			>
-				Spread custom…
-			</li>
-		{/if}
-		{#if showSpacer2}
-			<li class="spacer"></li>
-		{/if}
-		{#if showFan}
-			<li
-				on:pointerdown={() => {
-					g.runArrangeFanned();
-					open = false;
-				}}
-			>
-				Arrange Fan
-			</li>
-		{/if}
-		{#if showStack}
-			<li
-				on:pointerdown={() => {
-					g.runArrangeStacked();
-					open = false;
-				}}
-			>
-				Arrange Stacked
+		{#if showArrange}
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<li class="embed" on:pointerdown|stopPropagation>
+				<p class="embed-title">Arrangement</p>
+				<ArrangementControls
+					compact
+					useSelectionUnlockedHint
+					unlockedCount={arrangeUnlockedCount}
+					selectedCount={$game.selectedIds.size}
+					onAfterApply={() => (open = false)}
+				/>
 			</li>
 		{/if}
 		{#if showSpacerBeforeDeal}
@@ -195,6 +143,7 @@
 		padding: 4px 0;
 		margin: 0;
 		min-width: 120px;
+		max-width: min(320px, calc(100vw - 16px));
 	}
 	.ctx li {
 		padding: 12px 20px;
@@ -206,9 +155,23 @@
 		color: var(--color-text);
 		cursor: pointer;
 	}
-	.ctx li:hover {
+	.ctx li:not(.embed):hover {
 		background: var(--color-ctx-hover-bg);
 		color: #fff;
+	}
+	.ctx li.embed {
+		flex-direction: column;
+		align-items: stretch;
+		cursor: default;
+		padding: 10px 14px 14px;
+		min-height: unset;
+	}
+	.embed-title {
+		margin: 0 0 8px;
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-text-muted);
 	}
 	.spacer {
 		height: 0;

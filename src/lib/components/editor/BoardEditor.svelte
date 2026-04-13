@@ -213,7 +213,8 @@
 			spacingMode: opts.spacingMode,
 			pieceW: card.canvas_width,
 			pieceH: card.canvas_height,
-			cols: opts.layout === 'grid' ? opts.gridCols : undefined
+			cols:
+				opts.layout === 'grid' || opts.layout === 'honeycomb' ? opts.gridCols : undefined
 		});
 		let nextId = st.nextPieceId;
 		let z = maxZIndex(st.pieces);

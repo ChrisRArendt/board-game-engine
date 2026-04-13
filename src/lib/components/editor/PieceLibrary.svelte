@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArrangementControls from '$lib/components/ArrangementControls.svelte';
 	import { publicStorageUrl } from '$lib/editor/mediaUrls';
 	import type { CardForBoardPiece } from '$lib/editor/types';
 	import type { PlacementLayout, WidgetType } from '$lib/engine/types';
@@ -26,7 +27,7 @@
 	let quantity = 1;
 	let layout: PlacementLayout = 'grid';
 	let spacingMode: PlacementSpacingMode = 'overlap';
-	let gridCols = 3;
+	let cols = 3;
 	let offset = 32;
 	let dragCard: CardForBoardPiece | null = null;
 	let dragX = 0;
@@ -70,7 +71,7 @@
 			spacingMode === 'separate'
 				? Math.max(0, Math.min(500, Number(offset) || 0))
 				: Math.max(1, Math.min(500, Math.floor(Number(offset)) || 32));
-		const cols = Math.max(1, Math.min(99, Math.floor(gridCols) || 3));
+		const c = Math.max(1, Math.min(99, Math.floor(cols) || 3));
 		const w = clientToWorld(e.clientX, e.clientY);
 		/** Ghost uses translate(-50%,-50%) — first piece top-left so its center matches the cursor. */
 		const pw = card.canvas_width;
@@ -84,7 +85,7 @@
 			baseX,
 			baseY,
 			spacingMode,
-			gridCols: layout === 'grid' ? cols : undefined
+			gridCols: layout === 'grid' || layout === 'honeycomb' ? c : undefined
 		});
 	}
 </script>
@@ -107,47 +108,15 @@
 	{/if}
 
 	<div class="defaults">
-		<label>
-			<span>Quantity</span>
-			<input type="number" min="1" max="99" bind:value={quantity} />
-		</label>
-		<label>
-			<span>Layout</span>
-			<select bind:value={layout}>
-				<option value="stack">Stack</option>
-				<option value="grid">Grid</option>
-				<option value="honeycomb">Honeycomb</option>
-			</select>
-		</label>
-		{#if layout === 'grid'}
-			<label>
-				<span>Columns</span>
-				<input type="number" min="1" max="99" bind:value={gridCols} />
-			</label>
-		{/if}
-		<label class="toggle-row">
-			<span>Spacing</span>
-			<div class="segmented" role="group" aria-label="Placement spacing">
-				<button
-					type="button"
-					class:active={spacingMode === 'overlap'}
-					onclick={() => (spacingMode = 'overlap')}
-				>
-					Overlap
-				</button>
-				<button
-					type="button"
-					class:active={spacingMode === 'separate'}
-					onclick={() => (spacingMode = 'separate')}
-				>
-					Separate
-				</button>
-			</div>
-		</label>
-		<label>
-			<span>{spacingMode === 'separate' ? 'Gap (px)' : 'Offset (px)'}</span>
-			<input type="number" min={spacingMode === 'separate' ? 0 : 1} max="500" bind:value={offset} />
-		</label>
+		<ArrangementControls
+			showQuantity
+			bind:quantity
+			bind:layout
+			bind:spacingMode
+			bind:cols
+			bind:offset
+			showApplyButton={false}
+		/>
 	</div>
 
 	{#if cardsForBoard.length}
@@ -231,42 +200,6 @@
 		flex-direction: column;
 		gap: 8px;
 		font-size: 12px;
-	}
-	.defaults label {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		color: var(--color-text-muted);
-	}
-	.defaults input,
-	.defaults select {
-		padding: 6px 8px;
-		border-radius: 4px;
-		border: 1px solid var(--color-border);
-		background: var(--color-surface);
-		color: inherit;
-	}
-	.toggle-row .segmented {
-		display: flex;
-		border-radius: 6px;
-		border: 1px solid var(--color-border);
-		overflow: hidden;
-	}
-	.segmented button {
-		flex: 1;
-		padding: 6px 8px;
-		border: none;
-		background: var(--color-surface);
-		color: var(--color-text-muted);
-		font-size: 12px;
-		cursor: pointer;
-	}
-	.segmented button + button {
-		border-left: 1px solid var(--color-border);
-	}
-	.segmented button.active {
-		background: var(--color-accent, #3b82f6);
-		color: #fff;
 	}
 	.hint {
 		margin: 0;

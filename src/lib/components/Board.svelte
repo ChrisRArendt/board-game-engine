@@ -504,7 +504,7 @@
 	$: zm = $game.zoom;
 	$: bgTable = $game.assetBaseUrl
 		? `${$game.assetBaseUrl}${$game.tableBgFilename}?v=${$game.tableBgRev}`
-		: `/data/${$game.curGame}/images/table-bg.jpg`;
+		: `/data/${$game.curGame}/images/${$game.tableBgFilename}`;
 	$: bgEnv =
 		$game.envBgFilename?.trim() &&
 		($game.assetBaseUrl
