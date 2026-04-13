@@ -439,6 +439,7 @@
 <style>
 	.roller {
 		width: min(420px, 92vw);
+		color: var(--color-text);
 	}
 	.tabs-row {
 		display: flex;
@@ -461,15 +462,16 @@
 		align-items: center;
 		gap: 2px;
 		padding: 4px 6px;
-		border: 1px solid #ccc;
-		border-radius: 4px;
-		background: #fafafa;
+		border: 1px solid var(--color-border-strong);
+		border-radius: 6px;
+		background: var(--color-input-bg);
+		color: var(--color-text);
 	}
 	.tab-label {
 		font-size: 11px;
 		padding: 2px 4px;
 		font-weight: 600;
-		color: #333;
+		color: var(--color-text);
 		user-select: none;
 	}
 	.tab-qty {
@@ -477,20 +479,32 @@
 		align-items: center;
 		gap: 2px;
 		font-size: 11px;
+		color: var(--color-text);
 	}
 	.qty-btn {
-		width: 20px;
-		height: 20px;
+		width: 22px;
+		height: 22px;
 		padding: 0;
 		cursor: pointer;
 		font-weight: bold;
-		font-size: 12px;
+		font-size: 13px;
 		line-height: 1;
+		border-radius: 4px;
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-surface);
+		color: var(--color-text);
+		box-sizing: border-box;
+	}
+	.qty-btn:hover:not(:disabled) {
+		background: var(--color-surface-muted);
+		border-color: var(--color-accent);
 	}
 	.qty-val {
-		min-width: 1rem;
+		min-width: 1.25rem;
 		text-align: center;
-		font-weight: 600;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text);
 	}
 	.action-buttons {
 		display: flex;
@@ -505,14 +519,22 @@
 		cursor: pointer;
 		font-weight: 700;
 		font-size: 13px;
-		border-radius: 4px;
-		border: 1px solid #bbb;
-		background: linear-gradient(to bottom, #f5f5f5, #e0e0e0);
+		border-radius: 6px;
+		border: 1px solid var(--color-accent-hover);
+		background: linear-gradient(to bottom, var(--color-accent-hover), var(--color-accent));
+		color: var(--color-accent-contrast);
 	}
 	.rollbtn.resetbtn {
 		font-weight: 600;
-		background: linear-gradient(to bottom, #fafafa, #eaeaea);
-		color: #444;
+		background: var(--color-btn-secondary-bg);
+		color: var(--color-text);
+		border: 1px solid var(--color-btn-secondary-border);
+	}
+	.rollbtn.resetbtn:hover:not(:disabled) {
+		filter: brightness(1.06);
+	}
+	.rollbtn:hover:not(:disabled):not(.resetbtn) {
+		filter: brightness(1.05);
 	}
 	.rollbtn:disabled {
 		opacity: 0.5;
@@ -525,7 +547,7 @@
 	}
 	.hint-banner {
 		font-size: 12px;
-		color: #a63;
+		color: var(--color-endgame);
 		font-weight: 600;
 		padding: 4px 0;
 	}
@@ -535,9 +557,12 @@
 	}
 	.dice-placeholder {
 		font-size: 12px;
-		color: #666;
-		line-height: 1.4;
+		color: var(--color-text-muted);
+		line-height: 1.45;
 		padding: 8px 0;
+	}
+	.dice-placeholder strong {
+		color: var(--color-text);
 	}
 	.dice-row {
 		display: flex;
@@ -606,12 +631,15 @@
 	.total-line {
 		font-size: 13px;
 		margin-top: 6px;
-		color: #333;
+		color: var(--color-text);
+	}
+	.total-line strong {
+		color: var(--color-accent);
 	}
 	.counts-line {
 		font-size: 12px;
 		margin-top: 4px;
-		color: #444;
+		color: var(--color-text-muted);
 		display: flex;
 		flex-wrap: wrap;
 		gap: 6px;
@@ -620,26 +648,29 @@
 	.counts-label {
 		font-weight: 600;
 		margin-right: 4px;
+		color: var(--color-text);
 	}
 	.count-chip {
-		background: #eef3f8;
-		border: 1px solid #ccd8e4;
+		background: var(--color-surface-muted);
+		border: 1px solid var(--color-border-strong);
 		border-radius: 4px;
-		padding: 1px 6px;
+		padding: 2px 8px;
 		font-variant-numeric: tabular-nums;
+		color: var(--color-text);
 	}
 	.log {
 		overflow: auto;
 		font-size: 12px;
 		max-height: 140px;
-		border-top: 1px solid #eee;
-		padding-top: 6px;
+		border-top: 1px solid var(--color-border);
+		padding-top: 8px;
+		color: var(--color-text);
 	}
 	.log p {
 		margin: 2px 0;
 	}
 	.muted {
-		color: #999;
+		color: var(--color-text-muted);
 		font-size: 0.85em;
 	}
 </style>
