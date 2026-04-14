@@ -27,8 +27,10 @@ import {
 	maxZIndex,
 	pieceFromData,
 	pieceSupportsFlip,
+	shuffleMovableSelectedPieces,
 	shuffleSelectedPieces,
 	spreadCustom,
+	sortMovableSelectedByTemplateSlots,
 	spreadHorizontal,
 	spreadVertical
 } from '$lib/engine/pieces';
@@ -976,6 +978,49 @@ export function runShuffleSelected() {
 	const s = get(game);
 	for (const id of s.selectedIds) {
 		const p = s.pieces.find((x) => x.id === id);
+		if (p)
+			emitGame?.('piece_shuffle', { id: p.id, zindex: p.zIndex, x: p.x, y: p.y });
+	}
+}
+
+/** Context menu: permute positions among movable unlocked selection (2+). */
+export function runShuffleMovableSelection() {
+	let movedIds: number[] = [];
+	game.update((s) => {
+		const u = shuffleMovableSelectedPieces(s.pieces, s.selectedIds);
+		movedIds = [...u.keys()];
+		const pieces = s.pieces.map((p) => {
+			const upd = u.get(p.id);
+			return upd ? { ...p, zIndex: upd.z, x: upd.x, y: upd.y } : p;
+		});
+		return { ...s, pieces };
+	});
+	const s = get(game);
+	for (const id of movedIds) {
+		const p = s.pieces.find((x) => x.id === id);
+		if (p)
+			emitGame?.('piece_shuffle', { id: p.id, zindex: p.zIndex, x: p.x, y: p.y });
+	}
+}
+
+/**
+ * Context menu: permute which piece sits where like Shuffle, but order pieces by type
+ * (template) into spatially ordered slots — same positions overall, types sorted along the spread.
+ */
+export function runArrangeGroupByPieceType() {
+	let movedIds: number[] = [];
+	game.update((s) => {
+		const u = sortMovableSelectedByTemplateSlots(s.pieces, s.selectedIds);
+		movedIds = [...u.keys()];
+		const pieces = s.pieces.map((p) => {
+			const upd = u.get(p.id);
+			return upd ? { ...p, zIndex: upd.z, x: upd.x, y: upd.y } : p;
+		});
+		return { ...s, pieces };
+	});
+	const st = get(game);
+	for (const id of movedIds) {
+		const p = st.pieces.find((x) => x.id === id);
 		if (p)
 			emitGame?.('piece_shuffle', { id: p.id, zindex: p.zIndex, x: p.x, y: p.y });
 	}

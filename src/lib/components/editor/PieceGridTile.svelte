@@ -82,7 +82,7 @@
 		{#if showTemplateLabel}
 			<span class="tmpl-tag">{templateLabel}</span>
 		{/if}
-		<a class="piece-tile-sublink" href="/editor/{gameId}/templates/{sublinkTemplateId}">Open template</a>
+		<a class="piece-tile-sublink" href="/editor/{gameId}/templates/{sublinkTemplateId}">Edit type</a>
 		{#if card.render_stale}<span class="stale">Stale</span>{/if}
 	</div>
 </article>

@@ -19,8 +19,58 @@
 	} from '$lib/editor/printSheet';
 	import PieceGridTile, { type RenderPhase } from '$lib/components/editor/PieceGridTile.svelte';
 	import type { PageData } from './$types';
+	import { browser } from '$app/environment';
 
 	let { data }: { data: PageData } = $props();
+
+	type SortBy = 'template' | 'name' | 'updated';
+
+	let sortBy = $state<SortBy>('template');
+
+	const SORT_MENU_W = 280;
+	const SORT_MENU_H = 140;
+
+	let sortMenuOpen = $state(false);
+	let sortMenuLeft = $state(0);
+	let sortMenuTop = $state(0);
+
+	function clipSortMenuPos(cx: number, cy: number) {
+		if (!browser) return { left: cx, top: cy };
+		const pad = 8;
+		const maxL = Math.max(pad, window.innerWidth - SORT_MENU_W - pad);
+		const maxT = Math.max(pad, window.innerHeight - SORT_MENU_H - pad);
+		return {
+			left: Math.min(Math.max(pad, cx), maxL),
+			top: Math.min(Math.max(pad, cy), maxT)
+		};
+	}
+
+	function onSortControlContextMenu(e: MouseEvent) {
+		e.preventDefault();
+		const c = clipSortMenuPos(e.clientX, e.clientY);
+		sortMenuLeft = c.left;
+		sortMenuTop = c.top;
+		sortMenuOpen = true;
+	}
+
+	function closeSortMenu() {
+		sortMenuOpen = false;
+	}
+
+	function pickSortBy(mode: SortBy) {
+		sortBy = mode;
+		closeSortMenu();
+	}
+
+	function onGlobalPointerForSortMenu(e: PointerEvent) {
+		if (!sortMenuOpen) return;
+		if ((e.target as HTMLElement | null)?.closest?.('[data-pieces-sort-ctx]')) return;
+		closeSortMenu();
+	}
+
+	function onGlobalKeySortMenu(e: KeyboardEvent) {
+		if (e.key === 'Escape') closeSortMenu();
+	}
 
 	const supabase = createSupabaseBrowserClient();
 
@@ -28,7 +78,6 @@
 	let err = $state('');
 	let sheetPageSize = $state<PageSizeId>('letter');
 	let filterTemplateId = $state<string | 'all'>('all');
-	let sortBy = $state<'template' | 'name' | 'updated'>('template');
 	let newFromTemplateId = $state('');
 
 	let printPdfOpen = $state(false);
@@ -252,7 +301,7 @@
 
 	async function rerenderOneCard(c: PageData['cards'][number], uid: string) {
 		const tmpl = data.templates.find((t) => t.id === c.template_id);
-		if (!tmpl) throw new Error('Template not found');
+		if (!tmpl) throw new Error('Piece type not found');
 		const row = templateRowFromDb(tmpl);
 		const { front, back } = await rasterizeCardFrontAndBack(row, c.field_values, mediaUrls, {
 			scale: 2
@@ -367,7 +416,7 @@
 		if (!tmpl) return;
 		const cardsForT = data.cards.filter((c) => c.template_id === templateId);
 		if (!cardsForT.length) {
-			alert('No cards in this template.');
+			alert('No pieces of this type.');
 			return;
 		}
 		busy = true;
@@ -458,23 +507,66 @@
 
 	<div class="list-controls">
 		<label>
-			Template
+			Type
 			<select bind:value={filterTemplateId}>
-				<option value="all">All templates</option>
+				<option value="all">All types</option>
 				{#each data.templates as t (t.id)}
 					<option value={t.id}>{t.name}</option>
 				{/each}
 			</select>
 		</label>
-		<label>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<label
+			class="sort-control"
+			title="Sort the list. Right-click for the same options in a menu."
+			oncontextmenu={onSortControlContextMenu}
+		>
 			Sort
 			<select bind:value={sortBy}>
-				<option value="template">Template A–Z, then name</option>
+				<option value="template">By type (A–Z), then name</option>
 				<option value="name">Name (A–Z)</option>
 				<option value="updated">Recently updated</option>
 			</select>
 		</label>
 	</div>
+
+	{#if sortMenuOpen}
+		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+		<ul
+			class="pieces-sort-ctx"
+			data-pieces-sort-ctx
+			role="menu"
+			aria-label="Sort list"
+			style:left="{sortMenuLeft}px"
+			style:top="{sortMenuTop}px"
+			onpointerdown={(e) => e.stopPropagation()}
+		>
+			<li
+				role="menuitemradio"
+				aria-checked={sortBy === 'template'}
+				class:current={sortBy === 'template'}
+				onpointerdown={() => pickSortBy('template')}
+			>
+				Sort by type (A–Z), then name
+			</li>
+			<li
+				role="menuitemradio"
+				aria-checked={sortBy === 'name'}
+				class:current={sortBy === 'name'}
+				onpointerdown={() => pickSortBy('name')}
+			>
+				Sort by name (A–Z)
+			</li>
+			<li
+				role="menuitemradio"
+				aria-checked={sortBy === 'updated'}
+				class:current={sortBy === 'updated'}
+				onpointerdown={() => pickSortBy('updated')}
+			>
+				Sort by recently updated
+			</li>
+		</ul>
+	{/if}
 
 	<div class="selection-toolbar">
 		<button type="button" class="btn" disabled={!sortedCards.length} onclick={selectAllVisible}>
@@ -566,7 +658,7 @@
 							<tr>
 								<th class="col-check"></th>
 								<th>Name</th>
-								<th>Template</th>
+								<th>Type</th>
 								<th class="col-qty">Qty</th>
 							</tr>
 						</thead>
@@ -644,7 +736,7 @@
 
 	{#if staleCards.length}
 		<div class="stale-banner">
-			<span>{staleCards.length} piece(s) need re-render after a template change.</span>
+			<span>{staleCards.length} piece(s) need re-render after a piece type was edited.</span>
 			<button type="button" class="btn primary" disabled={busy} onclick={() => void rerenderAllStale()}>
 				{busy ? 'Working…' : `Re-render all stale (${staleCards.length})`}
 			</button>
@@ -657,7 +749,7 @@
 				<h2>{t.name}</h2>
 				<div class="row-btns">
 					<button type="button" class="btn" disabled={busy} onclick={() => createCard(t.id)}>
-						New piece from this template
+						New piece of this type
 					</button>
 					<button
 						type="button"
@@ -680,18 +772,18 @@
 							onToggleSelect={(e) => handleTileSelect(card.id, e)}
 						/>
 					{:else}
-						<p class="muted pieces-grid-empty">No pieces yet for this template.</p>
+						<p class="muted pieces-grid-empty">No pieces of this type yet.</p>
 					{/each}
 				</div>
 			</section>
 		{:else}
-			<p class="muted">Create a template first.</p>
+			<p class="muted">Create a piece type first (Templates in the editor).</p>
 		{/each}
 	{:else}
 		<section class="sec flat-sec">
 			<div class="row-btns inline-create">
 				<label>
-					New piece from template
+					New piece
 					<select bind:value={newFromTemplateId}>
 						<option value="">— choose —</option>
 						{#each data.templates as t (t.id)}
@@ -733,6 +825,8 @@
 
 </div>
 
+<svelte:window onpointerdown={onGlobalPointerForSortMenu} onkeydown={onGlobalKeySortMenu} />
+
 <style>
 	.page {
 		padding: 1.25rem clamp(1rem, 3vw, 2rem);
@@ -765,6 +859,38 @@
 		background: var(--color-surface);
 		color: inherit;
 		min-width: 200px;
+	}
+	.pieces-sort-ctx {
+		display: block;
+		position: fixed;
+		list-style: none;
+		margin: 0;
+		padding: 2px 0;
+		min-width: min(280px, calc(100vw - 16px));
+		max-width: calc(100vw - 16px);
+		z-index: 8000;
+		background: var(--color-context-bg, var(--color-surface));
+		border: 1px solid var(--color-border-strong);
+		border-radius: 3px;
+		box-shadow: var(--shadow-md);
+		font-size: 16px;
+		line-height: 1.25;
+	}
+	.pieces-sort-ctx li {
+		padding: 8px 12px;
+		margin: 0;
+		cursor: pointer;
+		color: var(--color-text);
+	}
+	.pieces-sort-ctx li:hover {
+		background: var(--color-ctx-hover-bg, rgba(100, 120, 200, 0.25));
+		color: #fff;
+	}
+	.pieces-sort-ctx li.current {
+		font-weight: 600;
+	}
+	.pieces-sort-ctx li.current::before {
+		content: '✓ ';
 	}
 	.inline-create label {
 		display: flex;

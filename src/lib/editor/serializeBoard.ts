@@ -27,6 +27,7 @@ export function piecesToGameDataJson(
 				initial_size: { ...p.initial_size },
 				image_size: p.image_size ? { ...p.image_size } : undefined
 			};
+			if (p.card_template_id) row.card_template_id = p.card_template_id;
 			if (p.bg_color) row.bg_color = p.bg_color;
 			if (p.rotation !== undefined && p.rotation !== 0) row.rotation = p.rotation;
 			if (p.hidden) row.editor_hidden = true;

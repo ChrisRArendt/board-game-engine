@@ -2,7 +2,7 @@
 	import { cubicOut } from 'svelte/easing';
 	import { tweened } from 'svelte/motion';
 	import type { PieceInstance } from '$lib/engine/types';
-	import { hasAttr, pieceSupportsFlip } from '$lib/engine/pieces';
+	import { backPngUrlFromFrontUrl, hasAttr, pieceSupportsFlip } from '$lib/engine/pieces';
 
 	export let piece: PieceInstance;
 	export let curGame: string;
@@ -47,10 +47,7 @@
 	$: bgUrlFront = assetBaseUrl
 		? `${assetBaseUrl}${piece.bg}`
 		: `/data/${curGame}/images/${piece.bg}`;
-	$: bgUrlBack =
-		piece.bg && hasAttr(piece, 'flip') && piece.bg.endsWith('.png')
-			? bgUrlFront.replace(/\.png$/, '-back.png')
-			: bgUrlFront;
+	$: bgUrlBack = piece.bg ? backPngUrlFromFrontUrl(bgUrlFront, piece) : bgUrlFront;
 	$: canFlip = pieceSupportsFlip(piece);
 	$: bgUrl = canFlip && piece.flipped ? bgUrlBack : bgUrlFront;
 	$: showFace = !faceHidden;

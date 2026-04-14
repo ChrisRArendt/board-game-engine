@@ -24,6 +24,7 @@ export const load: PageServerLoad = async ({ parent, locals: { supabase }, param
 			const t = map.get(c.template_id);
 			return {
 				id: c.id,
+				template_id: c.template_id,
 				name: c.name,
 				rendered_image_path: c.rendered_image_path,
 				canvas_width: t?.canvas_width ?? 375,

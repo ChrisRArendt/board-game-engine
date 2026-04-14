@@ -58,20 +58,27 @@
 	})();
 
 	$: sel = $game.pieces.filter((p) => $game.selectedIds.has(p.id));
-	$: showFlip = sel.some((p) => pieceSupportsFlip(p));
-	$: showArrange = sel.length > 1 && sel.every((p) => hasAttr(p, 'move'));
-	$: showDeal =
-		sel.length >= 1 && sel.every((p) => hasAttr(p, 'move')) && stashRoster.length > 0;
-
 	$: arrangeUnlockedCount = [...$game.selectedIds].filter((id) => {
 		const p = $game.pieces.find((x) => x.id === id);
 		return p != null && !p.locked;
 	}).length;
+	$: showFlip = sel.some((p) => pieceSupportsFlip(p));
+	$: showArrange = sel.length > 1 && sel.every((p) => hasAttr(p, 'move'));
+	$: showShuffle =
+		sel.length > 1 &&
+		sel.every((p) => hasAttr(p, 'move')) &&
+		arrangeUnlockedCount >= 2;
+	/** Same eligibility as Shuffle — reorder identities by piece type without moving slots. */
+	$: showGroupByType = showShuffle;
+	$: showDeal =
+		sel.length >= 1 && sel.every((p) => hasAttr(p, 'move')) && stashRoster.length > 0;
 
 	$: arrangeFlipCapableCount = sel.filter((p) => pieceSupportsFlip(p)).length;
 
-	$: showSpacerAfterFlip = showFlip && (showArrange || showDeal);
-	$: showSpacerBeforeDeal = showDeal && (showFlip || showArrange);
+	$: showSpacerAfterFlip =
+		showFlip && (showShuffle || showGroupByType || showArrange || showDeal);
+	$: showSpacerBeforeDeal =
+		showDeal && (showFlip || showShuffle || showGroupByType || showArrange);
 </script>
 
 <DealToDialog
@@ -87,7 +94,7 @@
 	onClose={() => (dealOpen = false)}
 />
 
-{#if open && (showFlip || showArrange || showDeal)}
+{#if open && (showFlip || showShuffle || showGroupByType || showArrange || showDeal)}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<ul
 		class="ctx"
@@ -108,6 +115,33 @@
 			</li>
 		{/if}
 		{#if showSpacerAfterFlip}
+			<li class="spacer"></li>
+		{/if}
+		{#if showShuffle}
+			<li
+				onpointerdown={() => {
+					g.runShuffleMovableSelection();
+					open = false;
+				}}
+			>
+				Shuffle
+			</li>
+		{/if}
+		{#if showShuffle && (showGroupByType || showArrange)}
+			<li class="spacer"></li>
+		{/if}
+		{#if showGroupByType}
+			<li
+				title="Same layout as now — only swaps which piece sits in which slot, ordered by piece type along the spread. Unsaved boards use size as type hint."
+				onpointerdown={() => {
+					g.runArrangeGroupByPieceType();
+					open = false;
+				}}
+			>
+				Sort by type
+			</li>
+		{/if}
+		{#if showGroupByType && showArrange}
 			<li class="spacer"></li>
 		{/if}
 		{#if showArrange}

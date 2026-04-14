@@ -11,6 +11,7 @@ export function pieceFromData(data: PieceData, id: number, curGame: string, offs
 	return {
 		id,
 		bg: data.bg,
+		...(data.card_template_id ? { card_template_id: data.card_template_id } : {}),
 		...(data.bg_color ? { bg_color: data.bg_color } : {}),
 		classes: data.class ?? '',
 		attributes,
@@ -37,6 +38,26 @@ export function hasAttr(p: PieceInstance, attr: string): boolean {
 export function pieceSupportsFlip(p: PieceInstance): boolean {
 	if (hasAttr(p, 'flip')) return true;
 	return (p.bg ?? '').startsWith('cards/');
+}
+
+/**
+ * Absolute front image URL → back URL (`*-back.png`) when this piece uses dual PNGs.
+ * Keeps the same rules as {@link pieceSupportsFlip}: `flip` attribute or `cards/` path.
+ */
+export function backPngUrlFromFrontUrl(frontUrl: string, piece: PieceInstance): string {
+	if (!piece.bg?.endsWith('.png')) return frontUrl;
+	if (hasAttr(piece, 'flip')) return frontUrl.replace(/\.png$/i, '-back.png');
+	if ((piece.bg ?? '').startsWith('cards/')) return frontUrl.replace(/\.png$/i, '-back.png');
+	return frontUrl;
+}
+
+/** Stable key for “same piece type” — editor cards use DB template id; legacy uses size bucket. */
+export function templateGroupKey(p: PieceInstance): string {
+	if (p.card_template_id) return `t:${p.card_template_id}`;
+	if ((p.bg ?? '').startsWith('cards/')) {
+		return `sz:${p.initial_size.w}x${p.initial_size.h}`;
+	}
+	return `o:${p.id}`;
 }
 
 export function maxZIndex(pieces: PieceInstance[]): number {
@@ -94,6 +115,65 @@ export function shuffleSelectedPieces(pieces: PieceInstance[], selectedIds: Set<
 			x: shuffled[i].x,
 			y: shuffled[i].y
 		});
+	}
+	return updates;
+}
+
+/**
+ * Randomly permute x, y, and z-index among selected movable, unlocked pieces.
+ * Useful after a fan or other layout: slots stay put, identities shuffle.
+ */
+export function shuffleMovableSelectedPieces(
+	pieces: PieceInstance[],
+	selectedIds: Set<number>
+): Map<number, { z: number; x: number; y: number }> {
+	const sel = pieces
+		.filter((p) => selectedIds.has(p.id) && hasAttr(p, 'move') && !p.locked)
+		.sort((a, b) => a.zIndex - b.zIndex || a.id - b.id);
+	const updates = new Map<number, { z: number; x: number; y: number }>();
+	if (sel.length < 2) return updates;
+
+	const pack = sel.map((p) => ({ z: p.zIndex, x: p.x, y: p.y }));
+	const shuffled = shuffle(pack);
+	for (let i = 0; i < sel.length; i++) {
+		updates.set(sel[i].id, {
+			z: shuffled[i].z,
+			x: shuffled[i].x,
+			y: shuffled[i].y
+		});
+	}
+	return updates;
+}
+
+/**
+ * Like {@link shuffleMovableSelectedPieces}, but slot assignment is deterministic: pieces
+ * sorted by {@link templateGroupKey} fill positions in left-to-right, top-to-bottom order
+ * (then z). Same multiset of (x, y, z) as before — overall layout unchanged; identities permute.
+ */
+export function sortMovableSelectedByTemplateSlots(
+	pieces: PieceInstance[],
+	selectedIds: Set<number>
+): Map<number, { z: number; x: number; y: number }> {
+	const sel = pieces.filter(
+		(p) => selectedIds.has(p.id) && hasAttr(p, 'move') && !p.locked
+	);
+	const updates = new Map<number, { z: number; x: number; y: number }>();
+	if (sel.length < 2) return updates;
+
+	type Slot = { z: number; x: number; y: number };
+	const pack: Slot[] = sel.map((p) => ({ z: p.zIndex, x: p.x, y: p.y }));
+	const slots = [...pack].sort((a, b) => a.x - b.x || a.y - b.y || a.z - b.z);
+
+	const sortedPieces = [...sel].sort((a, b) => {
+		const c = templateGroupKey(a).localeCompare(templateGroupKey(b));
+		if (c !== 0) return c;
+		return a.id - b.id;
+	});
+
+	for (let i = 0; i < sortedPieces.length; i++) {
+		const p = sortedPieces[i];
+		const slot = slots[i];
+		updates.set(p.id, { z: slot.z, x: slot.x, y: slot.y });
 	}
 	return updates;
 }

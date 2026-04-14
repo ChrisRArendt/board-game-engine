@@ -337,6 +337,8 @@ export function parseBackground(raw: unknown): CardBackground {
 /** Card with a rendered PNG — used in board editor “add piece from card”. */
 export interface CardForBoardPiece {
 	id: string;
+	/** `card_templates.id` — stored on board pieces for “group by type” in play. */
+	template_id: string;
 	name: string;
 	rendered_image_path: string | null;
 	canvas_width: number;

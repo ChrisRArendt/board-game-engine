@@ -231,6 +231,7 @@
 			newPieces.push({
 				id,
 				bg: rel,
+				card_template_id: card.template_id,
 				classes: `card_${card.name.replace(/\W+/g, '_').slice(0, 40) || id}`,
 				attributes: card.has_back ? ['select', 'move', 'flip'] : ['select', 'move'],
 				x: pos.x,

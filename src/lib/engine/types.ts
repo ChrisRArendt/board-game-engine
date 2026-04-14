@@ -24,6 +24,8 @@ export interface Placement {
 export interface PieceData {
 	class: string;
 	bg: string;
+	/** When this piece is a card from the editor — used to group by template in play. */
+	card_template_id?: string;
 	/** Solid fill behind the image (shows through transparent PNG areas). */
 	bg_color?: string;
 	attributes?: string[];
@@ -141,6 +143,8 @@ export const DEFAULT_PIECE_COLOR_PALETTE: string[] = [
 export interface PieceInstance {
 	id: number;
 	bg: string;
+	/** Same as PieceData.card_template_id when dropped from a card in the editor. */
+	card_template_id?: string;
 	/** Solid fill behind `bg` image (transparent areas show this color). */
 	bg_color?: string;
 	classes: string;
