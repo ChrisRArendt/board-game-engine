@@ -1,22 +1,55 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { voiceChatState, joinVoiceRoom, leaveVoiceRoom, toggleMuted, toggleDeafened } from '$lib/stores/voiceChat';
+	import {
+		voiceChatState,
+		joinVoiceRoom,
+		leaveVoiceRoom,
+		toggleMuted,
+		toggleDeafened
+	} from '$lib/stores/voiceChat';
+	import { friendVoicePrefs, setFriendVoicePref } from '$lib/stores/voiceSettings';
+	import UserIdentity from '$lib/components/UserIdentity.svelte';
 
 	export let lobbyId: string;
 	export let selfUserId: string;
 	export let displayName: string;
+	/** Your avatar in the voice list */
+	export let selfAvatarUrl: string | null | undefined = undefined;
+	/** Shown under your name (e.g. account email) — only local, not broadcast */
+	export let selfEmail: string | null | undefined = undefined;
+	/** Shown to others under your name when shared via presence (e.g. @username) */
+	export let broadcastSubtitle: string | null | undefined = undefined;
 	/** Only used on lobby (no main Settings window); opens voice/audio window. */
 	export let onOpenSettings: (() => void) | undefined = undefined;
 
 	let joining = false;
 	let err = '';
 
+	function prefFor(userId: string) {
+		return $friendVoicePrefs[userId] ?? { volume: 1, muted: false };
+	}
+
+	function onPeerVolume(userId: string, e: Event) {
+		const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+		setFriendVoicePref(selfUserId, userId, { volume: v });
+	}
+
+	function togglePeerMute(userId: string) {
+		const cur = prefFor(userId);
+		setFriendVoicePref(selfUserId, userId, { muted: !cur.muted });
+	}
+
 	async function join() {
 		if (!browser || !lobbyId) return;
 		joining = true;
 		err = '';
 		try {
-			await joinVoiceRoom(lobbyId, { userId: selfUserId, displayName });
+			await joinVoiceRoom(lobbyId, {
+				userId: selfUserId,
+				displayName,
+				avatarUrl: selfAvatarUrl ?? null,
+				subtitle: broadcastSubtitle ?? null
+			});
 		} catch (e) {
 			err = e instanceof Error ? e.message : 'Could not join voice';
 		} finally {
@@ -81,15 +114,57 @@
 		</div>
 
 		<ul class="peers" aria-label="Voice participants">
-			<li class="self">
-				<span class="dot">●</span>
-				<span class="name">You</span>
+			<li class="peer-row self">
+				<div class="identity-wrap" class:speaking={$voiceChatState.localSpeaking}>
+					<UserIdentity
+						variant="compact"
+						displayName={displayName}
+						avatarUrl={selfAvatarUrl}
+						subtitle={selfEmail}
+					/>
+				</div>
+				<span class="state hint" title="Your connection">You</span>
 			</li>
 			{#each Object.values($voiceChatState.peers) as p (p.userId)}
-				<li class="peer" class:speaking={p.speaking}>
-					<span class="dot" class:speaking={p.speaking}>●</span>
-					<span class="name">{p.displayName}</span>
-					<span class="state" title={p.connectionState}>{p.connectionState}</span>
+				{@const pref = prefFor(p.userId)}
+				<li class="peer-row" class:speaking={p.speaking}>
+					<div class="identity-wrap" class:speaking={p.speaking}>
+						<UserIdentity
+							variant="compact"
+							displayName={p.displayName}
+							avatarUrl={p.avatarUrl}
+							subtitle={p.subtitle}
+						/>
+					</div>
+					<div class="peer-ctrl">
+						<label class="vol" title="Volume for you only">
+							<span class="sr-only">Volume for {p.displayName}</span>
+							<input
+								type="range"
+								min="0"
+								max="2"
+								step="0.05"
+								value={pref.volume}
+								disabled={pref.muted}
+								oninput={(e) => onPeerVolume(p.userId, e)}
+							/>
+						</label>
+						<button
+							type="button"
+							class="peer-mute"
+							title={pref.muted ? 'Unmute for yourself' : 'Mute for yourself'}
+							onclick={() => togglePeerMute(p.userId)}
+						>
+							{pref.muted ? '🔇' : '🔊'}
+						</button>
+					</div>
+					<span
+						class="state"
+						class:ok={p.connectionState === 'connected'}
+						title={`WebRTC: ${p.connectionState}`}
+					>
+						{p.connectionState === 'connected' ? '●' : p.connectionState}
+					</span>
 				</li>
 			{/each}
 		</ul>
@@ -97,13 +172,24 @@
 </div>
 
 <style>
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
 	.voice-panel {
 		background: rgba(20, 22, 28, 0.92);
 		color: #e8e8ec;
 		border-radius: 10px;
 		padding: 10px 12px;
-		min-width: 200px;
-		max-width: 280px;
+		min-width: 240px;
+		max-width: min(380px, calc(100vw - 24px));
 		font-size: 13px;
 		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
 		border: 1px solid rgba(255, 255, 255, 0.08);
@@ -180,36 +266,97 @@
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		max-height: 140px;
+		max-height: min(280px, 46vh);
 		overflow-y: auto;
-	}
-	.peers li {
 		display: flex;
-		align-items: center;
+		flex-direction: column;
 		gap: 8px;
-		padding: 4px 0;
+	}
+	.peer-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto 22px;
+		grid-template-rows: auto;
+		align-items: center;
+		gap: 6px 8px;
 		font-size: 12px;
 	}
-	.dot {
-		color: #444;
-		font-size: 10px;
+	.peer-row.self {
+		grid-template-columns: minmax(0, 1fr) auto;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+		padding-bottom: 8px;
+		margin-bottom: 2px;
 	}
-	.dot.speaking {
-		color: #6d6;
-		text-shadow: 0 0 8px #4f4;
+	.identity-wrap {
+		min-width: 0;
 	}
-	.peer.speaking .name {
-		color: #cfc;
+	.identity-wrap.speaking :global(.circle) {
+		box-shadow:
+			0 0 0 2px rgba(34, 197, 94, 0.9),
+			0 0 14px rgba(34, 197, 94, 0.35);
+		animation: voice-ring 1.1s ease-in-out infinite;
 	}
-	.name {
-		flex: 1;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+	@keyframes voice-ring {
+		0%,
+		100% {
+			box-shadow:
+				0 0 0 2px rgba(34, 197, 94, 0.85),
+				0 0 12px rgba(34, 197, 94, 0.3);
+		}
+		50% {
+			box-shadow:
+				0 0 0 3px rgba(52, 211, 153, 0.95),
+				0 0 22px rgba(34, 197, 94, 0.55);
+		}
+	}
+	.peer-ctrl {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.vol input[type='range'] {
+		width: 72px;
+		height: 4px;
+		accent-color: #6d8;
+		cursor: pointer;
+	}
+	.peer-mute {
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		border-radius: 6px;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: rgba(255, 255, 255, 0.06);
+		cursor: pointer;
+		font-size: 13px;
+		line-height: 1;
+	}
+	.peer-mute:hover {
+		background: rgba(255, 255, 255, 0.1);
 	}
 	.state {
-		font-size: 10px;
-		opacity: 0.45;
+		font-size: 9px;
+		opacity: 0.5;
 		text-transform: uppercase;
+		text-align: right;
+	}
+	.state.ok {
+		opacity: 0.75;
+		color: #6d8;
+	}
+	.state.hint {
+		text-transform: none;
+		font-size: 11px;
+		opacity: 0.55;
+	}
+	.peer-row :global(.identity.compact) {
+		gap: 0.45rem;
+	}
+	.peer-row :global(.identity.compact .primary) {
+		color: #e8eaf0;
+		font-size: 0.82rem;
+	}
+	.peer-row :global(.identity.compact .sub) {
+		font-size: 0.68rem;
+		max-width: 200px;
 	}
 </style>

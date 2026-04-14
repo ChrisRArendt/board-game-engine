@@ -39,6 +39,9 @@
 	export let voiceLobbyId: string | null = null;
 	export let voiceUserId: string | null = null;
 	export let voiceDisplayName: string | null = null;
+	export let voiceSelfAvatarUrl: string | null = null;
+	/** Shared with lobby voice presence (e.g. @username) */
+	export let voiceBroadcastSubtitle: string | null = null;
 
 	export let onToggleHistory: () => Promise<void> = async () => {};
 	export let historyReplayActive = false;
@@ -70,7 +73,9 @@
 			} else {
 				await joinVoiceRoom(voiceLobbyId, {
 					userId: voiceUserId,
-					displayName: voiceDisplayName
+					displayName: voiceDisplayName,
+					avatarUrl: voiceSelfAvatarUrl,
+					subtitle: voiceBroadcastSubtitle
 				});
 			}
 		} finally {

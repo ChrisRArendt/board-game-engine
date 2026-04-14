@@ -278,7 +278,9 @@
 				await loadFriendVoicePrefsFromSupabase(supabase, data.session.user.id);
 				tryAutoJoinVoice(data.lobby.id, {
 					userId: data.session.user.id,
-					displayName: data.profile.display_name
+					displayName: data.profile.display_name,
+					avatarUrl: data.profile.avatar_url,
+					subtitle: data.profile.username ? `@${data.profile.username}` : null
 				});
 				await refreshMembersFromDb();
 			} catch (e) {
@@ -421,6 +423,9 @@
 			lobbyId={data.lobby.id}
 			selfUserId={data.session.user.id}
 			displayName={data.profile?.display_name ?? 'You'}
+			selfAvatarUrl={data.profile?.avatar_url}
+			selfEmail={data.session.user.email}
+			broadcastSubtitle={data.profile?.username ? `@${data.profile.username}` : null}
 			onOpenSettings={() => (winVoice = true)}
 		/>
 	</div>

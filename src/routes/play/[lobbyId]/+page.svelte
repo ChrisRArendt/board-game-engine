@@ -53,7 +53,8 @@
 	import { getViewportSize } from '$lib/engine/geometry';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { loadFriendVoicePrefsFromSupabase, registerFriendVoiceSaver } from '$lib/stores/voiceSettings';
-	import { leaveVoiceRoom, tryAutoJoinVoice } from '$lib/stores/voiceChat';
+	import { voiceChatState, leaveVoiceRoom, tryAutoJoinVoice } from '$lib/stores/voiceChat';
+	import VoiceControls from '$lib/components/VoiceControls.svelte';
 	import { endGame } from '$lib/lobby';
 	import type { Json } from '$lib/supabase/database.types';
 	import type { PageData } from './$types';
@@ -400,7 +401,9 @@
 			if (data.profile) {
 				tryAutoJoinVoice(data.lobby.id, {
 					userId: data.session.user.id,
-					displayName: data.profile.display_name
+					displayName: data.profile.display_name,
+					avatarUrl: data.profile.avatar_url,
+					subtitle: data.profile.username ? `@${data.profile.username}` : null
 				});
 			}
 			if (data.profile) {
@@ -509,6 +512,8 @@
 		voiceLobbyId={data.lobby.id}
 		voiceUserId={data.session.user.id}
 		voiceDisplayName={data.profile?.display_name ?? 'You'}
+		voiceSelfAvatarUrl={data.profile?.avatar_url ?? null}
+		voiceBroadcastSubtitle={data.profile?.username ? `@${data.profile.username}` : null}
 		onEndGame={data.isHost ? hostEndGame : null}
 		onToggleHistory={onToolbarToggleHistory}
 		historyReplayActive={$isHistoryReplayActive}
@@ -693,6 +698,19 @@
 		</WindowFrame>
 	{/if}
 	<PiecePeekOverlay pieceId={peekPieceId} selfDisplayName={data.profile?.display_name ?? 'You'} />
+
+	{#if $voiceChatState.joined}
+		<div class="voice-dock-play">
+			<VoiceControls
+				lobbyId={data.lobby.id}
+				selfUserId={data.session.user.id}
+				displayName={data.profile?.display_name ?? 'You'}
+				selfAvatarUrl={data.profile?.avatar_url}
+				selfEmail={data.session.user.email}
+				broadcastSubtitle={data.profile?.username ? `@${data.profile.username}` : null}
+			/>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -724,6 +742,13 @@
 	}
 	.play-overlay-root :global([data-bge-piece-peek]) {
 		pointer-events: none;
+	}
+	.voice-dock-play {
+		position: fixed;
+		left: 12px;
+		bottom: 12px;
+		z-index: 2000000003;
+		pointer-events: auto;
 	}
 	.play-menu {
 		list-style: none;

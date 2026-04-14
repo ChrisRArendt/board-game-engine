@@ -8,8 +8,21 @@ import { friendVoicePrefs, getEffectivePeerVolume, voiceDevicePrefs } from './vo
 export type VoicePeerUI = {
 	userId: string;
 	displayName: string;
+	/** From presence / offer; may be null if peer uses an older client */
+	avatarUrl: string | null;
+	/** e.g. email (you) or @username for others */
+	subtitle: string | null;
 	speaking: boolean;
 	connectionState: RTCPeerConnectionState;
+};
+
+/** Passed when joining voice so peers can show your card and you broadcast profile in offers/presence */
+export type VoicePresencePayload = {
+	userId: string;
+	displayName: string;
+	avatarUrl?: string | null;
+	/** Shown under name: typically your email on your own card; @username for others when shared */
+	subtitle?: string | null;
 };
 
 export type VoiceChatState = {
@@ -18,6 +31,8 @@ export type VoiceChatState = {
 	localStream: MediaStream | null;
 	muted: boolean;
 	deafened: boolean;
+	/** True when your mic picks up speech (same RMS heuristic as remote peers) */
+	localSpeaking: boolean;
 	peers: Record<string, VoicePeerUI>;
 	error: string | null;
 };
@@ -28,6 +43,7 @@ const initialState: VoiceChatState = {
 	localStream: null,
 	muted: false,
 	deafened: false,
+	localSpeaking: false,
 	peers: {},
 	error: null
 };
@@ -38,12 +54,17 @@ let voiceChannel: RealtimeChannel | null = null;
 let supabase = createSupabaseBrowserClient();
 let selfUserId = '';
 let selfDisplayName = '';
+let selfAvatarUrl: string | null = null;
+let selfSubtitle: string | null = null;
 let localStream: MediaStream | null = null;
 let localRawStream: MediaStream | null = null;
 let audioCtx: AudioContext | null = null;
 let masterGain: GainNode | null = null;
 let speakingTimer: ReturnType<typeof setInterval> | null = null;
 let unsubPrefs: (() => void) | null = null;
+let localMicAnalyser: AnalyserNode | null = null;
+let localMicSource: MediaStreamAudioSourceNode | null = null;
+let localMicSilentGain: GainNode | null = null;
 
 type PeerInternal = {
 	pc: RTCPeerConnection;
@@ -70,6 +91,8 @@ function updatePeerUI(userId: string, patch: Partial<VoicePeerUI>) {
 		const prev = s.peers[userId] ?? {
 			userId,
 			displayName: 'Player',
+			avatarUrl: null,
+			subtitle: null,
 			speaking: false,
 			connectionState: 'new' as RTCPeerConnectionState
 		};
@@ -193,6 +216,50 @@ function applyAllPeerGains() {
 	}
 }
 
+function detachLocalMicAnalyser() {
+	if (localMicSource) {
+		try {
+			localMicSource.disconnect();
+		} catch {
+			/* ignore */
+		}
+		localMicSource = null;
+	}
+	if (localMicSilentGain) {
+		try {
+			localMicSilentGain.disconnect();
+		} catch {
+			/* ignore */
+		}
+		localMicSilentGain = null;
+	}
+	if (localMicAnalyser) {
+		try {
+			localMicAnalyser.disconnect();
+		} catch {
+			/* ignore */
+		}
+		localMicAnalyser = null;
+	}
+}
+
+/** Tap local send stream so we can show the same “speaking” ring on your own avatar */
+function attachLocalMicAnalyser() {
+	detachLocalMicAnalyser();
+	if (!audioCtx || !localStream) return;
+	const src = audioCtx.createMediaStreamSource(localStream);
+	const analyser = audioCtx.createAnalyser();
+	analyser.fftSize = 256;
+	src.connect(analyser);
+	/* Some browsers only pull the mic graph when the chain reaches destination — silence so nothing is heard */
+	const silent = audioCtx.createGain();
+	silent.gain.value = 0;
+	analyser.connect(silent).connect(audioCtx.destination);
+	localMicSource = src;
+	localMicAnalyser = analyser;
+	localMicSilentGain = silent;
+}
+
 function startSpeakingLoop() {
 	if (speakingTimer) return;
 	speakingTimer = setInterval(() => {
@@ -212,6 +279,24 @@ function startSpeakingLoop() {
 				updatePeerUI(uid, { speaking });
 			}
 		}
+		const la = localMicAnalyser;
+		const st = get(voiceChatState);
+		if (la && !st.muted) {
+			const buf = new Float32Array(la.fftSize);
+			la.getFloatTimeDomainData(buf);
+			let sum = 0;
+			for (let i = 0; i < buf.length; i++) {
+				const x = buf[i];
+				sum += x * x;
+			}
+			const rms = Math.sqrt(sum / buf.length);
+			const speaking = rms > 0.02;
+			if (speaking !== st.localSpeaking) {
+				emitState({ localSpeaking: speaking });
+			}
+		} else if (st.localSpeaking) {
+			emitState({ localSpeaking: false });
+		}
 	}, 80);
 }
 
@@ -222,7 +307,11 @@ function stopSpeakingLoop() {
 	}
 }
 
-async function createPeerConnection(remoteUserId: string, remoteName: string): Promise<RTCPeerConnection> {
+async function createPeerConnection(
+	remoteUserId: string,
+	remoteName: string,
+	meta?: { avatarUrl?: string | null; subtitle?: string | null }
+): Promise<RTCPeerConnection> {
 	ensureAudioGraph();
 	if (!audioCtx || !masterGain) throw new Error('AudioContext unavailable');
 
@@ -250,6 +339,8 @@ async function createPeerConnection(remoteUserId: string, remoteName: string): P
 	updatePeerUI(remoteUserId, {
 		userId: remoteUserId,
 		displayName: remoteName,
+		avatarUrl: meta?.avatarUrl ?? null,
+		subtitle: meta?.subtitle ?? null,
 		speaking: false,
 		connectionState: pc.connectionState
 	});
@@ -282,6 +373,12 @@ async function createPeerConnection(remoteUserId: string, remoteName: string): P
 		const src = audioCtx.createMediaStreamSource(stream);
 		peer.sourceNode = src;
 		src.connect(peer.analyser);
+		/* Desktop often keeps AudioContext suspended until explicit resume; remote RTP can arrive without unlocking output. */
+		void audioCtx.resume();
+		const t = ev.track;
+		if (t) {
+			t.addEventListener('unmute', () => void audioCtx?.resume(), { once: true });
+		}
 	};
 
 	if (localStream) {
@@ -293,15 +390,21 @@ async function createPeerConnection(remoteUserId: string, remoteName: string): P
 	return pc;
 }
 
-async function sendOffer(remoteUserId: string, remoteName: string) {
+async function sendOffer(
+	remoteUserId: string,
+	remoteName: string,
+	remoteMeta?: { avatarUrl?: string | null; subtitle?: string | null }
+) {
 	if (peersInternal.has(remoteUserId)) return;
-	const pc = await createPeerConnection(remoteUserId, remoteName);
+	const pc = await createPeerConnection(remoteUserId, remoteName, remoteMeta);
 	const offer = await pc.createOffer();
 	await pc.setLocalDescription(offer);
 	broadcast('voice_offer', {
 		from: selfUserId,
 		to: remoteUserId,
 		name: selfDisplayName,
+		avatar_url: selfAvatarUrl,
+		subtitle: selfSubtitle,
 		sdp: { type: pc.localDescription!.type, sdp: pc.localDescription!.sdp }
 	});
 }
@@ -309,10 +412,11 @@ async function sendOffer(remoteUserId: string, remoteName: string) {
 async function handleRemoteOffer(
 	from: string,
 	fromName: string | undefined,
-	sdp: RTCSessionDescriptionInit
+	sdp: RTCSessionDescriptionInit,
+	meta?: { avatarUrl?: string | null; subtitle?: string | null }
 ) {
 	if (peersInternal.has(from)) return;
-	const pc = await createPeerConnection(from, fromName ?? 'Player');
+	const pc = await createPeerConnection(from, fromName ?? 'Player', meta);
 	await pc.setRemoteDescription(new RTCSessionDescription(sdp));
 	await flushPendingRemoteIce(from);
 	const answer = await pc.createAnswer();
@@ -348,15 +452,35 @@ async function handleRemoteIce(from: string, candidate: RTCIceCandidateInit) {
 	}
 }
 
-function presencePeers(ch: RealtimeChannel): { userId: string; name: string }[] {
+function presencePeers(ch: RealtimeChannel): {
+	userId: string;
+	name: string;
+	avatarUrl: string | null;
+	subtitle: string | null;
+}[] {
 	const state = ch.presenceState();
-	const out: { userId: string; name: string }[] = [];
+	const out: {
+		userId: string;
+		name: string;
+		avatarUrl: string | null;
+		subtitle: string | null;
+	}[] = [];
 	for (const key of Object.keys(state)) {
-		const presences = state[key] as { user_id?: string; name?: string }[];
+		const presences = state[key] as {
+			user_id?: string;
+			name?: string;
+			avatar_url?: string | null;
+			subtitle?: string | null;
+		}[];
 		const meta = presences?.[0];
 		const uid = meta?.user_id ?? key;
 		if (!uid || uid === selfUserId) continue;
-		out.push({ userId: uid, name: meta?.name ?? 'Player' });
+		out.push({
+			userId: uid,
+			name: meta?.name ?? 'Player',
+			avatarUrl: meta?.avatar_url ?? null,
+			subtitle: meta?.subtitle ?? null
+		});
 	}
 	return out;
 }
@@ -370,17 +494,35 @@ function syncPeersFromPresence(ch: RealtimeChannel) {
 		}
 	}
 	for (const p of list) {
+		updatePeerUI(p.userId, {
+			displayName: p.name,
+			avatarUrl: p.avatarUrl,
+			subtitle: p.subtitle
+		});
 		if (!peersInternal.has(p.userId) && shouldInitiateOffer(selfUserId, p.userId)) {
-			void sendOffer(p.userId, p.name).catch((e) => console.warn('[bge] sendOffer', e));
+			void sendOffer(p.userId, p.name, {
+				avatarUrl: p.avatarUrl,
+				subtitle: p.subtitle
+			}).catch((e) => console.warn('[bge] sendOffer', e));
 		}
 	}
 }
 
 function wireBroadcastHandlers(ch: RealtimeChannel) {
 	ch.on('broadcast', { event: 'voice_offer' }, ({ payload }) => {
-		const p = payload as { from?: string; to?: string; sdp?: RTCSessionDescriptionInit; name?: string };
+		const p = payload as {
+			from?: string;
+			to?: string;
+			sdp?: RTCSessionDescriptionInit;
+			name?: string;
+			avatar_url?: string | null;
+			subtitle?: string | null;
+		};
 		if (p.to !== selfUserId || !p.from || !p.sdp) return;
-		void handleRemoteOffer(p.from, p.name, p.sdp).catch((e) => console.warn('[bge] voice_offer', e));
+		void handleRemoteOffer(p.from, p.name, p.sdp, {
+			avatarUrl: p.avatar_url ?? null,
+			subtitle: p.subtitle ?? null
+		}).catch((e) => console.warn('[bge] voice_offer', e));
 	});
 	ch.on('broadcast', { event: 'voice_answer' }, ({ payload }) => {
 		const p = payload as { from?: string; to?: string; sdp?: RTCSessionDescriptionInit };
@@ -397,10 +539,7 @@ function wireBroadcastHandlers(ch: RealtimeChannel) {
 /**
  * Join voice for a lobby (stays connected across client nav until leaveVoiceRoom).
  */
-export async function joinVoiceRoom(
-	lobbyId: string,
-	presence: { userId: string; displayName: string }
-): Promise<void> {
+export async function joinVoiceRoom(lobbyId: string, presence: VoicePresencePayload): Promise<void> {
 	if (!browser) return;
 	if (get(voiceChatState).joined && get(voiceChatState).roomId === lobbyId) {
 		return;
@@ -408,6 +547,8 @@ export async function joinVoiceRoom(
 	emitState({ error: null });
 	selfUserId = presence.userId;
 	selfDisplayName = presence.displayName;
+	selfAvatarUrl = presence.avatarUrl ?? null;
+	selfSubtitle = presence.subtitle ?? null;
 
 	if (get(voiceChatState).joined) {
 		await leaveVoiceRoom();
@@ -436,11 +577,24 @@ export async function joinVoiceRoom(
 		syncPeersFromPresence(ch);
 	});
 	ch.on('presence', { event: 'join' }, ({ key, newPresences }) => {
-		const meta = (newPresences as { user_id?: string; name?: string }[])?.[0];
+		const meta = (newPresences as {
+			user_id?: string;
+			name?: string;
+			avatar_url?: string | null;
+			subtitle?: string | null;
+		}[])?.[0];
 		const uid = meta?.user_id ?? key;
 		if (!uid || uid === selfUserId) return;
+		updatePeerUI(uid, {
+			displayName: meta?.name ?? 'Player',
+			avatarUrl: meta?.avatar_url ?? null,
+			subtitle: meta?.subtitle ?? null
+		});
 		if (shouldInitiateOffer(selfUserId, uid)) {
-			void sendOffer(uid, meta?.name ?? 'Player').catch((e) => console.warn('[bge] offer', e));
+			void sendOffer(uid, meta?.name ?? 'Player', {
+				avatarUrl: meta?.avatar_url ?? null,
+				subtitle: meta?.subtitle ?? null
+			}).catch((e) => console.warn('[bge] offer', e));
 		}
 	});
 	ch.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
@@ -455,9 +609,12 @@ export async function joinVoiceRoom(
 				voiceChannel = ch;
 				await ch.track({
 					user_id: selfUserId,
-					name: selfDisplayName
+					name: selfDisplayName,
+					avatar_url: selfAvatarUrl,
+					subtitle: selfSubtitle
 				});
 				syncPeersFromPresence(ch);
+				attachLocalMicAnalyser();
 				startSpeakingLoop();
 
 				unsubPrefs?.();
@@ -470,6 +627,7 @@ export async function joinVoiceRoom(
 					localStream,
 					muted: false,
 					deafened: false,
+					localSpeaking: false,
 					error: null
 				}));
 				applyDeafenGain();
@@ -496,7 +654,7 @@ export function setMuted(muted: boolean) {
 	for (const t of localStream.getAudioTracks()) {
 		t.enabled = !muted;
 	}
-	emitState({ muted });
+	emitState({ muted, ...(muted ? { localSpeaking: false } : {}) });
 }
 
 export function setDeafened(deafened: boolean) {
@@ -529,6 +687,7 @@ export async function refreshLocalAudio(): Promise<void> {
 		}
 		localStream = await acquireLocalStream();
 		emitState({ localStream });
+		attachLocalMicAnalyser();
 		for (const [_id, peer] of peersInternal) {
 			const senders = peer.pc.getSenders().filter((s) => s.track?.kind === 'audio');
 			const newTrack = localStream.getAudioTracks()[0];
@@ -545,8 +704,11 @@ export async function leaveVoiceRoom(): Promise<void> {
 	if (!browser) return;
 	const rid = get(voiceChatState).roomId;
 	stopSpeakingLoop();
+	detachLocalMicAnalyser();
 	unsubPrefs?.();
 	unsubPrefs = null;
+	selfAvatarUrl = null;
+	selfSubtitle = null;
 
 	closeAllPeers();
 
@@ -588,10 +750,7 @@ export function isVoiceJoined(): boolean {
 }
 
 /** Reconnect voice after refresh if user had joined this lobby in the session. */
-export function tryAutoJoinVoice(
-	lobbyId: string,
-	presence: { userId: string; displayName: string }
-): void {
+export function tryAutoJoinVoice(lobbyId: string, presence: VoicePresencePayload): void {
 	if (!browser) return;
 	try {
 		if (sessionStorage.getItem(`bge_voice_auto_join:${lobbyId}`) !== '1') return;
