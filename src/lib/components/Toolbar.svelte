@@ -44,6 +44,8 @@
 	export let historyReplayActive = false;
 	/** Mobile overflow menu (Rules, Roller, …) */
 	export let onOpenMenu: (() => void) | null = null;
+	/** Play: open controls reference (keyboard, toolbar, context menu). */
+	export let onOpenControlsHelp: (() => void) | null = null;
 
 	let voiceBusy = false;
 	let mobile = false;
@@ -174,6 +176,28 @@
 				</button>
 			{/if}
 		</li>
+		{#if onOpenControlsHelp}
+			<li class="controls-help-li">
+				{#if mobile}
+					<button
+						type="button"
+						class="tb-btn icon-tb"
+						title="Controls reference"
+						aria-label="Controls reference"
+						onclick={() => onOpenControlsHelp?.()}
+					>
+						<svg class="tb-icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+							<path
+								fill="currentColor"
+								d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"
+							/>
+						</svg>
+					</button>
+				{:else}
+					<button type="button" class="tb-btn" onclick={() => onOpenControlsHelp?.()}>Controls</button>
+				{/if}
+			</li>
+		{/if}
 		{#if mobile && onOpenMenu}
 			<li class="menu-li">
 				<button

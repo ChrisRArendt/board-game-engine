@@ -13,6 +13,8 @@
 	import Connection from '$lib/components/windows/Connection.svelte';
 	import Settings from '$lib/components/windows/Settings.svelte';
 	import CardViewer from '$lib/components/windows/CardViewer.svelte';
+	import PlayControlsHelp from '$lib/components/PlayControlsHelp.svelte';
+	import PiecePeekOverlay from '$lib/components/PiecePeekOverlay.svelte';
 	import type { GameDataJson } from '$lib/engine/types';
 	import { pieceSupportsFlip } from '$lib/engine/pieces';
 	import * as g from '$lib/stores/game';
@@ -93,6 +95,9 @@
 	let winSettings = false;
 	let winViewer = false;
 	let winMenuSheet = false;
+	let winControlsHelp = false;
+	/** Hold physical <kbd>P</kbd> for a large preview of the top-most selected piece. */
+	let peekPieceId: number | null = null;
 	let useMobileSheets = false;
 	let removeMobileMq: (() => void) | undefined;
 	let viewerPieceId: number | null = null;
@@ -181,6 +186,11 @@
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
+		if (!get(isHistoryReplayActive) && peekPieceId !== null && e.key === 'Escape') {
+			peekPieceId = null;
+			e.preventDefault();
+			return;
+		}
 		if (get(isHistoryReplayActive)) {
 			if (e.key === 'Escape') {
 				e.preventDefault();
@@ -227,6 +237,16 @@
 			if (sel.length > 1 && sel.every((p) => p.attributes.includes('shuffle'))) g.runShuffleSelected();
 		} else if (e.key === 'a' || e.key === 'A') {
 			g.runArrangeSmart();
+		} else if (e.code === 'KeyP') {
+			if (isTypingInField(e.target)) return;
+			if (e.repeat) return;
+			e.preventDefault();
+			const sel = get(game).selectedIds;
+			if (sel.size === 0) return;
+			const pieces = get(game).pieces.filter((p) => sel.has(p.id));
+			const top = [...pieces].sort((a, b) => b.zIndex - a.zIndex || b.id - a.id)[0];
+			peekPieceId = top.id;
+			return;
 		} else if (e.key === 'Backspace') {
 			const sel = get(game).pieces.filter((p) => get(game).selectedIds.has(p.id));
 			if (sel.every((p) => p.attributes.includes('destroy'))) sel.forEach((p) => g.destroyPiece(p.id));
@@ -234,6 +254,9 @@
 	}
 
 	function onKeyUp(e: KeyboardEvent) {
+		if (e.code === 'KeyP') {
+			peekPieceId = null;
+		}
 		if (e.key === 'Shift') g.setShiftDown(false);
 		else if (e.key === ' ' || e.code === 'Space') {
 			g.setSpacePanHeld(false);
@@ -262,7 +285,11 @@
 	}
 
 	onMount(() => {
+		const onWinBlur = () => {
+			peekPieceId = null;
+		};
 		if (browser) {
+			window.addEventListener('blur', onWinBlur);
 			const mq = window.matchMedia('(max-width: 639px)');
 			useMobileSheets = mq.matches;
 			const fn = () => {
@@ -443,6 +470,7 @@
 		})();
 
 		return () => {
+			if (browser) window.removeEventListener('blur', onWinBlur);
 			removeMobileMq?.();
 			window.removeEventListener('click', onDocClick);
 			window.removeEventListener('bge:roller_roll', onRollerRoll);
@@ -485,6 +513,10 @@
 		onToggleHistory={onToolbarToggleHistory}
 		historyReplayActive={$isHistoryReplayActive}
 		onOpenMenu={() => (winMenuSheet = true)}
+		onOpenControlsHelp={() => {
+			if (useMobileSheets) winMenuSheet = false;
+			winControlsHelp = true;
+		}}
 	/>
 	<HistorySlider lobbyId={data.lobby.id} {supabase} onPersistSnapshot={persistSnapshot} />
 </div>
@@ -557,6 +589,16 @@
 						class="play-menu-btn"
 						onclick={() => {
 							winMenuSheet = false;
+							winControlsHelp = true;
+						}}>Controls</button
+					>
+				</li>
+				<li>
+					<button
+						type="button"
+						class="play-menu-btn"
+						onclick={() => {
+							winMenuSheet = false;
 							winSettings = true;
 						}}>Settings</button
 					>
@@ -598,6 +640,10 @@
 			<Settings />
 		</BottomSheet>
 
+		<BottomSheet title="Controls" visible={winControlsHelp} requestClose={() => (winControlsHelp = false)}>
+			<PlayControlsHelp />
+		</BottomSheet>
+
 		<BottomSheet
 			title="Viewer (local)"
 			visible={winViewer}
@@ -626,6 +672,10 @@
 			<Settings />
 		</WindowFrame>
 
+		<WindowFrame title="Controls" visible={winControlsHelp} requestClose={() => (winControlsHelp = false)}>
+			<PlayControlsHelp />
+		</WindowFrame>
+
 		<WindowFrame
 			title="Viewer (local)"
 			visible={winViewer}
@@ -642,6 +692,7 @@
 				/>
 		</WindowFrame>
 	{/if}
+	<PiecePeekOverlay pieceId={peekPieceId} selfDisplayName={data.profile?.display_name ?? 'You'} />
 </div>
 
 <style>
@@ -670,6 +721,9 @@
 	.play-overlay-root :global(.window),
 	.play-overlay-root :global(.bottom-sheet-root) {
 		pointer-events: auto;
+	}
+	.play-overlay-root :global([data-bge-piece-peek]) {
+		pointer-events: none;
 	}
 	.play-menu {
 		list-style: none;
