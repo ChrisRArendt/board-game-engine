@@ -144,8 +144,8 @@ function blobToImage(blob: Blob): Promise<HTMLImageElement> {
 }
 
 /**
- * Horizontal sprite: left half = back (shown when piece is flipped in UI), right half = front (face-up).
- * Matches Piece.svelte background-position for flip.
+ * @deprecated Sprite approach replaced by separate front/back PNGs; see `rasterizeCardFrontAndBack`.
+ * Horizontal sprite: left half = back, right half = front.
  */
 export async function composeFrontBackSprite(frontBlob: Blob, backBlob: Blob): Promise<Blob> {
 	const [imgF, imgB] = await Promise.all([blobToImage(frontBlob), blobToImage(backBlob)]);
@@ -167,6 +167,25 @@ export async function composeFrontBackSprite(frontBlob: Blob, backBlob: Blob): P
 	});
 }
 
+/**
+ * Render front (and optionally back) as **separate** blobs.
+ * Callers should upload front as `cards/{id}.png` and back as `cards/{id}-back.png`.
+ */
+export async function rasterizeCardFrontAndBack(
+	template: TemplateRow,
+	fieldValuesRaw: unknown,
+	mediaUrls: Record<string, string>,
+	opts?: { scale?: number }
+): Promise<{ front: Blob; back: Blob | null }> {
+	const front = await rasterizeCardFaceToBlob(template, fieldValuesRaw, mediaUrls, 'front', opts);
+	if (!templateRowHasBack(template)) {
+		return { front, back: null };
+	}
+	const back = await rasterizeCardFaceToBlob(template, fieldValuesRaw, mediaUrls, 'back', opts);
+	return { front, back };
+}
+
+/** @deprecated Use `rasterizeCardFrontAndBack` + two separate uploads instead. */
 export async function rasterizeCardFrontAndBackSprite(
 	template: TemplateRow,
 	fieldValuesRaw: unknown,

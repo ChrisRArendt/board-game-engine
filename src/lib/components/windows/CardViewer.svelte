@@ -6,7 +6,7 @@
 	import { settings } from '$lib/stores/settings';
 	import { isHistoryReplayActive } from '$lib/stores/history';
 	import { buildStashRoster, isPieceFaceHiddenFromPeers } from '$lib/engine/stash';
-	import { pieceSupportsFlip } from '$lib/engine/pieces';
+	import { hasAttr, pieceSupportsFlip } from '$lib/engine/pieces';
 
 	export let targetPieceId: number | null = null;
 	/** Two-way: when true, board clicks do not change `targetPieceId`. */
@@ -43,12 +43,18 @@
 			$game.playerSlots
 		);
 
-	$: bg =
+	$: bgFront =
 		piece && piece.bg
 			? $game.assetBaseUrl
 				? `${$game.assetBaseUrl}${piece.bg}`
 				: `/data/${$game.curGame}/images/${piece.bg}`
 			: '';
+	$: bgBack =
+		piece && piece.bg && hasAttr(piece, 'flip') && piece.bg.endsWith('.png')
+			? bgFront.replace(/\.png$/, '-back.png')
+			: bgFront;
+	$: canFlip = piece ? pieceSupportsFlip(piece) : false;
+	$: bg = canFlip && piece?.flipped ? bgBack : bgFront;
 	$: w = piece ? piece.initial_size.w * 2 : 0;
 	$: h = piece ? piece.initial_size.h * 2 : 0;
 </script>
@@ -79,12 +85,7 @@
 				style:width="100%"
 				style:height="{h}px"
 				style:background-image="url({bg})"
-				style:background-size={pieceSupportsFlip(piece) ? 'auto 100%' : '100% 100%'}
-				style:background-position={pieceSupportsFlip(piece)
-					? piece.flipped
-						? '0 0'
-						: '100% 0'
-					: '0 0'}
+				style:background-size="100% 100%"
 				style:background-repeat="no-repeat"
 			></div>
 		{:else}

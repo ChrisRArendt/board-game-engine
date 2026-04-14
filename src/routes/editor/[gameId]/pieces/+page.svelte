@@ -3,7 +3,7 @@
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { publicStorageUrl } from '$lib/editor/mediaUrls';
 	import {
-		rasterizeCardFrontAndBackSprite,
+		rasterizeCardFrontAndBack,
 		rasterizeCardInstanceToBlob,
 		templateRowHasBack,
 		type TemplateRow
@@ -17,6 +17,7 @@
 		type DuplexCardForSheet,
 		type PageSizeId
 	} from '$lib/editor/printSheet';
+	import PieceGridTile, { type RenderPhase } from '$lib/components/editor/PieceGridTile.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -35,6 +36,12 @@
 	let printPdfPageSize = $state<PageSizeId>('letter');
 	let printPdfSelected = $state<Record<string, boolean>>({});
 	let printPdfQty = $state<Record<string, number>>({});
+
+	/** Multi-select (visual order on page — used for Shift+click range). */
+	let selectedIds = $state<Set<string>>(new Set());
+	let selectionAnchorId = $state<string | null>(null);
+	let tileRenderPhase: Record<string, RenderPhase> = $state({});
+	let bulkRerenderProgress = $state<{ cur: number; total: number } | null>(null);
 
 	const mediaUrls = $derived(
 		Object.fromEntries((data.mediaForCards ?? []).map((m) => [m.id, publicStorageUrl(m.file_path)]))
@@ -87,6 +94,71 @@
 			? data.templates
 			: data.templates.filter((t) => t.id === filterTemplateId)
 	);
+
+	/** Same order as tiles appear (template sections top-to-bottom, then cards per template). */
+	const piecesInDisplayOrder = $derived.by(() => {
+		if (sortBy === 'template') {
+			const out: PageData['cards'] = [];
+			for (const t of templatesForSections) {
+				for (const c of cardsByTemplate?.get(t.id) ?? []) out.push(c);
+			}
+			return out;
+		}
+		return sortedCards;
+	});
+
+	const selectedCount = $derived(selectedIds.size);
+
+	function thumb(path: string | null) {
+		if (!path) return '';
+		return publicStorageUrl(path);
+	}
+
+	function handleTileSelect(cardId: string, e: MouseEvent) {
+		const order = piecesInDisplayOrder.map((c) => c.id);
+		const idx = order.indexOf(cardId);
+		if (idx < 0) return;
+
+		if (e.shiftKey && selectionAnchorId != null) {
+			const a = order.indexOf(selectionAnchorId);
+			if (a < 0) {
+				const next = new Set(selectedIds);
+				if (next.has(cardId)) next.delete(cardId);
+				else next.add(cardId);
+				selectedIds = next;
+			} else {
+				const lo = Math.min(a, idx);
+				const hi = Math.max(a, idx);
+				const next = new Set<string>();
+				for (let i = lo; i <= hi; i++) next.add(order[i]);
+				selectedIds = next;
+			}
+		} else {
+			const next = new Set(selectedIds);
+			if (next.has(cardId)) next.delete(cardId);
+			else next.add(cardId);
+			selectedIds = next;
+		}
+		selectionAnchorId = cardId;
+	}
+
+	function selectAllVisible() {
+		selectedIds = new Set(sortedCards.map((c) => c.id));
+		if (sortedCards.length) selectionAnchorId = sortedCards[sortedCards.length - 1].id;
+	}
+
+	function clearPieceSelection() {
+		selectedIds = new Set();
+		selectionAnchorId = null;
+	}
+
+	$effect(() => {
+		const valid = new Set(sortedCards.map((c) => c.id));
+		const pruned = new Set([...selectedIds].filter((id) => valid.has(id)));
+		if (pruned.size !== selectedIds.size) {
+			selectedIds = pruned;
+		}
+	});
 
 	function templateRowFromDb(tmpl: PageData['templates'][number]): TemplateRow {
 		return {
@@ -178,6 +250,39 @@
 		}
 	}
 
+	async function rerenderOneCard(c: PageData['cards'][number], uid: string) {
+		const tmpl = data.templates.find((t) => t.id === c.template_id);
+		if (!tmpl) throw new Error('Template not found');
+		const row = templateRowFromDb(tmpl);
+		const { front, back } = await rasterizeCardFrontAndBack(row, c.field_values, mediaUrls, {
+			scale: 2
+		});
+		const base = `${uid}/${data.game.id}/cards/${c.id}`;
+		const frontPath = `${base}.png`;
+		const { error: upErr } = await supabase.storage.from('custom-game-assets').upload(frontPath, front, {
+			upsert: true,
+			contentType: 'image/png'
+		});
+		if (upErr) throw upErr;
+		if (back) {
+			const backPath = `${base}-back.png`;
+			const { error: upErr2 } = await supabase.storage.from('custom-game-assets').upload(backPath, back, {
+				upsert: true,
+				contentType: 'image/png'
+			});
+			if (upErr2) throw upErr2;
+		}
+		const { error: uErr } = await supabase
+			.from('card_instances')
+			.update({
+				rendered_image_path: frontPath,
+				render_stale: false,
+				updated_at: new Date().toISOString()
+			})
+			.eq('id', c.id);
+		if (uErr) throw uErr;
+	}
+
 	async function rerenderAllStale() {
 		const uid = data.session?.user?.id;
 		if (!uid) return;
@@ -186,33 +291,73 @@
 		busy = true;
 		err = '';
 		try {
+			let i = 0;
 			for (const c of staleCards) {
-				const tmpl = data.templates.find((t) => t.id === c.template_id);
-				if (!tmpl) continue;
-				const row = templateRowFromDb(tmpl);
-				const blob = templateRowHasBack(row)
-					? (await rasterizeCardFrontAndBackSprite(row, c.field_values, mediaUrls, { scale: 2 }))
-							.blob
-					: await rasterizeCardInstanceToBlob(row, c.field_values, mediaUrls, { scale: 2 });
-				const path = `${uid}/${data.game.id}/cards/${c.id}.png`;
-				const { error: upErr } = await supabase.storage.from('custom-game-assets').upload(path, blob, {
-					upsert: true,
-					contentType: 'image/png'
-				});
-				if (upErr) throw upErr;
-				const { error: uErr } = await supabase
-					.from('card_instances')
-					.update({
-						rendered_image_path: path,
-						render_stale: false,
-						updated_at: new Date().toISOString()
-					})
-					.eq('id', c.id);
-				if (uErr) throw uErr;
+				i += 1;
+				bulkRerenderProgress = { cur: i, total: staleCards.length };
+				tileRenderPhase = { ...tileRenderPhase, [c.id]: 'running' };
+				try {
+					await rerenderOneCard(c, uid);
+					tileRenderPhase = { ...tileRenderPhase, [c.id]: 'done' };
+				} catch {
+					tileRenderPhase = { ...tileRenderPhase, [c.id]: 'error' };
+				}
 			}
 			await invalidateAll();
+			bulkRerenderProgress = null;
+			window.setTimeout(() => {
+				tileRenderPhase = {};
+			}, 2000);
 		} catch (e) {
 			err = e instanceof Error ? e.message : 'Bulk render failed';
+			bulkRerenderProgress = null;
+		}
+		busy = false;
+	}
+
+	async function rerenderSelectedCards() {
+		const uid = data.session?.user?.id;
+		if (!uid) {
+			err = 'You must be signed in to render.';
+			return;
+		}
+		const ids = [...selectedIds];
+		if (!ids.length) return;
+		if (
+			!confirm(`Re-render ${ids.length} selected piece(s)? This may take a minute.`)
+		) {
+			return;
+		}
+		busy = true;
+		err = '';
+		const total = ids.length;
+		try {
+			for (let i = 0; i < ids.length; i++) {
+				const id = ids[i];
+				bulkRerenderProgress = { cur: i + 1, total };
+				tileRenderPhase = { ...tileRenderPhase, [id]: 'running' };
+				const c = data.cards.find((x) => x.id === id);
+				if (!c) {
+					tileRenderPhase = { ...tileRenderPhase, [id]: 'error' };
+					continue;
+				}
+				try {
+					await rerenderOneCard(c, uid);
+					tileRenderPhase = { ...tileRenderPhase, [id]: 'done' };
+				} catch {
+					tileRenderPhase = { ...tileRenderPhase, [id]: 'error' };
+				}
+			}
+			await invalidateAll();
+			window.setTimeout(() => {
+				const next = { ...tileRenderPhase };
+				for (const id of ids) delete next[id];
+				tileRenderPhase = next;
+				bulkRerenderProgress = null;
+			}, 2200);
+		} catch (e) {
+			err = e instanceof Error ? e.message : 'Render failed';
+			bulkRerenderProgress = null;
 		}
 		busy = false;
 	}
@@ -306,10 +451,6 @@
 		busy = false;
 	}
 
-	function thumb(path: string | null) {
-		if (!path) return '';
-		return publicStorageUrl(path);
-	}
 </script>
 
 <div class="page editor-page-scroll">
@@ -333,6 +474,29 @@
 				<option value="updated">Recently updated</option>
 			</select>
 		</label>
+	</div>
+
+	<div class="selection-toolbar">
+		<button type="button" class="btn" disabled={!sortedCards.length} onclick={selectAllVisible}>
+			Select all
+		</button>
+		<button type="button" class="btn" disabled={selectedCount === 0} onclick={clearPieceSelection}>
+			Clear selection
+		</button>
+		<span class="sel-count">{selectedCount} selected</span>
+		<button
+			type="button"
+			class="btn primary"
+			disabled={busy || selectedCount === 0 || !data.session?.user}
+			onclick={() => void rerenderSelectedCards()}
+		>
+			{bulkRerenderProgress && busy ? `Rendering ${bulkRerenderProgress.cur}/${bulkRerenderProgress.total}…` : 'Re-render selected'}
+		</button>
+		{#if bulkRerenderProgress && busy}
+			<span class="bulk-hint" aria-live="polite">
+				{bulkRerenderProgress.cur} of {bulkRerenderProgress.total}
+			</span>
+		{/if}
 	</div>
 
 	<label class="sheet-opt">
@@ -504,24 +668,21 @@
 						Export ZIP (300 DPI)
 					</button>
 				</div>
-				<ul>
+				<div class="pieces-grid">
 					{#each cardsByTemplate?.get(t.id) ?? [] as card (card.id)}
-						<li>
-							{#if card.rendered_image_path}
-								<img src={thumb(card.rendered_image_path)} alt="" class="thumb" />
-							{:else}
-								<div class="ph">No render</div>
-							{/if}
-							<div class="row-actions">
-								<a href="/editor/{data.game.id}/pieces/{card.id}" title="Edit piece">{card.name}</a>
-								<a class="row-sublink" href="/editor/{data.game.id}/templates/{t.id}">Open template</a>
-							</div>
-							{#if card.render_stale}<span class="stale">Stale</span>{/if}
-						</li>
+						<PieceGridTile
+							gameId={data.game.id}
+							{card}
+							sublinkTemplateId={t.id}
+							selected={selectedIds.has(card.id)}
+							renderPhase={tileRenderPhase[card.id] ?? 'idle'}
+							thumbUrl={thumb(card.rendered_image_path)}
+							onToggleSelect={(e) => handleTileSelect(card.id, e)}
+						/>
 					{:else}
-						<li class="muted">No pieces yet for this template.</li>
+						<p class="muted pieces-grid-empty">No pieces yet for this template.</p>
 					{/each}
-				</ul>
+				</div>
 			</section>
 		{:else}
 			<p class="muted">Create a template first.</p>
@@ -549,28 +710,24 @@
 					Create
 				</button>
 			</div>
-			<ul>
+			<div class="pieces-grid">
 				{#each sortedCards as card (card.id)}
 					{@const tmpl = data.templates.find((x) => x.id === card.template_id)}
-					<li>
-						{#if card.rendered_image_path}
-							<img src={thumb(card.rendered_image_path)} alt="" class="thumb" />
-						{:else}
-							<div class="ph">No render</div>
-						{/if}
-						<div class="card-meta">
-							<a href="/editor/{data.game.id}/pieces/{card.id}" title="Edit piece">{card.name}</a>
-							<span class="tmpl-tag">{tmpl?.name ?? '—'}</span>
-							{#if tmpl}
-								<a class="row-sublink" href="/editor/{data.game.id}/templates/{tmpl.id}">Open template</a>
-							{/if}
-						</div>
-						{#if card.render_stale}<span class="stale">Stale</span>{/if}
-					</li>
+					<PieceGridTile
+						gameId={data.game.id}
+						{card}
+						sublinkTemplateId={tmpl?.id ?? card.template_id}
+						showTemplateLabel
+						templateLabel={tmpl?.name ?? '—'}
+						selected={selectedIds.has(card.id)}
+						renderPhase={tileRenderPhase[card.id] ?? 'idle'}
+						thumbUrl={thumb(card.rendered_image_path)}
+						onToggleSelect={(e) => handleTileSelect(card.id, e)}
+					/>
 				{:else}
-					<li class="muted">No pieces match this filter.</li>
+					<p class="muted pieces-grid-empty">No pieces match this filter.</p>
 				{/each}
-			</ul>
+			</div>
 		</section>
 	{/if}
 
@@ -578,8 +735,10 @@
 
 <style>
 	.page {
-		padding: 1.25rem 1.5rem;
-		max-width: 720px;
+		padding: 1.25rem clamp(1rem, 3vw, 2rem);
+		max-width: none;
+		width: 100%;
+		box-sizing: border-box;
 		color: var(--color-text);
 	}
 	h1 {
@@ -622,39 +781,45 @@
 		color: inherit;
 		min-width: 220px;
 	}
-	.row-actions {
+	.selection-toolbar {
 		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 4px;
-		min-width: 0;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 10px 16px;
+		margin-bottom: 1rem;
+		padding: 10px 12px;
+		border-radius: 8px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface-muted, rgba(255, 255, 255, 0.03));
 	}
-	.row-sublink {
-		font-size: 12px;
-		color: var(--color-accent, #3b82f6);
-		text-decoration: none;
+	.selection-toolbar .btn {
+		margin-bottom: 0;
 	}
-	.row-sublink:hover {
-		text-decoration: underline;
-	}
-	.card-meta {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		min-width: 0;
-	}
-	.tmpl-tag {
-		font-size: 12px;
+	.sel-count,
+	.bulk-hint {
+		font-size: 13px;
 		color: var(--color-text-muted);
+	}
+	.pieces-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+		gap: clamp(10px, 1.5vw, 16px);
+		width: 100%;
+	}
+	.pieces-grid-empty {
+		grid-column: 1 / -1;
+		margin: 0;
+		padding: 8px 0;
 	}
 	.sec {
 		margin-bottom: 2rem;
 		border-bottom: 1px solid var(--color-border);
-		padding-bottom: 1rem;
+		padding-bottom: 1.25rem;
 	}
-	h2 {
-		font-size: 1rem;
-		margin: 0 0 8px;
+	.sec h2 {
+		font-size: 1.05rem;
+		margin: 0 0 10px;
+		font-weight: 600;
 	}
 	.btn {
 		padding: 6px 12px;
@@ -664,43 +829,6 @@
 		color: inherit;
 		cursor: pointer;
 		margin-bottom: 8px;
-	}
-	ul {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-	}
-	li {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		padding: 8px 0;
-		border-bottom: 1px solid var(--color-border);
-	}
-	.thumb {
-		width: 48px;
-		height: 64px;
-		object-fit: cover;
-		border-radius: 4px;
-		background: #222;
-	}
-	.ph {
-		width: 48px;
-		height: 64px;
-		background: #222;
-		border-radius: 4px;
-		font-size: 10px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: #888;
-	}
-	a {
-		color: var(--color-accent, #3b82f6);
-	}
-	.stale {
-		font-size: 12px;
-		color: #fbbf24;
 	}
 	.muted {
 		opacity: 0.7;
@@ -730,7 +858,10 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 8px;
-		margin-bottom: 8px;
+		margin-bottom: 14px;
+	}
+	.flat-sec .pieces-grid {
+		margin-top: 4px;
 	}
 	.sheet-opt {
 		display: flex;

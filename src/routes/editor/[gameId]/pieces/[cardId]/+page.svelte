@@ -21,7 +21,7 @@
 		type TextLayer
 	} from '$lib/editor/types';
 	import { rasterizeElementToPng } from '$lib/editor/rasterize';
-	import { rasterizeCardFrontAndBackSprite, rasterizeCardInstanceToBlob } from '$lib/editor/bulkCardRasterize';
+	import { rasterizeCardFrontAndBack, rasterizeCardInstanceToBlob } from '$lib/editor/bulkCardRasterize';
 	import { publicStorageUrl } from '$lib/editor/mediaUrls';
 	import { downloadBlob, zipPngFiles } from '$lib/editor/printExport';
 	import type { Json } from '$lib/supabase/database.types';
@@ -157,6 +157,25 @@
 	});
 
 	let previewEl: HTMLDivElement | undefined;
+	let previewColEl: HTMLDivElement | undefined;
+	let previewColW = 500;
+	$effect(() => {
+		if (!previewColEl) return;
+		const ro = new ResizeObserver((entries) => {
+			for (const e of entries) previewColW = e.contentRect.width;
+		});
+		ro.observe(previewColEl);
+		return () => ro.disconnect();
+	});
+	const previewScale = $derived((() => {
+		const cw = data.template.canvas_width;
+		const available = previewColW - 32;
+		const cols = hasBack ? 2 : 1;
+		const gap = hasBack ? 16 : 0;
+		const maxCardW = (available - gap) / cols;
+		if (cw <= 0 || maxCardW >= cw) return 1;
+		return Math.max(0.25, maxCardW / cw);
+	})());
 	type ActionPhase = 'idle' | 'loading' | 'success';
 	let saveBtnState = $state<ActionPhase>('idle');
 	let renderBtnState = $state<ActionPhase>('idle');
@@ -272,22 +291,32 @@
 		renderBtnState = 'loading';
 		err = '';
 		try {
-			const { blob } = await rasterizeCardFrontAndBackSprite(
+			const { front, back } = await rasterizeCardFrontAndBack(
 				templateRowForRasterize(),
 				data.card.field_values,
 				mediaUrls,
 				{ scale: 2 }
 			);
-			const path = `${data.session.user.id}/${data.game.id}/cards/${data.card.id}.png`;
-			const { error: upErr } = await supabase.storage.from('custom-game-assets').upload(path, blob, {
+			const uid = data.session.user.id;
+			const base = `${uid}/${data.game.id}/cards/${data.card.id}`;
+			const frontPath = `${base}.png`;
+			const { error: upErr } = await supabase.storage.from('custom-game-assets').upload(frontPath, front, {
 				upsert: true,
 				contentType: 'image/png'
 			});
 			if (upErr) throw upErr;
+			if (back) {
+				const backPath = `${base}-back.png`;
+				const { error: upErr2 } = await supabase.storage.from('custom-game-assets').upload(backPath, back, {
+					upsert: true,
+					contentType: 'image/png'
+				});
+				if (upErr2) throw upErr2;
+			}
 			const { error: uErr } = await supabase
 				.from('card_instances')
 				.update({
-					rendered_image_path: path,
+					rendered_image_path: frontPath,
 					render_stale: false,
 					updated_at: new Date().toISOString()
 				})
@@ -612,7 +641,7 @@
 			</div>
 		</div>
 
-		<div class="preview-col">
+		<div class="preview-col" bind:this={previewColEl}>
 			<h2>Preview</h2>
 			<div class="preview-chrome" class:two-up={hasBack}>
 				<div class="preview-face">
@@ -630,7 +659,7 @@
 							{fieldValues}
 							fieldStyles={pieceStyles}
 							{mediaUrls}
-							flattenLayout={true}
+							displayScale={previewScale}
 						/>
 					</div>
 				</div>
@@ -650,7 +679,7 @@
 								{fieldValues}
 								fieldStyles={pieceStyles}
 								{mediaUrls}
-								flattenLayout={true}
+								displayScale={previewScale}
 							/>
 						</div>
 					</div>
@@ -750,6 +779,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
+		overflow: hidden;
 	}
 	.preview-face-label {
 		font-size: 11px;

@@ -44,12 +44,17 @@
 		posY.set(piece.y, { duration: dur, easing });
 	}
 
-	$: canFlip = pieceSupportsFlip(piece);
-	$: rot = piece.rotation ?? 0;
-	$: bgUrl = assetBaseUrl
+	$: bgUrlFront = assetBaseUrl
 		? `${assetBaseUrl}${piece.bg}`
 		: `/data/${curGame}/images/${piece.bg}`;
+	$: bgUrlBack =
+		piece.bg && hasAttr(piece, 'flip') && piece.bg.endsWith('.png')
+			? bgUrlFront.replace(/\.png$/, '-back.png')
+			: bgUrlFront;
+	$: canFlip = pieceSupportsFlip(piece);
+	$: bgUrl = canFlip && piece.flipped ? bgUrlBack : bgUrlFront;
 	$: showFace = !faceHidden;
+	$: rot = piece.rotation ?? 0;
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -76,12 +81,8 @@
 	style:background-image={showFace ? `url(${bgUrl})` : undefined}
 	/* outline (not border): border shrinks content with border-box + background-clip: content-box */
 	style:outline={remoteColor ? `3px dashed ${remoteColor}` : undefined}
-	style:background-position={showFace && canFlip
-		? piece.flipped
-			? '0px 0px'
-			: `${-piece.initial_size.w}px 0px`
-		: '0 0'}
-	style:background-size={showFace && canFlip ? '200% 100%' : '100% 100%'}
+	style:background-position="0 0"
+	style:background-size="100% 100%"
 	style:border-radius={hasAttr(piece, 'roundcorners') ? '8px' : undefined}
 	onpointerdown={(e) => {
 		if (replayMode) return;
@@ -157,11 +158,10 @@
 		) !important;
 		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 	}
-	/* Apply arrangement: slide sprite between front/back while motion tweens */
+	/* Apply arrangement: smooth motion tweens with brief cross-fade for flip */
 	.piece.arrange-anim.can-flip {
 		transition:
 			box-shadow 150ms ease,
-			filter 150ms ease,
-			background-position 0.25s cubic-bezier(0.33, 1, 0.68, 1);
+			filter 150ms ease;
 	}
 </style>

@@ -7,11 +7,7 @@ export function pieceFromData(data: PieceData, id: number, curGame: string, offs
 		typeof data.rotation === 'number' && Number.isFinite(data.rotation) ? data.rotation : undefined;
 	const hidden = data.editor_hidden === true;
 	const locked = data.editor_locked === true;
-	let attributes = data.attributes ? [...data.attributes] : [];
-	const bgPath = data.bg ?? '';
-	if (!attributes.includes('flip') && bgPath.startsWith('cards/')) {
-		attributes = [...attributes, 'flip'];
-	}
+	const attributes = data.attributes ? [...data.attributes] : [];
 	return {
 		id,
 		bg: data.bg,
@@ -34,7 +30,10 @@ export function hasAttr(p: PieceInstance, attr: string): boolean {
 	return p.attributes.includes(attr);
 }
 
-/** Front/back flip: explicit `flip` attribute, or custom-game card PNG under `cards/`. */
+/**
+ * Whether the player can flip this piece (toolbar / context menu / flipPiece).
+ * True when `flip` attribute is set (card with designed back) or for any `cards/` PNG.
+ */
 export function pieceSupportsFlip(p: PieceInstance): boolean {
 	if (hasAttr(p, 'flip')) return true;
 	return (p.bg ?? '').startsWith('cards/');
