@@ -20,38 +20,6 @@
 		openLayerContextMenu: (id: string, clientX: number, clientY: number) => void;
 	} = $props();
 
-	// #region agent log
-	const DBG = 'http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1';
-	function dbgLog(
-		location: string,
-		message: string,
-		data: Record<string, unknown>,
-		hypothesisId: string
-	) {
-		fetch(DBG, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a428b6' },
-			body: JSON.stringify({
-				sessionId: 'a428b6',
-				location,
-				message,
-				data,
-				timestamp: Date.now(),
-				hypothesisId
-			})
-		}).catch(() => {});
-	}
-	function firstRowIdInStack(clientX: number, clientY: number): string | null {
-		const stack = document.elementsFromPoint(clientX, clientY);
-		for (const el of stack) {
-			if (!(el instanceof HTMLElement)) continue;
-			const row = el.closest('[data-layer-id]');
-			if (row instanceof HTMLElement) return row.getAttribute('data-layer-id');
-		}
-		return null;
-	}
-	// #endregion
-
 	let dragId = $state<string | null>(null);
 	/** Insertion slot: 0 = before first row, …, length = after last row. */
 	let insertAtIndex = $state<number | null>(null);
@@ -89,24 +57,6 @@
 		const before = ord.map((x) => x.id).join('\0');
 		const after = cp.map((x) => x.id).join('\0');
 		if (before === after) return;
-
-		// #region agent log
-		dbgLog(
-			'LayerPanel.svelte:applyReorderFromInsert',
-			'apply',
-			{
-				fromId,
-				insertAt,
-				fromIdx,
-				n,
-				atBeforeAdjust,
-				atFinal: at,
-				orderBefore: ord.map((x) => x.id),
-				orderAfter: cp.map((x) => x.id)
-			},
-			'H4'
-		);
-		// #endregion
 
 		reorderFromOrderedList(cp);
 	}
@@ -168,32 +118,9 @@
 		if (e.pointerId !== activePointerId) return;
 		const fromId = dragId;
 		const insertAt = computeInsertAt(e.clientX, e.clientY);
-		const lastMoveInsert = insertAtIndex;
-		const firstRow = firstRowIdInStack(e.clientX, e.clientY);
-		// #region agent log
-		dbgLog(
-			'LayerPanel.svelte:onPointerUp',
-			'pu',
-			{
-				fromId,
-				insertAt,
-				lastMoveInsert,
-				firstRowId: firstRow,
-				matchMove: insertAt === lastMoveInsert
-			},
-			'H2'
-		);
-		// #endregion
 		endDrag();
 		if (fromId != null && insertAt != null) {
 			applyReorderFromInsert(fromId, insertAt);
-		} else {
-			dbgLog(
-				'LayerPanel.svelte:onPointerUp',
-				'pu_skip',
-				{ fromId, insertAt, reason: insertAt == null ? 'null_insert' : 'no_from' },
-				'H3'
-			);
 		}
 	}
 
@@ -216,12 +143,6 @@
 		} catch {
 			/* ignore */
 		}
-		dbgLog(
-			'LayerPanel.svelte:handleHandlePointerDown',
-			'pd',
-			{ fromId, insertAtIndex },
-			'H1'
-		);
 		document.addEventListener('pointermove', onPointerMove, true);
 		document.addEventListener('pointerup', onPointerUp, true);
 		document.addEventListener('pointercancel', onPointerCancel, true);

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PlacementLayout } from '$lib/engine/types';
+	import { ARRANGEMENT_GAP_PRESET } from '$lib/editor/arrangementGapPresets';
 	import { arrangementPrefs, patchArrangementPrefs } from '$lib/stores/arrangementPrefs';
 	import * as g from '$lib/stores/game';
 	import { get } from 'svelte/store';
@@ -28,14 +29,13 @@
 
 	export let onAfterApply: (() => void) | undefined = undefined;
 
-	const GAP_PRESETS = { small: 30, medium: 90, large: 270 } as const;
-	type GapPreset = keyof typeof GAP_PRESETS;
+	type GapPreset = keyof typeof ARRANGEMENT_GAP_PRESET;
 
 	function nearestGapPreset(v: number): GapPreset {
 		let best: GapPreset = 'medium';
 		let bestDist = Infinity;
-		for (const k of Object.keys(GAP_PRESETS) as GapPreset[]) {
-			const d = Math.abs(v - GAP_PRESETS[k]);
+		for (const k of Object.keys(ARRANGEMENT_GAP_PRESET) as GapPreset[]) {
+			const d = Math.abs(v - ARRANGEMENT_GAP_PRESET[k]);
 			if (d < bestDist) {
 				bestDist = d;
 				best = k;
@@ -45,7 +45,7 @@
 	}
 
 	function setGapPreset(p: GapPreset) {
-		patchArrangementPrefs({ offset: GAP_PRESETS[p] });
+		patchArrangementPrefs({ offset: ARRANGEMENT_GAP_PRESET[p] });
 	}
 
 	async function apply() {

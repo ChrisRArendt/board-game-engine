@@ -15,10 +15,15 @@
 	let selectedIndices = new Set<number>();
 
 	$: if (open && browser) {
-		const mc = Math.max(0, maxCards);
-		countStr = String(mc > 0 ? mc : 1);
+		countStr = '1';
 		selectedIndices = new Set(roster.map((_, i) => i));
 	}
+
+	$: mc = Math.max(0, maxCards);
+	$: perPlayer = Math.max(1, parseInt(countStr, 10) || 1);
+	$: targetCount = selectedIndices.size;
+	/** Total cards that will be moved (capped by selection size). */
+	$: totalToDeal = mc < 1 || targetCount < 1 ? 0 : Math.min(mc, perPlayer * targetCount);
 
 	function toggleRoster(i: number) {
 		const next = new Set(selectedIndices);
@@ -28,11 +33,11 @@
 	}
 
 	function apply() {
-		const mc = Math.max(0, maxCards);
 		if (mc === 0) return;
-		const n = Math.min(mc, Math.max(1, parseInt(countStr, 10) || 1));
 		const indices = [...selectedIndices].filter((i) => i >= 0 && i < roster.length).sort((a, b) => a - b);
 		if (indices.length === 0) return;
+		const pp = Math.max(1, parseInt(countStr, 10) || 1);
+		const n = Math.min(mc, pp * indices.length);
 		onConfirm(n, indices);
 		onClose();
 	}
@@ -62,17 +67,27 @@
 		>
 			<h2 id="deal-to-title" class="title">Deal to…</h2>
 			<p class="hint">
-				Top-of-stack cards are dealt first (highest z-order). Cards are placed round-robin in order of the
-				players you select below.
+				Top-of-stack cards are dealt first (highest z-order). The number below is <strong>per selected
+				player</strong>; cards go round-robin in the order listed.
 			</p>
 			{#if maxCards < 1}
 				<p class="warn">No movable cards selected.</p>
 			{:else}
 				<label class="field">
-					<span>Number of cards</span>
+					<span>Cards per player</span>
 					<input type="number" bind:value={countStr} min="1" max={maxCards} step="1" />
 				</label>
-				<p class="sub">Up to {maxCards} (from selection).</p>
+				<p class="sub">
+					{#if targetCount === 0}
+						Pick at least one player below.
+					{:else}
+						{maxCards} in selection — dealing <strong>{totalToDeal}</strong> total
+						({perPlayer} each × {targetCount} player{targetCount === 1 ? '' : 's'}{totalToDeal <
+						perPlayer * targetCount
+							? ', capped by selection'
+							: ''}).
+					{/if}
+				</p>
 				<div class="targets">
 					<span class="targets-label">Players</span>
 					{#each roster as p, i (p.id)}

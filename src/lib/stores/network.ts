@@ -402,7 +402,9 @@ export async function connectGameChannel(
 	});
 
 	ch.on('broadcast', { event: 'piece_moves_batch' }, ({ payload }) => {
-		const p = payload as { moves?: Array<{ id: number; x: number; y: number }> };
+		const p = payload as {
+			moves?: Array<{ id: number; x: number; y: number; rotation?: number }>;
+		};
 		if (!Array.isArray(p?.moves) || p.moves.length === 0) return;
 		game.remotePieceMovesBatch(p.moves);
 	});
@@ -413,8 +415,14 @@ export async function connectGameChannel(
 	});
 
 	ch.on('broadcast', { event: 'piece_shuffle' }, ({ payload }) => {
-		const p = payload as { id: number; zindex: number; x: number; y: number };
-		game.remotePieceShuffle(p.id, p.zindex, p.x, p.y);
+		const p = payload as {
+			id: number;
+			zindex: number;
+			x: number;
+			y: number;
+			rotation?: number;
+		};
+		game.remotePieceShuffle(p.id, p.zindex, p.x, p.y, p.rotation);
 	});
 
 	ch.on('broadcast', { event: 'piece_zindexchange' }, ({ payload }) => {

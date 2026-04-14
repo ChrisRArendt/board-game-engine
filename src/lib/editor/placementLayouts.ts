@@ -1,4 +1,6 @@
 import type { PlacementLayout } from '$lib/engine/types';
+import type { Rect } from '$lib/engine/geometry';
+import { ARRANGEMENT_GAP_PRESET } from '$lib/editor/arrangementGapPresets';
 
 /** Overlap: step by `offset` only (dealer fan / tight grid). Separate: step by piece size + offset (tiles with gap). */
 export type PlacementSpacingMode = 'overlap' | 'separate';
@@ -36,11 +38,12 @@ export function computePlacementPositions(opts: PlacementLayoutOptions): { x: nu
 }
 
 /**
- * Fan: piece centers lie on a circular arc (pivot below the arc). Only x/y are set — no rotation.
+ * Fan: piece centers lie on a circular arc (pivot below the arc).
  * The arc is centered: lowest pieces at the left and right, highest at the middle (like a shallow ∩).
  * (baseX, baseY) is the top-left of the back piece (layer order); that piece sits on the left end of the arc.
+ * `rotationDeg` is the tangent to the arc (cards tilt with the curve).
  */
-export function computeFanPositions(
+export function fanArcLayoutWithRotation(
 	count: number,
 	offset: number,
 	baseX: number,
@@ -48,13 +51,13 @@ export function computeFanPositions(
 	separate: boolean,
 	pieceW: number,
 	pieceH: number
-): { x: number; y: number }[] {
-	const out: { x: number; y: number }[] = [];
+): Array<{ x: number; y: number; rotationDeg: number }> {
+	const out: Array<{ x: number; y: number; rotationDeg: number }> = [];
 	if (count <= 0) return out;
 	const pw = Math.max(1, pieceW);
 	const ph = Math.max(1, pieceH);
 	if (count === 1) {
-		return [{ x: baseX, y: baseY }];
+		return [{ x: baseX, y: baseY, rotationDeg: 0 }];
 	}
 
 	const gap = Math.max(0, offset);
@@ -82,12 +85,83 @@ export function computeFanPositions(
 		const theta = (i - half) * angleStep;
 		const ccx = cx + R * Math.sin(theta);
 		const ccy = cy - R * Math.cos(theta);
+		/** Tangent direction (derivative wrt theta); matches CSS angle on screen y-down. */
+		const rotRad = Math.atan2(R * Math.sin(theta), R * Math.cos(theta));
+		const rotationDeg = (rotRad * 180) / Math.PI;
 		out.push({
 			x: ccx - pw / 2,
-			y: ccy - ph / 2
+			y: ccy - ph / 2,
+			rotationDeg
 		});
 	}
 	return out;
+}
+
+/** Fan layout top-left positions only (no rotation) — editor / placement. */
+export function computeFanPositions(
+	count: number,
+	offset: number,
+	baseX: number,
+	baseY: number,
+	separate: boolean,
+	pieceW: number,
+	pieceH: number
+): { x: number; y: number }[] {
+	return fanArcLayoutWithRotation(
+		count,
+		offset,
+		baseX,
+		baseY,
+		separate,
+		pieceW,
+		pieceH
+	).map(({ x, y }) => ({ x, y }));
+}
+
+/**
+ * Fan positions centered in a deal zone — same math as context menu **Arrange → Fan → Overlap → Small**
+ * (`computeFanPositions` with spacing overlap and `ARRANGEMENT_GAP_PRESET.small`). Rotation is not applied
+ * (matches `applyPlacementArrangementToSelection`).
+ */
+export function computeFanDealPositionsInRect(
+	rect: Rect,
+	count: number,
+	pieceW: number,
+	pieceH: number
+): Array<{ x: number; y: number }> {
+	const pw = Math.max(1, pieceW);
+	const ph = Math.max(1, pieceH);
+	if (count <= 0) return [];
+	if (count === 1) {
+		return [{ x: rect.x + rect.w / 2 - pw / 2, y: rect.y + rect.h / 2 - ph / 2 }];
+	}
+
+	const raw = computeFanPositions(
+		count,
+		ARRANGEMENT_GAP_PRESET.small,
+		0,
+		0,
+		false,
+		pw,
+		ph
+	);
+	let minX = Infinity;
+	let minY = Infinity;
+	let maxX = -Infinity;
+	let maxY = -Infinity;
+	for (const p of raw) {
+		minX = Math.min(minX, p.x);
+		minY = Math.min(minY, p.y);
+		maxX = Math.max(maxX, p.x + pw);
+		maxY = Math.max(maxY, p.y + ph);
+	}
+	const bboxCx = (minX + maxX) / 2;
+	const bboxCy = (minY + maxY) / 2;
+	const targetCx = rect.x + rect.w / 2;
+	const targetCy = rect.y + rect.h / 2;
+	const dx = targetCx - bboxCx;
+	const dy = targetCy - bboxCy;
+	return raw.map((p) => ({ x: p.x + dx, y: p.y + dy }));
 }
 
 /** Stacked: overlap = diagonal fan; separate = horizontal row with piece width + gap. */
