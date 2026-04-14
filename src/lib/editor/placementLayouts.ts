@@ -28,6 +28,7 @@ export function computePlacementPositions(opts: PlacementLayoutOptions): { x: nu
 	const ph = Math.max(1, pieceH ?? offset);
 	const gap = Math.max(0, offset);
 
+	if (layout === 'pile') return computePilePositions(count, baseX, baseY);
 	if (layout === 'stack')
 		return computeStackPositions(count, gap, baseX, baseY, sep, pw, ph);
 	if (layout === 'honeycomb')
@@ -35,6 +36,12 @@ export function computePlacementPositions(opts: PlacementLayoutOptions): { x: nu
 	if (layout === 'fan')
 		return computeFanPositions(count, gap, baseX, baseY, sep, pw, ph);
 	return computeGridPositions(count, gap, baseX, baseY, cols, sep, pw, ph);
+}
+
+/** Single stack: every piece shares the same top-left (z-order draws the pile). */
+function computePilePositions(count: number, baseX: number, baseY: number): { x: number; y: number }[] {
+	if (count <= 0) return [];
+	return Array.from({ length: count }, () => ({ x: baseX, y: baseY }));
 }
 
 /**

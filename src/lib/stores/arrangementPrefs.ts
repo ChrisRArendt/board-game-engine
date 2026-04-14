@@ -5,7 +5,7 @@ import type { PlacementSpacingMode } from '$lib/editor/placementLayouts';
 
 const STORAGE_KEY = 'bge_arrangement_prefs';
 
-const LAYOUTS = new Set<PlacementLayout>(['stack', 'grid', 'honeycomb', 'fan']);
+const LAYOUTS = new Set<PlacementLayout>(['stack', 'grid', 'honeycomb', 'fan', 'pile']);
 const SPACINGS = new Set<PlacementSpacingMode>(['overlap', 'separate']);
 
 export interface ArrangementPrefs {

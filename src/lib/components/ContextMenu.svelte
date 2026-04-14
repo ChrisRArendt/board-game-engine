@@ -75,10 +75,10 @@
 
 	$: arrangeFlipCapableCount = sel.filter((p) => pieceSupportsFlip(p)).length;
 
-	$: showSpacerAfterFlip =
-		showFlip && (showShuffle || showGroupByType || showArrange || showDeal);
-	$: showSpacerBeforeDeal =
+	$: showSpacerAfterDeal =
 		showDeal && (showFlip || showShuffle || showGroupByType || showArrange);
+	$: showSpacerAfterFlip =
+		showFlip && (showShuffle || showGroupByType || showArrange);
 </script>
 
 <DealToDialog
@@ -104,6 +104,19 @@
 		onclick={(e) => e.stopPropagation()}
 		onpointerdown={(e) => e.stopPropagation()}
 	>
+		{#if showDeal}
+			<li
+				onpointerdown={() => {
+					open = false;
+					dealOpen = true;
+				}}
+			>
+				Deal to…
+			</li>
+		{/if}
+		{#if showSpacerAfterDeal}
+			<li class="spacer"></li>
+		{/if}
 		{#if showFlip}
 			<li
 				onpointerdown={() => {
@@ -159,19 +172,6 @@
 					flipCapableCount={arrangeFlipCapableCount}
 					onAfterApply={() => (open = false)}
 				/>
-			</li>
-		{/if}
-		{#if showSpacerBeforeDeal}
-			<li class="spacer"></li>
-		{/if}
-		{#if showDeal}
-			<li
-				onpointerdown={() => {
-					open = false;
-					dealOpen = true;
-				}}
-			>
-				Deal to…
 			</li>
 		{/if}
 	</ul>

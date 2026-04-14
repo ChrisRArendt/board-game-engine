@@ -64,7 +64,8 @@
 		{ id: 'stack', label: 'Stack' },
 		{ id: 'grid', label: 'Grid' },
 		{ id: 'honeycomb', label: 'Honey' },
-		{ id: 'fan', label: 'Fan' }
+		{ id: 'fan', label: 'Fan' },
+		{ id: 'pile', label: 'Pile' }
 	];
 </script>
 
@@ -187,7 +188,7 @@
 								stroke-linejoin="round"
 							/>
 						</svg>
-					{:else}
+					{:else if L.id === 'fan'}
 						<svg class="layout-icon" viewBox="0 0 24 24" aria-hidden="true">
 							<path
 								d="M5 18 Q12 7 19 18"
@@ -229,6 +230,40 @@
 								transform="rotate(28 17.5 16.5)"
 							/>
 						</svg>
+					{:else}
+						<!-- pile -->
+						<svg class="layout-icon" viewBox="0 0 24 24" aria-hidden="true">
+							<rect
+								x="4"
+								y="10"
+								width="10"
+								height="8"
+								rx="1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+							/>
+							<rect
+								x="6"
+								y="7"
+								width="10"
+								height="8"
+								rx="1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+							/>
+							<rect
+								x="8"
+								y="4"
+								width="10"
+								height="8"
+								rx="1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+							/>
+						</svg>
 					{/if}
 					<span class="layout-label">{L.label}</span>
 				</button>
@@ -250,66 +285,68 @@
 			/>
 		</label>
 	{/if}
-	<label class="row toggle-row">
-		<span>Spacing</span>
-		<div class="segmented" role="group" aria-label="Arrangement spacing">
-			<button
-				type="button"
-				class:active={$arrangementPrefs.spacingMode === 'overlap'}
-				onclick={() => patchArrangementPrefs({ spacingMode: 'overlap' })}
-			>
-				Overlap
-			</button>
-			<button
-				type="button"
-				class:active={$arrangementPrefs.spacingMode === 'separate'}
-				onclick={() => patchArrangementPrefs({ spacingMode: 'separate' })}
-			>
-				Separate
-			</button>
-		</div>
-	</label>
-	{#if gapPresetMode}
+	{#if $arrangementPrefs.layout !== 'pile'}
 		<label class="row toggle-row">
-			<span>{$arrangementPrefs.spacingMode === 'separate' ? 'Gap' : 'Offset'}</span>
-			<div class="segmented gap-presets" role="group" aria-label="Gap size">
+			<span>Spacing</span>
+			<div class="segmented" role="group" aria-label="Arrangement spacing">
 				<button
 					type="button"
-					class:active={nearestGapPreset($arrangementPrefs.offset) === 'small'}
-					onclick={() => setGapPreset('small')}
+					class:active={$arrangementPrefs.spacingMode === 'overlap'}
+					onclick={() => patchArrangementPrefs({ spacingMode: 'overlap' })}
 				>
-					Small
+					Overlap
 				</button>
 				<button
 					type="button"
-					class:active={nearestGapPreset($arrangementPrefs.offset) === 'medium'}
-					onclick={() => setGapPreset('medium')}
+					class:active={$arrangementPrefs.spacingMode === 'separate'}
+					onclick={() => patchArrangementPrefs({ spacingMode: 'separate' })}
 				>
-					Medium
-				</button>
-				<button
-					type="button"
-					class:active={nearestGapPreset($arrangementPrefs.offset) === 'large'}
-					onclick={() => setGapPreset('large')}
-				>
-					Large
+					Separate
 				</button>
 			</div>
 		</label>
-	{:else}
-		<label class="row">
-			<span>{$arrangementPrefs.spacingMode === 'separate' ? 'Gap (px)' : 'Offset (px)'}</span>
-			<input
-				type="number"
-				min={$arrangementPrefs.spacingMode === 'separate' ? 0 : 1}
-				max="500"
-				value={$arrangementPrefs.offset}
-				oninput={(e) =>
-					patchArrangementPrefs({
-						offset: parseFloat((e.currentTarget as HTMLInputElement).value) || 0
-					})}
-			/>
-		</label>
+		{#if gapPresetMode}
+			<label class="row toggle-row">
+				<span>{$arrangementPrefs.spacingMode === 'separate' ? 'Gap' : 'Offset'}</span>
+				<div class="segmented gap-presets" role="group" aria-label="Gap size">
+					<button
+						type="button"
+						class:active={nearestGapPreset($arrangementPrefs.offset) === 'small'}
+						onclick={() => setGapPreset('small')}
+					>
+						Small
+					</button>
+					<button
+						type="button"
+						class:active={nearestGapPreset($arrangementPrefs.offset) === 'medium'}
+						onclick={() => setGapPreset('medium')}
+					>
+						Medium
+					</button>
+					<button
+						type="button"
+						class:active={nearestGapPreset($arrangementPrefs.offset) === 'large'}
+						onclick={() => setGapPreset('large')}
+					>
+						Large
+					</button>
+				</div>
+			</label>
+		{:else}
+			<label class="row">
+				<span>{$arrangementPrefs.spacingMode === 'separate' ? 'Gap (px)' : 'Offset (px)'}</span>
+				<input
+					type="number"
+					min={$arrangementPrefs.spacingMode === 'separate' ? 0 : 1}
+					max="500"
+					value={$arrangementPrefs.offset}
+					oninput={(e) =>
+						patchArrangementPrefs({
+							offset: parseFloat((e.currentTarget as HTMLInputElement).value) || 0
+						})}
+				/>
+			</label>
+		{/if}
 	{/if}
 	{#if showApplyButton || showFaceControl}
 		<label class="row toggle-row">
