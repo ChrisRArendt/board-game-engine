@@ -4,8 +4,11 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev",
-		"dev:force": "vite dev --force",
+		"dev": "node scripts/dev-with-tunnel.mjs",
+		"dev:local": "vite dev",
+		"dev:tunnel": "node scripts/dev-with-tunnel.mjs",
+		"dev:force": "node scripts/dev-with-tunnel.mjs --force",
+		"dev:force:local": "vite dev --force",
 		"build": "vite build",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
@@ -15,6 +18,8 @@
 		"@sveltejs/kit": "^2.15.0",
 		"@sveltejs/vite-plugin-svelte": "^4.0.0",
 		"@types/node": "^22.10.0",
+		"@types/qrcode": "^1.5.6",
+		"qrcode": "^1.5.4",
 		"svelte": "^5.0.0",
 		"svelte-check": "^4.0.0",
 		"typescript": "^5.6.0",
