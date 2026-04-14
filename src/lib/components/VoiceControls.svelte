@@ -115,9 +115,11 @@
 
 		<ul class="peers" aria-label="Voice participants">
 			<li class="peer-row self">
-				<div class="identity-wrap" class:speaking={$voiceChatState.localSpeaking}>
+				<div class="identity-wrap">
 					<UserIdentity
 						variant="compact"
+						wrapVoiceRing
+						voiceActive={$voiceChatState.localSpeaking}
 						displayName={displayName}
 						avatarUrl={selfAvatarUrl}
 						subtitle={selfEmail}
@@ -127,10 +129,12 @@
 			</li>
 			{#each Object.values($voiceChatState.peers) as p (p.userId)}
 				{@const pref = prefFor(p.userId)}
-				<li class="peer-row" class:speaking={p.speaking}>
-					<div class="identity-wrap" class:speaking={p.speaking}>
+				<li class="peer-row">
+					<div class="identity-wrap">
 						<UserIdentity
 							variant="compact"
+							wrapVoiceRing
+							voiceActive={p.speaking}
 							displayName={p.displayName}
 							avatarUrl={p.avatarUrl}
 							subtitle={p.subtitle}
@@ -188,6 +192,7 @@
 		color: #e8e8ec;
 		border-radius: 10px;
 		padding: 10px 12px;
+		overflow: visible;
 		min-width: 240px;
 		max-width: min(380px, calc(100vw - 24px));
 		font-size: 13px;
@@ -265,7 +270,8 @@
 	.peers {
 		list-style: none;
 		margin: 0;
-		padding: 0;
+		/* Inset so speaking rings are not clipped by scroll container edges (esp. top/left) */
+		padding: 8px 6px 8px 8px;
 		max-height: min(280px, 46vh);
 		overflow-y: auto;
 		display: flex;
@@ -288,25 +294,6 @@
 	}
 	.identity-wrap {
 		min-width: 0;
-	}
-	.identity-wrap.speaking :global(.circle) {
-		box-shadow:
-			0 0 0 2px rgba(34, 197, 94, 0.9),
-			0 0 14px rgba(34, 197, 94, 0.35);
-		animation: voice-ring 1.1s ease-in-out infinite;
-	}
-	@keyframes voice-ring {
-		0%,
-		100% {
-			box-shadow:
-				0 0 0 2px rgba(34, 197, 94, 0.85),
-				0 0 12px rgba(34, 197, 94, 0.3);
-		}
-		50% {
-			box-shadow:
-				0 0 0 3px rgba(52, 211, 153, 0.95),
-				0 0 22px rgba(34, 197, 94, 0.55);
-		}
 	}
 	.peer-ctrl {
 		display: flex;

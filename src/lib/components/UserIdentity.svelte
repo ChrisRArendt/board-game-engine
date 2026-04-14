@@ -17,6 +17,9 @@
 	/** Selection / presence ring color (e.g. multiplayer cursor color). */
 	export let ringColor: string | undefined = undefined;
 	export let showRing = false;
+	/** Wrap avatar in an outer ring slot (e.g. voice panel) so speaking glow is not clipped by .circle overflow */
+	export let wrapVoiceRing = false;
+	export let voiceActive = false;
 
 	let imgError = false;
 
@@ -30,25 +33,49 @@
 </script>
 
 <div class="identity" class:nav={variant === 'nav'} class:row={variant === 'row'} class:compact={variant === 'compact'} class:board={variant === 'board'}>
-	<div
-		class="circle"
-		class:has-ring={showRing && ringColor}
-		style:width="{size}px"
-		style:height="{size}px"
-		style:--ring={ringColor ?? 'transparent'}
-		style:background={avatarUrl && !imgError ? undefined : fallbackBg}
-	>
-		{#if avatarUrl && !imgError}
-			<img
-				src={avatarUrl}
-				alt=""
-				referrerpolicy="no-referrer"
-				on:error={() => (imgError = true)}
-			/>
-		{:else}
-			<span class="initials" aria-hidden="true">{initials}</span>
-		{/if}
-	</div>
+	{#if wrapVoiceRing}
+		<div class="voice-ring-slot" class:active={voiceActive} aria-hidden="true">
+			<div
+				class="circle"
+				class:has-ring={showRing && ringColor}
+				style:width="{size}px"
+				style:height="{size}px"
+				style:--ring={ringColor ?? 'transparent'}
+				style:background={avatarUrl && !imgError ? undefined : fallbackBg}
+			>
+				{#if avatarUrl && !imgError}
+					<img
+						src={avatarUrl}
+						alt=""
+						referrerpolicy="no-referrer"
+						on:error={() => (imgError = true)}
+					/>
+				{:else}
+					<span class="initials" aria-hidden="true">{initials}</span>
+				{/if}
+			</div>
+		</div>
+	{:else}
+		<div
+			class="circle"
+			class:has-ring={showRing && ringColor}
+			style:width="{size}px"
+			style:height="{size}px"
+			style:--ring={ringColor ?? 'transparent'}
+			style:background={avatarUrl && !imgError ? undefined : fallbackBg}
+		>
+			{#if avatarUrl && !imgError}
+				<img
+					src={avatarUrl}
+					alt=""
+					referrerpolicy="no-referrer"
+					on:error={() => (imgError = true)}
+				/>
+			{:else}
+				<span class="initials" aria-hidden="true">{initials}</span>
+			{/if}
+		</div>
+	{/if}
 	<div class="text" class:stacked={variant === 'nav' || variant === 'row' || variant === 'compact'}>
 		<span class="primary">{displayName}</span>
 		{#if showSubtitle}
@@ -156,5 +183,33 @@
 	.board .sub {
 		color: #cbd5e1;
 		font-size: 10px;
+	}
+	.voice-ring-slot {
+		flex-shrink: 0;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-sizing: content-box;
+	}
+	.voice-ring-slot.active {
+		padding: 3px;
+		box-shadow:
+			0 0 0 2px rgba(34, 197, 94, 0.92),
+			0 0 14px rgba(34, 197, 94, 0.45);
+		animation: bge-voice-ring-pulse 1.1s ease-in-out infinite;
+	}
+	@keyframes bge-voice-ring-pulse {
+		0%,
+		100% {
+			box-shadow:
+				0 0 0 2px rgba(34, 197, 94, 0.85),
+				0 0 10px rgba(34, 197, 94, 0.3);
+		}
+		50% {
+			box-shadow:
+				0 0 0 3px rgba(52, 211, 153, 0.95),
+				0 0 22px rgba(34, 197, 94, 0.55);
+		}
 	}
 </style>

@@ -5,6 +5,32 @@ import { createSupabaseBrowserClient } from '$lib/supabase/client';
 import { buildIceServers } from '$lib/voice/iceServers';
 import { friendVoicePrefs, getEffectivePeerVolume, voiceDevicePrefs } from './voiceSettings';
 
+// #region agent log
+const BGE_DBG_INGEST = 'http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1';
+function bgeVoiceDbg(
+	hypothesisId: string,
+	location: string,
+	message: string,
+	data: Record<string, unknown>
+) {
+	if (!browser) return;
+	const payload = {
+		sessionId: 'f22ac7',
+		hypothesisId,
+		location,
+		message,
+		data: { ...data, selfTail: typeof selfUserId === 'string' ? selfUserId.slice(-8) : '' },
+		timestamp: Date.now()
+	};
+	console.info('[bge-voice]', JSON.stringify(payload));
+	void fetch(BGE_DBG_INGEST, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'f22ac7' },
+		body: JSON.stringify(payload)
+	}).catch(() => {});
+}
+// #endregion
+
 export type VoicePeerUI = {
 	userId: string;
 	displayName: string;
@@ -66,17 +92,28 @@ let localMicAnalyser: AnalyserNode | null = null;
 let localMicSource: MediaStreamAudioSourceNode | null = null;
 let localMicSilentGain: GainNode | null = null;
 
+/** After meterGain, remote RMS ~3.5× higher so quiet mobile uplinks still trip “speaking” (playback is unboosted) */
+const REMOTE_METER_BOOST = 3.5;
+/** Float time-domain RMS threshold on the boosted meter branch */
+const SPEAK_RMS_REMOTE = 0.015;
+const SPEAK_RMS_LOCAL = 0.02;
+
 type PeerInternal = {
 	pc: RTCPeerConnection;
 	remoteUserId: string;
 	peerGain: GainNode;
 	analyser: AnalyserNode;
+	meterGain: GainNode;
+	meterSilent: GainNode;
 	sourceNode: MediaStreamAudioSourceNode | null;
 };
 
 const peersInternal = new Map<string, PeerInternal>();
 const pendingRemoteIce = new Map<string, RTCIceCandidateInit[]>();
 const pendingLocalIce = new Map<string, RTCIceCandidateInit[]>();
+/** Debug: max boosted RMS per remote peer within 4s window (hypothesis C) */
+const dbgRemoteRmsWindow = new Map<string, number>();
+let dbgPeerRmsLastFlush = 0;
 
 function shouldInitiateOffer(a: string, b: string): boolean {
 	return a.localeCompare(b) < 0;
@@ -273,7 +310,9 @@ function startSpeakingLoop() {
 				sum += x * x;
 			}
 			const rms = Math.sqrt(sum / buf.length);
-			const speaking = rms > 0.02;
+			const prevMax = dbgRemoteRmsWindow.get(uid) ?? 0;
+			if (rms > prevMax) dbgRemoteRmsWindow.set(uid, rms);
+			const speaking = rms > SPEAK_RMS_REMOTE;
 			const cur = get(voiceChatState).peers[uid]?.speaking;
 			if (speaking !== cur) {
 				updatePeerUI(uid, { speaking });
@@ -290,13 +329,30 @@ function startSpeakingLoop() {
 				sum += x * x;
 			}
 			const rms = Math.sqrt(sum / buf.length);
-			const speaking = rms > 0.02;
+			const speaking = rms > SPEAK_RMS_LOCAL;
 			if (speaking !== st.localSpeaking) {
 				emitState({ localSpeaking: speaking });
 			}
 		} else if (st.localSpeaking) {
 			emitState({ localSpeaking: false });
 		}
+		// #region agent log
+		const now = Date.now();
+		if (now - dbgPeerRmsLastFlush >= 4000 && peersInternal.size > 0) {
+			dbgPeerRmsLastFlush = now;
+			for (const [uid, p] of peersInternal) {
+				const maxR = dbgRemoteRmsWindow.get(uid) ?? 0;
+				dbgRemoteRmsWindow.set(uid, 0);
+				bgeVoiceDbg('C', 'voiceChat:rmsWindow', 'peer_meter_max_4s', {
+					peerTail: uid.slice(-8),
+					maxRmsBoosted: Number(maxR.toFixed(6)),
+					conn: p.pc.connectionState,
+					ice: p.pc.iceConnectionState,
+					acState: audioCtx.state
+				});
+			}
+		}
+		// #endregion
 	}, 80);
 }
 
@@ -326,13 +382,20 @@ async function createPeerConnection(
 
 	const analyser = audioCtx.createAnalyser();
 	analyser.fftSize = 256;
-	analyser.connect(peerGain);
+	const meterGain = audioCtx.createGain();
+	meterGain.gain.value = REMOTE_METER_BOOST;
+	const meterSilent = audioCtx.createGain();
+	meterSilent.gain.value = 0;
+	/* Meter branch only — playback goes src → peerGain so quiet mobile sends don’t affect heard level */
+	analyser.connect(meterSilent).connect(audioCtx.destination);
 
 	peersInternal.set(remoteUserId, {
 		pc,
 		remoteUserId,
 		peerGain,
 		analyser,
+		meterGain,
+		meterSilent,
 		sourceNode: null
 	});
 
@@ -347,6 +410,23 @@ async function createPeerConnection(
 
 	pc.onconnectionstatechange = () => {
 		updatePeerUI(remoteUserId, { connectionState: pc.connectionState });
+		// #region agent log
+		bgeVoiceDbg('A', 'voiceChat:connState', 'pc_connection', {
+			peerTail: remoteUserId.slice(-8),
+			connectionState: pc.connectionState,
+			iceConnectionState: pc.iceConnectionState
+		});
+		// #endregion
+	};
+
+	pc.oniceconnectionstatechange = () => {
+		// #region agent log
+		bgeVoiceDbg('A', 'voiceChat:iceState', 'pc_ice', {
+			peerTail: remoteUserId.slice(-8),
+			iceConnectionState: pc.iceConnectionState,
+			connectionState: pc.connectionState
+		});
+		// #endregion
 	};
 
 	pc.onicecandidate = (ev) => {
@@ -372,12 +452,37 @@ async function createPeerConnection(
 		}
 		const src = audioCtx.createMediaStreamSource(stream);
 		peer.sourceNode = src;
-		src.connect(peer.analyser);
+		src.connect(peer.peerGain);
+		src.connect(peer.meterGain);
+		peer.meterGain.connect(peer.analyser);
 		/* Desktop often keeps AudioContext suspended until explicit resume; remote RTP can arrive without unlocking output. */
 		void audioCtx.resume();
 		const t = ev.track;
+		// #region agent log
+		bgeVoiceDbg('B', 'voiceChat:ontrack', 'remote_track', {
+			peerTail: remoteUserId.slice(-8),
+			kind: t?.kind,
+			muted: t?.muted,
+			readyState: t?.readyState,
+			id: t?.id,
+			acState: audioCtx.state
+		});
+		// #endregion
 		if (t) {
-			t.addEventListener('unmute', () => void audioCtx?.resume(), { once: true });
+			t.addEventListener(
+				'unmute',
+				() => {
+					// #region agent log
+					bgeVoiceDbg('B', 'voiceChat:trackUnmute', 'track_unmute', {
+						peerTail: remoteUserId.slice(-8),
+						muted: t.muted,
+						acState: audioCtx?.state ?? 'gone'
+					});
+					// #endregion
+					void audioCtx?.resume();
+				},
+				{ once: true }
+			);
 		}
 	};
 
@@ -397,6 +502,9 @@ async function sendOffer(
 ) {
 	if (peersInternal.has(remoteUserId)) return;
 	const pc = await createPeerConnection(remoteUserId, remoteName, remoteMeta);
+	// #region agent log
+	bgeVoiceDbg('D', 'voiceChat:sendOffer', 'initiating_offer', { toTail: remoteUserId.slice(-8) });
+	// #endregion
 	const offer = await pc.createOffer();
 	await pc.setLocalDescription(offer);
 	broadcast('voice_offer', {
@@ -416,6 +524,9 @@ async function handleRemoteOffer(
 	meta?: { avatarUrl?: string | null; subtitle?: string | null }
 ) {
 	if (peersInternal.has(from)) return;
+	// #region agent log
+	bgeVoiceDbg('D', 'voiceChat:handleRemoteOffer', 'incoming_offer', { fromTail: from.slice(-8) });
+	// #endregion
 	const pc = await createPeerConnection(from, fromName ?? 'Player', meta);
 	await pc.setRemoteDescription(new RTCSessionDescription(sdp));
 	await flushPendingRemoteIce(from);
