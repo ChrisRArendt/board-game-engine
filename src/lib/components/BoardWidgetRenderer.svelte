@@ -7,6 +7,8 @@
 	export let widget: BoardWidget;
 	export let editorMode = false;
 	export let replayMode = false;
+	/** Table zoom — scales selection chrome when zoomed in. */
+	export let boardZoom = 1;
 	export let selected = false;
 	export let dragging = false;
 	export let onpointerdown: ((e: PointerEvent) => void) | undefined = undefined;
@@ -80,6 +82,7 @@
 	style:width="{widget.w}px"
 	style:min-height="{widget.h}px"
 	style:z-index={widget.zIndex}
+	style:--board-zoom={boardZoom}
 	style:background={widget.type === 'label' && labelSty
 		? labelSty.backgroundTransparent
 			? 'transparent'
@@ -197,8 +200,17 @@
 		pointer-events: auto;
 	}
 	.board-widget.selected {
-		outline: 2px solid var(--color-accent, #3b82f6);
-		outline-offset: 1px;
+		--sel-extra: min(
+			6px,
+			max(0px, calc((min(var(--board-zoom, 1), 3) - 1) * 2px))
+		);
+		--sel-glow: calc(8px + var(--sel-extra) * 1.5);
+		outline: calc(2px + var(--sel-extra) * 0.6) solid var(--color-accent, #60a5fa);
+		outline-offset: calc(1px + var(--sel-extra) * 0.2);
+		box-shadow:
+			0 0 0 1px rgba(0, 30, 60, 0.35),
+			0 0 var(--sel-glow) rgba(59, 130, 246, 0.45),
+			0 0 calc(var(--sel-glow) * 1.7) rgba(59, 130, 246, 0.2);
 	}
 	.board-widget.dragging {
 		opacity: 0.92;

@@ -730,6 +730,7 @@
 					{#if !piece.hidden}
 						<Piece
 							{piece}
+							boardZoom={zm}
 							curGame={$game.curGame}
 							assetBaseUrl={$game.assetBaseUrl}
 							replayMode={replayMode}
@@ -766,6 +767,7 @@
 					{#if !widget.hidden}
 						<BoardWidgetRenderer
 							{widget}
+							boardZoom={zm}
 							{editorMode}
 							{replayMode}
 							selected={$game.selectedWidgetIds.has(widget.id)}
