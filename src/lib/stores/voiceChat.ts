@@ -2,7 +2,7 @@ import { browser } from '$app/environment';
 import { get, writable } from 'svelte/store';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { createSupabaseBrowserClient } from '$lib/supabase/client';
-import { buildIceServers } from '$lib/voice/iceServers';
+import { buildIceServers, turnRelayConfigured } from '$lib/voice/iceServers';
 import { friendVoicePrefs, getEffectivePeerVolume, voiceDevicePrefs } from './voiceSettings';
 
 // #region agent log
@@ -374,7 +374,13 @@ async function createPeerConnection(
 	const existing = peersInternal.get(remoteUserId);
 	if (existing) return existing.pc;
 
-	const pc = new RTCPeerConnection({ iceServers: buildIceServers() });
+	const pc = new RTCPeerConnection({
+		iceServers: buildIceServers(),
+		bundlePolicy: 'balanced',
+		rtcpMuxPolicy: 'require',
+		/** Pre-gather candidates so offers/answers converge faster when relay is available */
+		iceCandidatePoolSize: turnRelayConfigured() ? 8 : 0
+	});
 
 	const peerGain = audioCtx.createGain();
 	applyPeerGain(remoteUserId);
@@ -742,6 +748,17 @@ export async function joinVoiceRoom(lobbyId: string, presence: VoicePresencePayl
 					error: null
 				}));
 				applyDeafenGain();
+				if (!turnRelayConfigured() && import.meta.env.PROD) {
+					console.warn(
+						'[bge] Voice: no PUBLIC_TURN_URL — mesh audio often fails across NAT/firewalls (one device hears all; laptops hear nothing). Configure TURN in production.'
+					);
+				}
+				// #region agent log
+				bgeVoiceDbg('E', 'voiceChat:joined', 'turn_relay_status', {
+					relay: turnRelayConfigured(),
+					prod: import.meta.env.PROD
+				});
+				// #endregion
 				try {
 					sessionStorage.setItem(`bge_voice_auto_join:${lobbyId}`, '1');
 				} catch {
