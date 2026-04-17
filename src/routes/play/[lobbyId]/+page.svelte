@@ -14,9 +14,10 @@
 	import Settings from '$lib/components/windows/Settings.svelte';
 	import CardViewer from '$lib/components/windows/CardViewer.svelte';
 	import PlayControlsHelp from '$lib/components/PlayControlsHelp.svelte';
+	import PlayAssistBar from '$lib/components/PlayAssistBar.svelte';
 	import PiecePeekOverlay from '$lib/components/PiecePeekOverlay.svelte';
 	import type { GameDataJson } from '$lib/engine/types';
-	import { pieceSupportsFlip } from '$lib/engine/pieces';
+	import { hasAttr, pieceSupportsFlip } from '$lib/engine/pieces';
 	import * as g from '$lib/stores/game';
 	import { game } from '$lib/stores/game';
 	import { registerGameEmit } from '$lib/stores/game';
@@ -234,8 +235,21 @@
 			const sel = get(game).pieces.filter((p) => get(game).selectedIds.has(p.id));
 			if (sel.every((p) => pieceSupportsFlip(p))) sel.forEach((p) => g.flipPiece(p.id));
 		} else if (e.key === 's' || e.key === 'S') {
-			const sel = get(game).pieces.filter((p) => get(game).selectedIds.has(p.id));
-			if (sel.length > 1 && sel.every((p) => p.attributes.includes('shuffle'))) g.runShuffleSelected();
+			if (isTypingInField(e.target)) return;
+			const st = get(game);
+			const sel = st.pieces.filter((p) => st.selectedIds.has(p.id));
+			const arrangeUnlockedCount = [...st.selectedIds].filter((id) => {
+				const p = st.pieces.find((x) => x.id === id);
+				return p != null && !p.locked;
+			}).length;
+			if (
+				sel.length > 1 &&
+				sel.every((p) => hasAttr(p, 'move')) &&
+				arrangeUnlockedCount >= 2
+			) {
+				e.preventDefault();
+				g.runShuffleMovableSelection();
+			}
 		} else if (e.key === 'a' || e.key === 'A') {
 			g.runArrangeSmart();
 		} else if (e.code === 'KeyP') {
@@ -282,6 +296,7 @@
 			raw instanceof Element ? raw : raw instanceof Node ? raw.parentElement : null;
 		if (el?.closest?.('[data-toolbar]')) return;
 		if (el?.closest?.('[data-bge-context-menu]')) return;
+		if (el?.closest?.('[data-play-assist-bar]')) return;
 		ctxOpen = false;
 	}
 
@@ -699,6 +714,12 @@
 	{/if}
 	<PiecePeekOverlay pieceId={peekPieceId} selfDisplayName={data.profile?.display_name ?? 'You'} />
 
+	<PlayAssistBar
+		scrollWheelPans={$settings.scrollWheelPans}
+		replayMode={$isHistoryReplayActive}
+		selfDisplayName={data.profile?.display_name ?? 'You'}
+	/>
+
 	{#if $voiceChatState.joined}
 		<div class="voice-dock-play">
 			<VoiceControls
@@ -742,6 +763,9 @@
 	}
 	.play-overlay-root :global([data-bge-piece-peek]) {
 		pointer-events: none;
+	}
+	.play-overlay-root :global([data-play-assist-bar]) {
+		pointer-events: auto;
 	}
 	.voice-dock-play {
 		position: fixed;

@@ -27,7 +27,15 @@
 	$: showDup = sel.length > 0 && sel.every((p) => hasAttr(p, 'duplicate'));
 	$: showFlip = sel.length > 0 && sel.every((p) => pieceSupportsFlip(p));
 	$: showDest = sel.length > 0 && sel.every((p) => hasAttr(p, 'destroy'));
-	$: showShuf = sel.length > 1 && sel.every((p) => hasAttr(p, 'shuffle'));
+	$: arrangeUnlockedCount = [...$game.selectedIds].filter((id) => {
+		const p = $game.pieces.find((x) => x.id === id);
+		return p != null && !p.locked;
+	}).length;
+	/** Same eligibility as context-menu Shuffle / key S — movable selection, 2+ unlocked. */
+	$: showShuf =
+		sel.length > 1 &&
+		sel.every((p) => hasAttr(p, 'move')) &&
+		arrangeUnlockedCount >= 2;
 	$: showFan = sel.length > 1;
 	$: showStack = sel.length > 1;
 
@@ -297,7 +305,7 @@
 				</li>
 			{/if}
 			{#if showShuf}
-				<li class="shuf"><button type="button" class="tb-btn" onclick={() => g.runShuffleSelected()}>Shuffle</button></li>
+				<li class="shuf"><button type="button" class="tb-btn" onclick={() => g.runShuffleMovableSelection()}>Shuffle</button></li>
 			{/if}
 			{#if showFan}
 				<li class="fan"><button type="button" class="tb-btn" onclick={() => g.runArrangeFanned()}>Fan</button></li>
@@ -334,7 +342,7 @@
 				</li>
 			{/if}
 			{#if showShuf}
-				<li class="shuf"><button type="button" class="tb-btn" onclick={() => g.runShuffleSelected()}>Shuffle</button></li>
+				<li class="shuf"><button type="button" class="tb-btn" onclick={() => g.runShuffleMovableSelection()}>Shuffle</button></li>
 			{/if}
 			{#if showFan}
 				<li class="fan"><button type="button" class="tb-btn" onclick={() => g.runArrangeFanned()}>Fan</button></li>

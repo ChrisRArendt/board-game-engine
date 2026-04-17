@@ -20,7 +20,6 @@ import type {
 import { boardWidgetFromData } from '$lib/engine/boardWidgets';
 import { DEFAULT_PIECE_COLOR_PALETTE } from '$lib/engine/types';
 import {
-	arrangeFanned,
 	arrangeStacked,
 	bringDraggingToFront,
 	hasAttr,
@@ -56,6 +55,7 @@ import {
 	parsePlayerSlotsFromJson,
 	PLAYER_SLOT_MAX
 } from '$lib/engine/stash';
+import { arrangementPrefs } from './arrangementPrefs';
 import {
 	computeFanDealPositionsInRect,
 	computePlacementPositions,
@@ -1056,16 +1056,19 @@ export function runArrangeGroupByPieceType() {
 	}
 }
 
+/**
+ * Fan on a circular arc — same math as right-click **Arrange → Fan** (not a flat row; see {@link runSpreadCustom} for that).
+ * Uses overlap/separate, gap, and face from {@link arrangementPrefs}.
+ */
+export function runArrangeFanFromPrefs(): Promise<boolean> {
+	const { spacingMode, cols, offset, arrangeFaceUp } = get(arrangementPrefs);
+	/** Preserve each card’s face — only reposition into the arc (Arrange prefs still control gap/overlap). */
+	return applyPlacementArrangementToSelection('fan', spacingMode, cols, offset, arrangeFaceUp, true);
+}
+
+/** Toolbar / legacy name: real arc fan from prefs (replaces the old horizontal-strip helper). */
 export function runArrangeFanned() {
-	game.update((s) => {
-		const u = arrangeFanned(s.pieces, s.selectedIds);
-		const pieces = s.pieces.map((p) => {
-			const upd = u.get(p.id);
-			return upd ? { ...p, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
-		});
-		return { ...s, pieces };
-	});
-	emitMovesForSelected();
+	void runArrangeFanFromPrefs();
 }
 
 export function runArrangeStacked() {
@@ -1101,7 +1104,8 @@ function emitMovesForSelected() {
 /**
  * Reposition selected pieces using the same placement math as the editor / piece library.
  * Order follows layer order (back → front). Locked pieces are skipped. Emits `piece_moves_batch` for play sync.
- * For flip-capable pieces, `faceUp` sets face-up (front) vs face-down (back) after arranging.
+ * For flip-capable pieces, `faceUp` sets face-up (front) vs face-down (back) after arranging — unless
+ * `preservePieceFaces` is true (play Fan / Smart fan: move only, do not batch-flip to match prefs).
  * Animates each piece in sequence (stagger) into place, then resolves. Emits once after motion completes.
  */
 export function applyPlacementArrangementToSelection(
@@ -1109,7 +1113,8 @@ export function applyPlacementArrangementToSelection(
 	spacingMode: PlacementSpacingMode,
 	cols: number,
 	offset: number,
-	faceUp = true
+	faceUp = true,
+	preservePieceFaces = false
 ): Promise<boolean> {
 	const st = get(game);
 	const pieces: PieceInstance[] = [...st.selectedIds]
@@ -1151,7 +1156,11 @@ export function applyPlacementArrangementToSelection(
 		const p = pieces[i];
 		const pos = positions[i];
 		if (!pos) continue;
-		const flipped = pieceSupportsFlip(p) ? flippedTarget : p.flipped;
+		const flipped = preservePieceFaces
+			? p.flipped
+			: pieceSupportsFlip(p)
+				? flippedTarget
+				: p.flipped;
 		steps.push({ id: p.id, x: pos.x, y: pos.y, flipped, rotation: arrangeSnapRotationDeg() });
 	}
 
@@ -1239,12 +1248,16 @@ export function runSpreadCustom(gap: number, angleDeg: number) {
 	emitMovesForSelected();
 }
 
+/**
+ * Keyboard A: if the first selected piece (board order) is face-down (`flipped`), stack; otherwise arc fan
+ * ({@link runArrangeFanFromPrefs}).
+ */
 export function runArrangeSmart() {
 	const s = get(game);
 	const first = s.pieces.find((p) => s.selectedIds.has(p.id));
 	if (!first) return;
 	if (first.flipped) runArrangeStacked();
-	else runArrangeFanned();
+	else void runArrangeFanFromPrefs();
 }
 
 export function runShuffleStackToolbar() {

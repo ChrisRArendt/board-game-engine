@@ -28,7 +28,7 @@
 			<div class="desc">Shuffle selection.</div>
 
 			<div class="label"><kbd>A</kbd></div>
-			<div class="desc">Smart arrange (fan or stack by face).</div>
+			<div class="desc">Smart arrange: stack if the top selected card is face-down, otherwise fan on an arc.</div>
 
 			<div class="label"><kbd>Backspace</kbd></div>
 			<div class="desc">Destroy (if allowed).</div>
