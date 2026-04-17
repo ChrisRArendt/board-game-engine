@@ -3,6 +3,7 @@
 	import { ARRANGEMENT_GAP_PRESET } from '$lib/editor/arrangementGapPresets';
 	import { arrangementPrefs, patchArrangementPrefs } from '$lib/stores/arrangementPrefs';
 	import SpreadDirectionDial from '$lib/components/SpreadDirectionDial.svelte';
+	import PlayAssistActionIcon from '$lib/components/icons/PlayAssistActionIcon.svelte';
 	import * as g from '$lib/stores/game';
 	import { get } from 'svelte/store';
 
@@ -389,7 +390,8 @@
 			disabled={useSelectionUnlockedHint && unlockedCount < 2}
 			onclick={apply}
 		>
-			{compact ? 'Apply' : 'Apply arrangement'}
+			<PlayAssistActionIcon kind="spreadRow" size={18} />
+			<span class="arrange-apply-label">{compact ? 'Apply' : 'Apply arrangement'}</span>
 		</button>
 		{#if useSelectionUnlockedHint && unlockedCount < 2 && selectedCount >= 2}
 			<p class="subhint warn">Select at least two unlocked pieces to arrange.</p>
@@ -466,13 +468,13 @@
 		color: var(--color-text);
 	}
 	.layout-btn.active {
-		background: color-mix(in srgb, var(--color-accent, #3b82f6) 92%, #fff);
-		border-color: transparent;
-		color: #fff;
-		box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 22%, transparent);
+		background: var(--ctx-choice-selected-bg, var(--color-text-muted));
+		border-color: color-mix(in srgb, var(--ctx-choice-selected-fg, var(--color-text)) 22%, transparent);
+		color: var(--ctx-choice-selected-fg, var(--color-text));
+		box-shadow: none;
 	}
 	.layout-btn.active .layout-label {
-		color: #fff;
+		color: inherit;
 	}
 	.layout-icon {
 		width: 28px;
@@ -526,17 +528,34 @@
 		border-left: 1px solid var(--color-border);
 	}
 	.segmented button.active {
-		background: var(--color-accent, #3b82f6);
-		color: #fff;
+		background: var(--ctx-choice-selected-bg, var(--color-text-muted));
+		color: var(--ctx-choice-selected-fg, var(--color-text));
+		box-shadow: none;
 	}
 	.arrange-apply {
+		display: flex;
+		align-items: center;
+		justify-content: flex-start;
+		gap: 8px;
 		padding: 8px 12px;
 		border-radius: 6px;
 		border: none;
 		background: var(--color-accent, #3b82f6);
 		color: #fff;
 		font-size: 13px;
+		text-align: left;
 		cursor: pointer;
+	}
+	.arrange-apply :global(.assist-act-ico) {
+		opacity: 1;
+	}
+	.arrange-apply-label {
+		flex: 1;
+		min-width: 0;
+		text-align: left;
+	}
+	.arrange-apply:hover:not(:disabled) {
+		filter: brightness(1.05);
 	}
 	.compact .arrange-apply {
 		padding: 4px 8px;

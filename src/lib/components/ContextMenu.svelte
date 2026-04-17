@@ -19,6 +19,7 @@
 	import { selectablePiecesHitAtClient } from '$lib/engine/pileSelect';
 	import type { PieceInstance } from '$lib/engine/types';
 	import { isHistoryReplayActive } from '$lib/stores/history';
+	import PlayAssistActionIcon from '$lib/components/icons/PlayAssistActionIcon.svelte';
 
 	export let open = false;
 	export let x = 0;
@@ -35,6 +36,10 @@
 	let pilePickCountStr = '1';
 	let pilePickEnd: 'top' | 'bottom' = 'top';
 	let prevPileMenuSnap = '';
+
+	/** Root lists shortcuts; `pile` / `arrange` show full controls + Back. */
+	let ctxMenuStep: 'root' | 'pile' | 'arrange' = 'root';
+	$: if (!open) ctxMenuStep = 'root';
 
 	function prefersReducedMotion(): boolean {
 		if (!browser || typeof matchMedia === 'undefined') return false;
@@ -81,7 +86,8 @@
 	}
 	$: if (!open) prevPileMenuSnap = '';
 
-	const PILE_COUNT_COARSE = 5;
+	/** Double − / ++ buttons: step by 2 (single + / − step by 1). */
+	const PILE_COUNT_COARSE = 2;
 
 	function pileCountMax(): number {
 		return Math.max(1, pileHitPieces.length);
@@ -132,14 +138,17 @@
 	}).length;
 	$: showFlip = sel.some((p) => pieceSupportsFlip(p));
 	$: showArrange = sel.length > 1 && sel.every((p) => hasAttr(p, 'move'));
+	$: if (open && ctxMenuStep === 'pile' && !showPilePick) ctxMenuStep = 'root';
+	$: if (open && ctxMenuStep === 'arrange' && !showArrange) ctxMenuStep = 'root';
 	$: showShuffle =
 		sel.length > 1 &&
 		sel.every((p) => hasAttr(p, 'move')) &&
 		arrangeUnlockedCount >= 2;
 	/** Same eligibility as Shuffle — reorder identities by piece type without moving slots. */
 	$: showGroupByType = showShuffle;
+	/** Deal is for multi-card distribution; a single card is easier to drag. */
 	$: showDeal =
-		sel.length >= 1 && sel.every((p) => hasAttr(p, 'move')) && stashRoster.length > 0;
+		sel.length >= 2 && sel.every((p) => hasAttr(p, 'move')) && stashRoster.length > 0;
 
 	$: arrangeFlipCapableCount = sel.filter((p) => pieceSupportsFlip(p)).length;
 
@@ -147,6 +156,10 @@
 		showDeal && (showFlip || showShuffle || showGroupByType || showArrange);
 	$: showSpacerAfterFlip =
 		showFlip && (showShuffle || showGroupByType || showArrange);
+
+	/** Spacer after “Pick from stack” entry when more root rows follow. */
+	$: showSpacerAfterPickEntry =
+		showPilePick && (showDeal || showFlip || showShuffle || showGroupByType || showArrange);
 
 	/** Reposition after mount / when pointer or menu content changes / resize. */
 	$: if (
@@ -156,6 +169,7 @@
 	) {
 		void x;
 		void y;
+		void ctxMenuStep;
 		void showPilePick;
 		void showDeal;
 		void showFlip;
@@ -191,7 +205,114 @@
 		onclick={(e) => e.stopPropagation()}
 		onpointerdown={(e) => e.stopPropagation()}
 	>
-		{#if showPilePick}
+		{#if ctxMenuStep === 'root'}
+			{#if showPilePick}
+				<li class="ctx-action" role="presentation">
+					<button type="button" class="ctx-action-btn" onclick={() => (ctxMenuStep = 'pile')}>
+						<PlayAssistActionIcon kind="stack" size={18} />
+						<span class="ctx-action-label">Pick from stack</span>
+					</button>
+				</li>
+				{#if showSpacerAfterPickEntry}
+					<li class="spacer"></li>
+				{/if}
+			{/if}
+			{#if showDeal}
+			<li class="ctx-action" role="presentation">
+				<button
+					type="button"
+					class="ctx-action-btn"
+					onclick={() => {
+						openDealDialog({
+							roster: stashRoster,
+							maxCards: sel.filter((p) => hasAttr(p, 'move')).length,
+							reducedMotion: prefersReducedMotion()
+						});
+						/** Close after click so release does not hit the board (would deselect → “no cards”). */
+						setTimeout(() => {
+							open = false;
+						}, 0);
+					}}
+				>
+					<PlayAssistActionIcon kind="deal" size={18} />
+					<span class="ctx-action-label">Deal to…</span>
+				</button>
+			</li>
+		{/if}
+		{#if showSpacerAfterDeal}
+			<li class="spacer"></li>
+		{/if}
+		{#if showFlip}
+			<li class="ctx-action" role="presentation">
+				<button
+					type="button"
+					class="ctx-action-btn"
+					onclick={() => {
+						g.flipSelectedPiecesSync();
+						open = false;
+					}}
+				>
+					<PlayAssistActionIcon kind="flip" size={18} />
+					<span class="ctx-action-label">
+						{sel.filter((p) => pieceSupportsFlip(p)).length > 1 ? 'Flip all' : 'Flip'}
+					</span>
+				</button>
+			</li>
+		{/if}
+		{#if showSpacerAfterFlip}
+			<li class="spacer"></li>
+		{/if}
+		{#if showShuffle}
+			<li class="ctx-action" role="presentation">
+				<button
+					type="button"
+					class="ctx-action-btn"
+					onclick={() => {
+						g.runShuffleMovableSelection();
+						open = false;
+					}}
+				>
+					<PlayAssistActionIcon kind="shuffle" size={18} />
+					<span class="ctx-action-label">Shuffle</span>
+				</button>
+			</li>
+		{/if}
+		{#if showShuffle && (showGroupByType || showArrange)}
+			<li class="spacer"></li>
+		{/if}
+		{#if showGroupByType}
+			<li class="ctx-action" role="presentation">
+				<button
+					type="button"
+					class="ctx-action-btn"
+					title="Same layout as now — only swaps which piece sits in which slot, ordered by piece type along the spread. Unsaved boards use size as type hint."
+					onclick={() => {
+						g.runArrangeGroupByPieceType();
+						open = false;
+					}}
+				>
+					<PlayAssistActionIcon kind="sort" size={18} />
+					<span class="ctx-action-label">Sort by type</span>
+				</button>
+			</li>
+		{/if}
+		{#if showGroupByType && showArrange}
+			<li class="spacer"></li>
+		{/if}
+			{#if showArrange}
+				<li class="ctx-action" role="presentation">
+					<button type="button" class="ctx-action-btn" onclick={() => (ctxMenuStep = 'arrange')}>
+						<PlayAssistActionIcon kind="spreadRow" size={18} />
+						<span class="ctx-action-label">Arrange</span>
+					</button>
+				</li>
+			{/if}
+		{:else if ctxMenuStep === 'pile'}
+			<li class="ctx-back-row">
+				<button type="button" class="ctx-submenu-back" onclick={() => (ctxMenuStep = 'root')}>
+					← Back
+				</button>
+			</li>
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
 			<li class="embed pile-embed" onpointerdown={(e) => e.stopPropagation()}>
 				<p class="embed-title">Pick from stack</p>
@@ -252,73 +373,17 @@
 						</button>
 					</div>
 				</div>
-				<button type="button" class="pile-apply" onclick={applyPilePick}>Select</button>
+				<button type="button" class="pile-apply" onclick={applyPilePick}>
+					<PlayAssistActionIcon kind="stack" size={18} />
+					<span class="ctx-action-label">Select</span>
+				</button>
 			</li>
-			<li class="spacer"></li>
-		{/if}
-		{#if showDeal}
-			<li
-				onpointerdown={(e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					openDealDialog({
-						roster: stashRoster,
-						maxCards: sel.filter((p) => hasAttr(p, 'move')).length,
-						reducedMotion: prefersReducedMotion()
-					});
-					/** Close menu after pointerup so release does not hit the board (would deselect → “no cards”). */
-					setTimeout(() => {
-						open = false;
-					}, 0);
-				}}
-			>
-				Deal to…
+		{:else if ctxMenuStep === 'arrange'}
+			<li class="ctx-back-row">
+				<button type="button" class="ctx-submenu-back" onclick={() => (ctxMenuStep = 'root')}>
+					← Back
+				</button>
 			</li>
-		{/if}
-		{#if showSpacerAfterDeal}
-			<li class="spacer"></li>
-		{/if}
-		{#if showFlip}
-			<li
-				onpointerdown={() => {
-					g.flipSelectedPiecesSync();
-					open = false;
-				}}
-			>
-				{sel.filter((p) => pieceSupportsFlip(p)).length > 1 ? 'Flip all' : 'Flip'}
-			</li>
-		{/if}
-		{#if showSpacerAfterFlip}
-			<li class="spacer"></li>
-		{/if}
-		{#if showShuffle}
-			<li
-				onpointerdown={() => {
-					g.runShuffleMovableSelection();
-					open = false;
-				}}
-			>
-				Shuffle
-			</li>
-		{/if}
-		{#if showShuffle && (showGroupByType || showArrange)}
-			<li class="spacer"></li>
-		{/if}
-		{#if showGroupByType}
-			<li
-				title="Same layout as now — only swaps which piece sits in which slot, ordered by piece type along the spread. Unsaved boards use size as type hint."
-				onpointerdown={() => {
-					g.runArrangeGroupByPieceType();
-					open = false;
-				}}
-			>
-				Sort by type
-			</li>
-		{/if}
-		{#if showGroupByType && showArrange}
-			<li class="spacer"></li>
-		{/if}
-		{#if showArrange}
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
 			<li class="embed" onpointerdown={(e) => e.stopPropagation()}>
 				<p class="embed-title">Arrange</p>
@@ -368,9 +433,81 @@
 		color: var(--color-text);
 		cursor: pointer;
 	}
-	.ctx li:not(.embed):not(.spacer):hover {
+	.ctx li:not(.embed):not(.spacer):not(.ctx-action):not(.ctx-back-row):hover {
 		background: var(--color-ctx-hover-bg);
 		color: #fff;
+	}
+	.ctx li.ctx-back-row {
+		padding: 2px 6px;
+		min-height: unset;
+		list-style: none;
+		cursor: default;
+		display: block;
+	}
+	.ctx-submenu-back {
+		display: block;
+		width: 100%;
+		box-sizing: border-box;
+		margin: 0;
+		padding: 6px 10px;
+		border: none;
+		border-radius: 4px;
+		background: transparent;
+		font: inherit;
+		font-size: 15px;
+		line-height: 1.25;
+		text-align: left;
+		color: var(--color-text-muted);
+		cursor: pointer;
+	}
+	.ctx-submenu-back:hover {
+		background: var(--color-ctx-hover-bg);
+		color: #fff;
+	}
+	.ctx-submenu-back:focus-visible {
+		outline: 2px solid var(--color-accent, #3b82f6);
+		outline-offset: 2px;
+	}
+	.ctx li.ctx-action {
+		padding: 2px 6px;
+		min-height: unset;
+		display: block;
+		cursor: default;
+		list-style: none;
+	}
+	.ctx-action-btn {
+		display: flex;
+		align-items: center;
+		justify-content: flex-start;
+		gap: 8px;
+		width: 100%;
+		box-sizing: border-box;
+		margin: 0;
+		padding: 7px 10px;
+		border: none;
+		border-radius: 4px;
+		background: var(--color-accent, #3b82f6);
+		color: #fff;
+		font: inherit;
+		font-size: 16px;
+		line-height: 1.25;
+		text-align: left;
+		cursor: pointer;
+	}
+	.ctx-action-btn :global(.assist-act-ico) {
+		opacity: 1;
+	}
+	.ctx-action-label {
+		flex: 1;
+		min-width: 0;
+		text-align: left;
+	}
+	.ctx-action-btn:hover {
+		filter: brightness(1.05);
+	}
+	.ctx-action-btn:focus-visible {
+		outline: 2px solid var(--color-accent, #3b82f6);
+		outline-offset: 2px;
 	}
 	.ctx li.embed {
 		flex-direction: column;
@@ -480,10 +617,15 @@
 		border-left: 1px solid var(--color-border);
 	}
 	.pile-embed .segmented button.active {
-		background: var(--color-accent, #3b82f6);
-		color: #fff;
+		background: var(--ctx-choice-selected-bg, var(--color-text-muted));
+		color: var(--ctx-choice-selected-fg, var(--color-text));
+		box-shadow: none;
 	}
 	.pile-apply {
+		display: flex;
+		align-items: center;
+		justify-content: flex-start;
+		gap: 8px;
 		box-sizing: border-box;
 		width: 100%;
 		padding: 6px 10px;
@@ -492,7 +634,11 @@
 		border: none;
 		background: var(--color-accent, #3b82f6);
 		color: #fff;
+		text-align: left;
 		cursor: pointer;
+	}
+	.pile-apply :global(.assist-act-ico) {
+		opacity: 1;
 	}
 	.pile-apply:hover {
 		filter: brightness(1.05);

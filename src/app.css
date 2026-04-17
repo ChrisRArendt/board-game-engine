@@ -54,6 +54,9 @@ body {
 	--color-slider-track: linear-gradient(to right, #cbd5e1, #94a3b8);
 	--color-history-text: #0f172a;
 	--color-ctx-hover-bg: linear-gradient(to bottom, #94a3b8, #64748b);
+	/** Selected segment / toggle in context menu & Arrange: gray field + dark ink (not bright accent). */
+	--ctx-choice-selected-bg: var(--color-text-muted);
+	--ctx-choice-selected-fg: var(--color-text);
 }
 
 [data-theme='dark'] {
@@ -102,6 +105,8 @@ body {
 	--color-slider-track: linear-gradient(to right, #475569, #334155);
 	--color-history-text: #f1f5f9;
 	--color-ctx-hover-bg: linear-gradient(to bottom, #64748b, #475569);
+	--ctx-choice-selected-bg: var(--color-text-muted);
+	--ctx-choice-selected-fg: var(--color-bg);
 }
 
 html {

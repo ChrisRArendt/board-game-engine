@@ -97,7 +97,7 @@
 		arrangeUnlockedCount >= 2;
 	$: showGroupByType = showShuffle;
 	$: showDeal =
-		sel.length >= 1 && sel.every((p) => hasAttr(p, 'move')) && stashRoster.length > 0;
+		sel.length >= 2 && sel.every((p) => hasAttr(p, 'move')) && stashRoster.length > 0;
 
 	/** Spread / fan / smart arrange need at least two unlocked movables (same gate as shuffle). */
 	$: showMultiArrange = showArrange && arrangeUnlockedCount >= 2;

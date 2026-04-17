@@ -98,21 +98,24 @@
 		<div class="item-grid">
 			<div class="label">Pick from stack</div>
 			<div class="desc">
-				When at least two pieces overlap under the cursor, use the top section to choose how many to select from
-				the <strong>top</strong> or <strong>bottom</strong> of that stack (uses what you right-clicked on).
+				When at least two pieces overlap under the cursor, open <strong>Pick from stack</strong> to choose how many
+				to select from the <strong>top</strong> or <strong>bottom</strong> of that stack (uses what you
+				right-clicked on).
 			</div>
 
 			<div class="label">Deal to…</div>
-			<div class="desc">Deal selected cards to players’ deal zones.</div>
+			<div class="desc">
+				Deal selected cards to players’ deal zones (context menu only when at least two movable cards are selected).
+			</div>
 
 			<div class="label">Flip / Shuffle / Sort</div>
 			<div class="desc">Available when the selection allows.</div>
 
 			<div class="label">Arrange</div>
 			<div class="desc">
-				Spread, grid, honeycomb, fan, pile; spacing for most layouts; face up/down for double-sided cards.
-				<strong>Spread direction</strong> (clock dial) sets the line angle for the bottom assist bar’s Spread action and is
-				remembered.
+				Open <strong>Arrange</strong> for spread, grid, honeycomb, fan, pile; spacing for most layouts; face up/down
+				for double-sided cards. <strong>Spread direction</strong> (clock dial) sets the line angle for the bottom assist
+				bar’s Spread action and is remembered.
 			</div>
 		</div>
 	</section>

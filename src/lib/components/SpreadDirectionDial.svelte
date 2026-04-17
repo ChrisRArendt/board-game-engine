@@ -164,7 +164,8 @@
 		outline: none;
 	}
 	.dial-svg:focus-visible {
-		box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent, #3b82f6) 65%, transparent);
+		box-shadow: 0 0 0 2px
+			color-mix(in srgb, var(--ctx-choice-selected-fg, var(--color-text)) 38%, transparent);
 		border-radius: 50%;
 	}
 	.sector {
@@ -177,12 +178,17 @@
 			filter 120ms ease;
 	}
 	.dial-svg:hover .sector:not(.active) {
-		fill: color-mix(in srgb, var(--color-accent, #3b82f6) 14%, transparent);
+		fill: color-mix(in srgb, var(--color-text-muted) 18%, transparent);
 	}
 	.sector.active {
-		fill: color-mix(in srgb, var(--color-accent, #3b82f6) 52%, transparent);
-		stroke: transparent;
-		filter: brightness(1.08);
+		fill: color-mix(in srgb, var(--ctx-choice-selected-bg, var(--color-text-muted)) 88%, transparent);
+		stroke: color-mix(
+			in srgb,
+			var(--ctx-choice-selected-fg, var(--color-text)) 28%,
+			transparent
+		);
+		stroke-width: 0.5;
+		filter: brightness(1.04);
 	}
 	.inner-ring {
 		stroke: var(--color-border);
