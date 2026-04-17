@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { onMount, tick } from 'svelte';
+	import { get } from 'svelte/store';
 	import { game } from '$lib/stores/game';
 	import * as g from '$lib/stores/game';
 	import { hasAttr, pieceSupportsFlip } from '$lib/engine/pieces';
 	import ArrangementControls from '$lib/components/ArrangementControls.svelte';
-	import DealToDialog from '$lib/components/DealToDialog.svelte';
 	import { users } from '$lib/stores/users';
 	import { settings } from '$lib/stores/settings';
 	import {
@@ -14,16 +15,19 @@
 		playerOrder
 	} from '$lib/stores/network';
 	import { buildStashRoster } from '$lib/engine/stash';
+	import { openDealDialog } from '$lib/stores/dealDialog';
 
 	export let open = false;
 	export let x = 0;
 	export let y = 0;
 	export let selfDisplayName = 'You';
 
-	const MENU_W = 248;
-	const MENU_H = 400;
+	/** Fallbacks before `menuEl` is measured (real menu is often taller than 400px with Arrange). */
+	const MENU_W_FALLBACK = 248;
+	const MENU_H_FALLBACK = 400;
 
-	let dealOpen = false;
+	let menuEl: HTMLUListElement | undefined;
+	let clip = { left: 0, top: 0 };
 
 	function prefersReducedMotion(): boolean {
 		if (!browser || typeof matchMedia === 'undefined') return false;
@@ -46,16 +50,20 @@
 		});
 	})();
 
-	$: clip = (() => {
-		if (!browser) return { left: x, top: y };
+	function fitMenuToViewport() {
+		if (!browser || !menuEl) return;
 		const pad = 8;
-		const maxL = Math.max(pad, window.innerWidth - MENU_W - pad);
-		const maxT = Math.max(pad, window.innerHeight - MENU_H - pad);
-		return {
+		const vw = window.innerWidth;
+		const vh = window.innerHeight;
+		const w = menuEl?.offsetWidth ?? MENU_W_FALLBACK;
+		const h = menuEl?.offsetHeight ?? MENU_H_FALLBACK;
+		const maxL = Math.max(pad, vw - w - pad);
+		const maxT = Math.max(pad, vh - h - pad);
+		clip = {
 			left: Math.min(Math.max(pad, x), maxL),
 			top: Math.min(Math.max(pad, y), maxT)
 		};
-	})();
+	}
 
 	$: sel = $game.pieces.filter((p) => $game.selectedIds.has(p.id));
 	$: arrangeUnlockedCount = [...$game.selectedIds].filter((id) => {
@@ -79,24 +87,42 @@
 		showDeal && (showFlip || showShuffle || showGroupByType || showArrange);
 	$: showSpacerAfterFlip =
 		showFlip && (showShuffle || showGroupByType || showArrange);
-</script>
 
-<DealToDialog
-	open={dealOpen}
-	roster={stashRoster}
-	maxCards={sel.filter((p) => hasAttr(p, 'move')).length}
-	reducedMotion={prefersReducedMotion()}
-	onConfirm={(cardCount, rosterIndices) => {
-		void g.runDealCardsToRoster(rosterIndices, cardCount, {
-			reducedMotion: prefersReducedMotion()
-		});
-	}}
-	onClose={() => (dealOpen = false)}
-/>
+	/** Reposition after mount / when pointer or menu content changes / resize. */
+	$: if (
+		browser &&
+		open &&
+		(showFlip || showShuffle || showGroupByType || showArrange || showDeal)
+	) {
+		void x;
+		void y;
+		void showDeal;
+		void showFlip;
+		void showShuffle;
+		void showGroupByType;
+		void showArrange;
+		void stashRoster;
+		tick().then(() =>
+			requestAnimationFrame(() => {
+				fitMenuToViewport();
+				requestAnimationFrame(fitMenuToViewport);
+			})
+		);
+	}
+
+	onMount(() => {
+		if (!browser) return;
+		const onResize = () => requestAnimationFrame(fitMenuToViewport);
+		window.addEventListener('resize', onResize);
+		return () => window.removeEventListener('resize', onResize);
+	});
+
+</script>
 
 {#if open && (showFlip || showShuffle || showGroupByType || showArrange || showDeal)}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<ul
+		bind:this={menuEl}
 		class="ctx"
 		data-bge-context-menu
 		style:top="{clip.top}px"
@@ -106,9 +132,18 @@
 	>
 		{#if showDeal}
 			<li
-				onpointerdown={() => {
-					open = false;
-					dealOpen = true;
+				onpointerdown={(e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					openDealDialog({
+						roster: stashRoster,
+						maxCards: sel.filter((p) => hasAttr(p, 'move')).length,
+						reducedMotion: prefersReducedMotion()
+					});
+					/** Close menu after pointerup so release does not hit the board (would deselect → “no cards”). */
+					setTimeout(() => {
+						open = false;
+					}, 0);
 				}}
 			>
 				Deal to…
@@ -191,6 +226,9 @@
 		margin: 0;
 		min-width: 108px;
 		max-width: min(280px, calc(100vw - 16px));
+		max-height: min(90vh, calc(100vh - 16px));
+		overflow-x: hidden;
+		overflow-y: auto;
 		font-size: 16px;
 	}
 	.ctx li {

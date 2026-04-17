@@ -8,6 +8,10 @@ const STORAGE_KEY = 'bge_arrangement_prefs';
 const LAYOUTS = new Set<PlacementLayout>(['stack', 'grid', 'honeycomb', 'fan', 'pile']);
 const SPACINGS = new Set<PlacementSpacingMode>(['overlap', 'separate']);
 
+/** 16 directions for assist / linear spread; matches {@link spreadCustom} in engine (deg). */
+export const SPREAD_ANGLE_STEP_DEG = 22.5;
+export const SPREAD_DIRECTION_COUNT = 16;
+
 export interface ArrangementPrefs {
 	layout: PlacementLayout;
 	spacingMode: PlacementSpacingMode;
@@ -15,6 +19,11 @@ export interface ArrangementPrefs {
 	offset: number;
 	/** When applying arrangement, show card front (true) or back (false) for flip-capable pieces. */
 	arrangeFaceUp: boolean;
+	/**
+	 * Linear spread direction for assist bar + context “Spread direction” dial.
+	 * Same convention as `spreadCustom`: 0 = east (right), 90 = south (down), 270 = north (up).
+	 */
+	spreadAngleDeg: number;
 }
 
 const defaults: ArrangementPrefs = {
@@ -22,8 +31,17 @@ const defaults: ArrangementPrefs = {
 	spacingMode: 'overlap',
 	cols: 3,
 	offset: 32,
-	arrangeFaceUp: true
+	arrangeFaceUp: true,
+	spreadAngleDeg: 0
 };
+
+/** Snap to nearest of 16 angles in [0, 337.5]. */
+export function snapSpreadAngleDeg(n: number): number {
+	if (!Number.isFinite(n)) return 0;
+	const k = Math.round(n / SPREAD_ANGLE_STEP_DEG);
+	const idx = ((k % SPREAD_DIRECTION_COUNT) + SPREAD_DIRECTION_COUNT) % SPREAD_DIRECTION_COUNT;
+	return idx * SPREAD_ANGLE_STEP_DEG;
+}
 
 function clamp(n: number, lo: number, hi: number): number {
 	return Math.min(hi, Math.max(lo, n));
@@ -41,7 +59,9 @@ function sanitize(p: Partial<ArrangementPrefs>): ArrangementPrefs {
 	else offset = clamp(Math.round(offset), 0, 500);
 	const arrangeFaceUp =
 		typeof p.arrangeFaceUp === 'boolean' ? p.arrangeFaceUp : defaults.arrangeFaceUp;
-	return { layout, spacingMode, cols, offset, arrangeFaceUp };
+	const spreadAngleDeg =
+		p.spreadAngleDeg !== undefined ? snapSpreadAngleDeg(Number(p.spreadAngleDeg)) : defaults.spreadAngleDeg;
+	return { layout, spacingMode, cols, offset, arrangeFaceUp, spreadAngleDeg };
 }
 
 function load(): ArrangementPrefs {

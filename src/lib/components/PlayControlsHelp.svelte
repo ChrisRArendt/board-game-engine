@@ -28,7 +28,7 @@
 			<div class="desc">Shuffle selection.</div>
 
 			<div class="label"><kbd>A</kbd></div>
-			<div class="desc">Smart arrange: stack if the top selected card is face-down, otherwise fan on an arc.</div>
+			<div class="desc">Smart arrange: pile if the top selected card is face-down, otherwise fan on an arc.</div>
 
 			<div class="label"><kbd>Backspace</kbd></div>
 			<div class="desc">Destroy (if allowed).</div>
@@ -104,7 +104,9 @@
 
 			<div class="label">Arrange</div>
 			<div class="desc">
-				Stack, grid, honeycomb, fan, pile; spacing for most layouts; face up/down for double-sided cards.
+				Spread, grid, honeycomb, fan, pile; spacing for most layouts; face up/down for double-sided cards.
+				<strong>Spread direction</strong> (clock dial) sets the line angle for the bottom assist bar’s Spread action and is
+				remembered.
 			</div>
 		</div>
 	</section>
@@ -112,8 +114,9 @@
 	<section>
 		<h3>Selection row</h3>
 		<p class="sub">
-			When pieces are selected, extra actions may appear under the top bar: Duplicate, Destroy, Flip, Shuffle, Fan,
-			Stack — depending on piece abilities.
+			When pieces are selected, the bottom assist bar can show Duplicate, Destroy, Flip, Preview, Deal, Spread, Fan,
+			Smart (Pile/Fan), Shuffle, Sort — depending on piece abilities. Spread follows the direction chosen under
+			context menu Arrange (Spread direction).
 		</p>
 	</section>
 </div>

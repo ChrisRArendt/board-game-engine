@@ -18,10 +18,16 @@ export interface PlacementLayoutOptions {
 	pieceH?: number;
 	/** Columns for grid layout (default ~ceil(sqrt(count))). */
 	cols?: number;
+	/**
+	 * Stack / “Spread” layout only: direction in engine degrees (0 = east, 90 = south).
+	 * Omitted uses 45° so editor multi-drop matches the legacy diagonal until callers pass prefs.
+	 */
+	spreadAngleDeg?: number;
 }
 
 export function computePlacementPositions(opts: PlacementLayoutOptions): { x: number; y: number }[] {
-	const { layout, count, baseX, baseY, offset, cols, spacingMode, pieceW, pieceH } = opts;
+	const { layout, count, baseX, baseY, offset, cols, spacingMode, pieceW, pieceH, spreadAngleDeg } =
+		opts;
 	if (count <= 0) return [];
 	const sep = spacingMode === 'separate';
 	const pw = Math.max(1, pieceW ?? offset);
@@ -30,7 +36,7 @@ export function computePlacementPositions(opts: PlacementLayoutOptions): { x: nu
 
 	if (layout === 'pile') return computePilePositions(count, baseX, baseY);
 	if (layout === 'stack')
-		return computeStackPositions(count, gap, baseX, baseY, sep, pw, ph);
+		return computeStackPositions(count, gap, baseX, baseY, sep, pw, ph, spreadAngleDeg);
 	if (layout === 'honeycomb')
 		return computeHoneycombPositions(count, gap, baseX, baseY, cols, sep, pw, ph);
 	if (layout === 'fan')
@@ -171,7 +177,10 @@ export function computeFanDealPositionsInRect(
 	return raw.map((p) => ({ x: p.x + dx, y: p.y + dy }));
 }
 
-/** Stacked: overlap = diagonal fan; separate = horizontal row with piece width + gap. */
+/**
+ * Stacked / “Spread”: overlap = stepped along `spreadAngleDeg`; separate = same with spacing pieceW + gap.
+ * Legacy default angle 45° (down-right) when `spreadAngleDeg` omitted (editor drops).
+ */
 export function computeStackPositions(
 	count: number,
 	offset: number,
@@ -179,19 +188,28 @@ export function computeStackPositions(
 	baseY: number,
 	separate: boolean,
 	pieceW: number,
-	_pieceH: number
+	_pieceH: number,
+	spreadAngleDeg?: number
 ): { x: number; y: number }[] {
 	const out: { x: number; y: number }[] = [];
+	const angleDeg =
+		spreadAngleDeg !== undefined && Number.isFinite(spreadAngleDeg) ? spreadAngleDeg : 45;
+	const rad = (angleDeg * Math.PI) / 180;
+	const ux = Math.cos(rad);
+	const uy = Math.sin(rad);
+
 	if (separate) {
 		const step = pieceW + Math.max(0, offset);
 		for (let i = 0; i < count; i++) {
-			out.push({ x: baseX + i * step, y: baseY });
+			out.push({ x: baseX + i * step * ux, y: baseY + i * step * uy });
 		}
 		return out;
 	}
 	const step = Math.max(1, offset);
+	/** Match previous fixed 45° diagonal step length along the ray (0.35 per axis → |Δ| = 0.35√2 per index). */
+	const stepAlong = step * 0.35 * Math.SQRT2;
 	for (let i = 0; i < count; i++) {
-		out.push({ x: baseX + i * step * 0.35, y: baseY + i * step * 0.35 });
+		out.push({ x: baseX + i * stepAlong * ux, y: baseY + i * stepAlong * uy });
 	}
 	return out;
 }

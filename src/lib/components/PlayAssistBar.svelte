@@ -5,6 +5,7 @@
 	import * as g from '$lib/stores/game';
 	import { hasAttr, pieceSupportsFlip } from '$lib/engine/pieces';
 	import { ARRANGEMENT_GAP_PRESET } from '$lib/editor/arrangementGapPresets';
+	import { arrangementPrefs } from '$lib/stores/arrangementPrefs';
 	import DealToDialog from '$lib/components/DealToDialog.svelte';
 	import { users } from '$lib/stores/users';
 	import { settings } from '$lib/stores/settings';
@@ -98,7 +99,7 @@
 	$: showDeal =
 		sel.length >= 1 && sel.every((p) => hasAttr(p, 'move')) && stashRoster.length > 0;
 
-	/** Stack / spread need at least two unlocked movables (same gate as shuffle). */
+	/** Spread / fan / smart arrange need at least two unlocked movables (same gate as shuffle). */
 	$: showMultiArrange = showArrange && arrangeUnlockedCount >= 2;
 
 	$: idleHints = $game.selectedIds.size === 0;
@@ -158,12 +159,8 @@
 		g.flipSelectedPiecesSync();
 	}
 
-	function doStack() {
-		g.runArrangeStacked();
-	}
-
 	function doSpread() {
-		g.runSpreadCustom(ARRANGEMENT_GAP_PRESET.small, 0);
+		g.runSpreadCustom(ARRANGEMENT_GAP_PRESET.small, $arrangementPrefs.spreadAngleDeg);
 	}
 
 	function doFan() {
@@ -328,17 +325,11 @@
 							</button>
 						{/if}
 						{#if showMultiArrange}
-							<button type="button" class="act-btn" onclick={doStack}>
-								<PlayAssistActionIcon kind="stack" />
-								<span class="act-btn-caption">
-									<span class="act-label">Stack</span>
-								</span>
-							</button>
 							<button
 								type="button"
 								class="act-btn primary"
 								onclick={doSpread}
-								title="Straight row with small spacing between card centers (same scale as Arrange → Small gap)."
+								title="Straight line spread — direction from Arrange → Spread direction (default horizontal). Small gap."
 							>
 								<PlayAssistActionIcon kind="spreadRow" />
 								<span class="act-btn-caption">

@@ -33,6 +33,20 @@
 		PLAYER_SLOT_MAX,
 		safeRectForRosterIndex
 	} from '$lib/engine/stash';
+	import { dragPerfHud, initDragPerfFromEnv, destroyDragPerf } from '$lib/debug/dragPerf';
+	import { boardPointerBlocked } from '$lib/stores/boardPointerBlock';
+	import { dealDialog } from '$lib/stores/dealDialog';
+
+	function boardInputBlocked(): boolean {
+		return get(boardPointerBlocked) || get(dealDialog).open;
+	}
+
+	/** Topmost element at (x,y); works even if pointer-events / store state disagree. */
+	function isPointerOverDealUi(clientX: number, clientY: number): boolean {
+		if (!browser || typeof document === 'undefined') return false;
+		const el = document.elementFromPoint(clientX, clientY);
+		return Boolean(el?.closest?.('[data-bge-deal-dialog]'));
+	}
 
 	/** When true, wheel pans; when false (default), wheel zooms. */
 	export let scrollWheelPans = false;
@@ -231,6 +245,7 @@
 	}
 
 	onMount(() => {
+		initDragPerfFromEnv();
 		pointerEngine = new PointerEngine({
 			prefersReducedMotion,
 			onPanStart: (x, y) => {
@@ -348,6 +363,7 @@
 			},
 			onMouseTableDown: (direct, clientX, clientY, shift) => {
 				if (!direct) return;
+				if (isPointerOverDealUi(clientX, clientY)) return;
 				const st = get(game);
 				if (st.spacePanHeld) {
 					g.startPanPointer(clientX, clientY);
@@ -420,6 +436,7 @@
 
 	onDestroy(() => {
 		if (!browser) return;
+		destroyDragPerf();
 		pointerEngine?.destroy();
 		pointerEngine = null;
 		window.removeEventListener('pointermove', onPointerMoveGlobal);
@@ -429,7 +446,12 @@
 
 	function onViewportPointerDown(e: PointerEvent) {
 		if (replayMode) return;
+		if (isPointerOverDealUi(e.clientX, e.clientY)) return;
+		const blocked = boardInputBlocked();
 		const target = e.target as HTMLElement;
+		const dealHit = !!target.closest?.('[data-bge-deal-dialog]');
+		if (blocked) return;
+		if (dealHit) return;
 		if (target.closest('.table')) return;
 		if (target.closest('[data-piece-id]')) return;
 		if (target.closest('[data-board-widget-id]')) return;
@@ -451,12 +473,17 @@
 
 	function onTablePointerDown(e: PointerEvent) {
 		if (replayMode) return;
+		if (isPointerOverDealUi(e.clientX, e.clientY)) return;
+		if (boardInputBlocked()) return;
+		if ((e.target as HTMLElement).closest?.('[data-bge-deal-dialog]')) return;
 		const direct = e.target === e.currentTarget;
 		pointerEngine?.handlePointerDown(e, { kind: 'table', direct });
 	}
 
 	function onWheel(e: WheelEvent) {
 		if (replayMode) return;
+		if (isPointerOverDealUi(e.clientX, e.clientY)) return;
+		if (boardInputBlocked()) return;
 		e.preventDefault();
 		const st = get(game);
 		if (scrollWheelPans) {
@@ -475,6 +502,8 @@
 
 	async function onPiecePointerDown(piece: PieceInstance, e: PointerEvent) {
 		if (replayMode) return;
+		if (isPointerOverDealUi(e.clientX, e.clientY)) return;
+		if (boardInputBlocked()) return;
 		e.stopPropagation();
 		if (e.pointerType === 'touch') {
 			pointerEngine?.handlePointerDown(e, { kind: 'piece', pieceId: piece.id });
@@ -595,6 +624,7 @@
 	class:handscroll={$game.handscroll}
 	class:replay-mode={replayMode}
 	class:dragging-piece={$game.moveDrag != null}
+	class:deal-modal-suspend={$dealDialog.open}
 	style:cursor={viewportCursor}
 	bind:this={viewportEl}
 	bind:clientWidth={viewportW}
@@ -603,6 +633,19 @@
 	onpointerdown={onViewportPointerDown}
 	onwheel={onWheel}
 >
+	{#if $dragPerfHud}
+		<div class="drag-perf-hud" aria-live="polite">
+			<span class="drag-perf-title">Drag perf</span>
+			<span class="drag-perf-line">
+				last {$dragPerfHud.lastMs.toFixed(2)}ms · avg {$dragPerfHud.avgMs} · max {$dragPerfHud.maxMs} · min
+				{$dragPerfHud.minMs} · n={$dragPerfHud.samples}
+			</span>
+			<span class="drag-perf-line">
+				board pieces {$dragPerfHud.boardPieces} · selected (move) {$dragPerfHud.selectedMoving}
+				{#if $dragPerfHud.editorSnap} · editor snap{/if}
+			</span>
+		</div>
+	{/if}
 	<div class="game" class:will-move={$game.handscroll || $game.panPointerStart != null} style:transform="translate3d({$game.panX}px, {$game.panY}px, 0)">
 		<div
 			class="pieces-layer"
@@ -967,6 +1010,36 @@
 		overflow: hidden;
 		touch-action: none;
 		z-index: 0;
+	}
+	/** Deal modal is portaled to body; still disable hit-testing on the whole board while it is open. */
+	.viewport.deal-modal-suspend,
+	.viewport.deal-modal-suspend * {
+		pointer-events: none !important;
+	}
+	.drag-perf-hud {
+		position: fixed;
+		left: 8px;
+		bottom: 8px;
+		z-index: 999999;
+		max-width: min(420px, calc(100vw - 16px));
+		padding: 6px 8px;
+		border-radius: 6px;
+		font: 11px/1.35 ui-monospace, monospace;
+		color: #e8f0ff;
+		background: rgba(12, 18, 32, 0.88);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		pointer-events: none;
+		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+	}
+	.drag-perf-title {
+		display: block;
+		font-weight: 600;
+		margin-bottom: 2px;
+		color: #9ecbff;
+	}
+	.drag-perf-line {
+		display: block;
+		opacity: 0.95;
 	}
 	/* Space-pan / scroll-pan: override child cursors (widgets, controls) so the hand shows everywhere. */
 	.viewport.space-pan:not(.handscroll),

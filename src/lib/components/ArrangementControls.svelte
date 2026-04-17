@@ -2,6 +2,7 @@
 	import type { PlacementLayout } from '$lib/engine/types';
 	import { ARRANGEMENT_GAP_PRESET } from '$lib/editor/arrangementGapPresets';
 	import { arrangementPrefs, patchArrangementPrefs } from '$lib/stores/arrangementPrefs';
+	import SpreadDirectionDial from '$lib/components/SpreadDirectionDial.svelte';
 	import * as g from '$lib/stores/game';
 	import { get } from 'svelte/store';
 
@@ -61,7 +62,7 @@
 	}
 
 	const LAYOUT_CHOICES: { id: PlacementLayout; label: string }[] = [
-		{ id: 'stack', label: 'Stack' },
+		{ id: 'stack', label: 'Spread' },
 		{ id: 'grid', label: 'Grid' },
 		{ id: 'honeycomb', label: 'Honey' },
 		{ id: 'fan', label: 'Fan' },
@@ -348,6 +349,13 @@
 			</label>
 		{/if}
 	{/if}
+	{#if contextMenu}
+		<SpreadDirectionDial
+			compact={compact}
+			spreadAngleDeg={$arrangementPrefs.spreadAngleDeg}
+			onSelect={(deg) => patchArrangementPrefs({ spreadAngleDeg: deg })}
+		/>
+	{/if}
 	{#if showApplyButton || showFaceControl}
 		<label class="row toggle-row">
 			<span>Face</span>
@@ -458,9 +466,10 @@
 		color: var(--color-text);
 	}
 	.layout-btn.active {
-		background: var(--color-accent, #3b82f6);
-		border-color: var(--color-accent, #3b82f6);
+		background: color-mix(in srgb, var(--color-accent, #3b82f6) 92%, #fff);
+		border-color: transparent;
 		color: #fff;
+		box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 22%, transparent);
 	}
 	.layout-btn.active .layout-label {
 		color: #fff;

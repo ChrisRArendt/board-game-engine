@@ -61,6 +61,13 @@ import {
 	computePlacementPositions,
 	type PlacementSpacingMode
 } from '$lib/editor/placementLayouts';
+import {
+	dragPerfOnDragBegin,
+	dragPerfOnDragEnd,
+	dragPerfRecordMove,
+	isDragPerfEnabled
+} from '$lib/debug/dragPerf';
+import { ingestBoardOp, isPerfIngestEnabled, trackAsyncOp, trackSyncOp } from '$lib/debug/boardPerf';
 
 export interface GameState {
 	curGame: string;
@@ -193,6 +200,8 @@ export const game = writable<GameState>(initialState());
 /** Stagger between each piece starting its move; total spread is (n−1)×stagger + moveMs. */
 export const ARRANGEMENT_ANIM_STAGGER_MS = 5;
 export const ARRANGEMENT_ANIM_MOVE_MS = 250;
+/** Shuffle / sort-by-type: stagger between each card starting its move (back-to-front order). */
+export const SHUFFLE_SORT_STAGGER_MS = 20;
 
 /**
  * After automated layout / spread / shuffle / deal, snap rotation toward 0 with a small jitter (deg, half-range).
@@ -238,8 +247,17 @@ function applyShuffleMapToPieces(
 	});
 }
 
+type ShuffleAnimStep = {
+	id: number;
+	z: number;
+	x: number;
+	y: number;
+	rotation: number;
+};
+
 /**
- * Lift selected pieces, then apply shuffle map and run `emitAfter`.
+ * Lift selected pieces, then apply shuffle map one card at a time (staggered) and run `emitAfter`
+ * after motion completes. Uses {@link arrangementAnimationActive} like placement arrange.
  * Map must be computed once so random permutations stay stable.
  */
 function scheduleShuffleLiftApply(
@@ -249,28 +267,83 @@ function scheduleShuffleLiftApply(
 ) {
 	if (movedIds.length === 0) return;
 
+	const st = get(game);
+	const steps: ShuffleAnimStep[] = movedIds
+		.map((id) => {
+			const upd = u.get(id);
+			if (!upd) return null;
+			return {
+				id,
+				z: upd.z,
+				x: upd.x,
+				y: upd.y,
+				rotation: arrangeSnapRotationDeg()
+			};
+		})
+		.filter((s): s is ShuffleAnimStep => s != null)
+		.sort((a, b) => {
+			const pa = st.pieces.find((p) => p.id === a.id);
+			const pb = st.pieces.find((p) => p.id === b.id);
+			const za = pa?.zIndex ?? 0;
+			const zb = pb?.zIndex ?? 0;
+			if (za !== zb) return za - zb;
+			return a.id - b.id;
+		});
+
 	if (shuffleLiftReducedMotion()) {
+		clearArrangementAnimationTimeouts();
 		game.update((s) => ({
 			...s,
 			pieces: applyShuffleMapToPieces(s.pieces, u),
-			shuffleLiftIds: null
+			shuffleLiftIds: null,
+			arrangementAnimationActive: false
 		}));
 		emitAfter();
 		return;
 	}
 
+	clearArrangementAnimationTimeouts();
 	clearShuffleLiftTimers();
 	const gen = shuffleLiftGen;
 	game.update((s) => ({ ...s, shuffleLiftIds: new Set(movedIds) }));
 	shuffleLiftTimer = setTimeout(() => {
 		shuffleLiftTimer = null;
 		if (gen !== shuffleLiftGen) return;
+
+		arrangementAnimGeneration++;
+		const myGen = arrangementAnimGeneration;
+
 		game.update((s) => ({
 			...s,
-			pieces: applyShuffleMapToPieces(s.pieces, u),
-			shuffleLiftIds: null
+			shuffleLiftIds: null,
+			arrangementAnimationActive: true
 		}));
-		emitAfter();
+
+		for (let i = 0; i < steps.length; i++) {
+			const step = steps[i];
+			const tid = setTimeout(() => {
+				if (myGen !== arrangementAnimGeneration) return;
+				game.update((s) => ({
+					...s,
+					pieces: s.pieces.map((p) =>
+						p.id === step.id
+							? { ...p, zIndex: step.z, x: step.x, y: step.y, rotation: step.rotation }
+							: p
+					)
+				}));
+			}, i * SHUFFLE_SORT_STAGGER_MS);
+			arrangementStaggerTimeouts.push(tid);
+		}
+
+		const finalDelay =
+			Math.max(0, steps.length - 1) * SHUFFLE_SORT_STAGGER_MS + ARRANGEMENT_ANIM_MOVE_MS;
+
+		arrangementDoneTimeout = setTimeout(() => {
+			arrangementDoneTimeout = null;
+			if (myGen !== arrangementAnimGeneration) return;
+			game.update((s) => ({ ...s, arrangementAnimationActive: false }));
+			emitAfter();
+		}, finalDelay);
 	}, SHUFFLE_LIFT_MS);
 }
 
@@ -815,28 +888,41 @@ export function flipPiece(id: number) {
  * together; if they are already all face-down, flip all face-up. Single selection behaves like a normal toggle.
  */
 export function flipSelectedPiecesSync() {
-	const s0 = get(game);
-	const targets = s0.pieces.filter((p) => s0.selectedIds.has(p.id) && pieceSupportsFlip(p));
-	if (targets.length === 0) return;
+	trackSyncOp(
+		'flip_selected',
+		() => {
+			const s0 = get(game);
+			const targets = s0.pieces.filter((p) => s0.selectedIds.has(p.id) && pieceSupportsFlip(p));
+			return {
+				flipTargets: targets.length,
+				selected: s0.selectedIds.size
+			};
+		},
+		() => {
+			const s0 = get(game);
+			const targets = s0.pieces.filter((p) => s0.selectedIds.has(p.id) && pieceSupportsFlip(p));
+			if (targets.length === 0) return;
 
-	const anyFaceUp = targets.some((p) => !p.flipped);
-	const nextFlipped = anyFaceUp;
+			const anyFaceUp = targets.some((p) => !p.flipped);
+			const nextFlipped = anyFaceUp;
 
-	const changingIds = targets.filter((p) => p.flipped !== nextFlipped).map((p) => p.id);
-	if (changingIds.length === 0) return;
+			const changingIds = targets.filter((p) => p.flipped !== nextFlipped).map((p) => p.id);
+			if (changingIds.length === 0) return;
 
-	game.update((s) => ({
-		...s,
-		pieces: s.pieces.map((p) =>
-			changingIds.includes(p.id) ? { ...p, flipped: nextFlipped } : p
-		)
-	}));
+			game.update((s) => ({
+				...s,
+				pieces: s.pieces.map((p) =>
+					changingIds.includes(p.id) ? { ...p, flipped: nextFlipped } : p
+				)
+			}));
 
-	const s1 = get(game);
-	for (const id of changingIds) {
-		const p = s1.pieces.find((x) => x.id === id);
-		if (p) emitGame?.('piece_flip', { id, isFlipped: p.flipped });
-	}
+			const s1 = get(game);
+			for (const id of changingIds) {
+				const p = s1.pieces.find((x) => x.id === id);
+				if (p) emitGame?.('piece_flip', { id, isFlipped: p.flipped });
+			}
+		}
+	);
 }
 
 export function setPieceFlipped(id: number, flipped: boolean) {
@@ -1080,48 +1166,66 @@ export function destroyPiece(id: number) {
 }
 
 export function runShuffleSelected() {
-	const st = get(game);
-	const u = shuffleSelectedPieces(st.pieces, st.selectedIds);
-	const movedIds = [...u.keys()];
-	if (movedIds.length === 0) return;
+	trackSyncOp(
+		'shuffle_selected',
+		() => {
+			const st = get(game);
+			return { selected: st.selectedIds.size, pieces: st.pieces.length };
+		},
+		() => {
+			const st = get(game);
+			const u = shuffleSelectedPieces(st.pieces, st.selectedIds);
+			const movedIds = [...u.keys()];
+			if (movedIds.length === 0) return;
 
-	scheduleShuffleLiftApply(movedIds, u, () => {
-		const s = get(game);
-		for (const id of s.selectedIds) {
-			const p = s.pieces.find((x) => x.id === id);
-			if (p)
-				emitGame?.('piece_shuffle', {
-					id: p.id,
-					zindex: p.zIndex,
-					x: p.x,
-					y: p.y,
-					rotation: p.rotation ?? 0
-				});
+			scheduleShuffleLiftApply(movedIds, u, () => {
+				const s = get(game);
+				for (const id of s.selectedIds) {
+					const p = s.pieces.find((x) => x.id === id);
+					if (p)
+						emitGame?.('piece_shuffle', {
+							id: p.id,
+							zindex: p.zIndex,
+							x: p.x,
+							y: p.y,
+							rotation: p.rotation ?? 0
+						});
+				}
+			});
 		}
-	});
+	);
 }
 
 /** Context menu: permute positions among movable unlocked selection (2+). */
 export function runShuffleMovableSelection() {
-	const st = get(game);
-	const u = shuffleMovableSelectedPieces(st.pieces, st.selectedIds);
-	const movedIds = [...u.keys()];
-	if (movedIds.length === 0) return;
+	trackSyncOp(
+		'shuffle_movable',
+		() => {
+			const st = get(game);
+			return { selected: st.selectedIds.size, pieces: st.pieces.length };
+		},
+		() => {
+			const st = get(game);
+			const u = shuffleMovableSelectedPieces(st.pieces, st.selectedIds);
+			const movedIds = [...u.keys()];
+			if (movedIds.length === 0) return;
 
-	scheduleShuffleLiftApply(movedIds, u, () => {
-		const s = get(game);
-		for (const id of movedIds) {
-			const p = s.pieces.find((x) => x.id === id);
-			if (p)
-				emitGame?.('piece_shuffle', {
-					id: p.id,
-					zindex: p.zIndex,
-					x: p.x,
-					y: p.y,
-					rotation: p.rotation ?? 0
-				});
+			scheduleShuffleLiftApply(movedIds, u, () => {
+				const s = get(game);
+				for (const id of movedIds) {
+					const p = s.pieces.find((x) => x.id === id);
+					if (p)
+						emitGame?.('piece_shuffle', {
+							id: p.id,
+							zindex: p.zIndex,
+							x: p.x,
+							y: p.y,
+							rotation: p.rotation ?? 0
+						});
+				}
+			});
 		}
-	});
+	);
 }
 
 /**
@@ -1129,25 +1233,34 @@ export function runShuffleMovableSelection() {
  * (template) into spatially ordered slots — same positions overall, types sorted along the spread.
  */
 export function runArrangeGroupByPieceType() {
-	const st = get(game);
-	const u = sortMovableSelectedByTemplateSlots(st.pieces, st.selectedIds);
-	const movedIds = [...u.keys()];
-	if (movedIds.length === 0) return;
+	trackSyncOp(
+		'arrange_group_by_type',
+		() => {
+			const st = get(game);
+			return { selected: st.selectedIds.size, pieces: st.pieces.length };
+		},
+		() => {
+			const st = get(game);
+			const u = sortMovableSelectedByTemplateSlots(st.pieces, st.selectedIds);
+			const movedIds = [...u.keys()];
+			if (movedIds.length === 0) return;
 
-	scheduleShuffleLiftApply(movedIds, u, () => {
-		const g = get(game);
-		for (const id of movedIds) {
-			const p = g.pieces.find((x) => x.id === id);
-			if (p)
-				emitGame?.('piece_shuffle', {
-					id: p.id,
-					zindex: p.zIndex,
-					x: p.x,
-					y: p.y,
-					rotation: p.rotation ?? 0
-				});
+			scheduleShuffleLiftApply(movedIds, u, () => {
+				const g = get(game);
+				for (const id of movedIds) {
+					const p = g.pieces.find((x) => x.id === id);
+					if (p)
+						emitGame?.('piece_shuffle', {
+							id: p.id,
+							zindex: p.zIndex,
+							x: p.x,
+							y: p.y,
+							rotation: p.rotation ?? 0
+						});
+				}
+			});
 		}
-	});
+	);
 }
 
 /**
@@ -1166,15 +1279,24 @@ export function runArrangeFanned() {
 }
 
 export function runArrangeStacked() {
-	game.update((s) => {
-		const u = arrangeStacked(s.pieces, s.selectedIds);
-		const pieces = s.pieces.map((p) => {
-			const upd = u.get(p.id);
-			return upd ? { ...p, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
-		});
-		return { ...s, pieces };
-	});
-	emitMovesForSelected();
+	trackSyncOp(
+		'arrange_stack_pile',
+		() => {
+			const s = get(game);
+			return { selected: s.selectedIds.size };
+		},
+		() => {
+			game.update((s) => {
+				const u = arrangeStacked(s.pieces, s.selectedIds);
+				const pieces = s.pieces.map((p) => {
+					const upd = u.get(p.id);
+					return upd ? { ...p, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
+				});
+				return { ...s, pieces };
+			});
+			emitMovesForSelected();
+		}
+	);
 }
 
 /** One broadcast with many moves — avoids N realtime messages when dragging 100+ cards. */
@@ -1217,6 +1339,8 @@ export function applyPlacementArrangementToSelection(
 		.sort((a, b) => a.zIndex - b.zIndex || a.id - b.id);
 	if (pieces.length < 2) return Promise.resolve(false);
 
+	const perfT0 = isPerfIngestEnabled() ? performance.now() : 0;
+
 	const count = pieces.length;
 	const maxW = Math.max(...pieces.map((p) => p.initial_size.w), 1);
 	const maxH = Math.max(...pieces.map((p) => p.initial_size.h), 1);
@@ -1231,6 +1355,7 @@ export function applyPlacementArrangementToSelection(
 			: Math.max(1, Math.min(500, Math.floor(Number(offset)) || 32));
 	const c = Math.max(1, Math.min(99, Math.floor(cols) || 3));
 
+	const { spreadAngleDeg } = get(arrangementPrefs);
 	const positions = computePlacementPositions({
 		layout,
 		count,
@@ -1240,7 +1365,8 @@ export function applyPlacementArrangementToSelection(
 		spacingMode,
 		pieceW: maxW,
 		pieceH: maxH,
-		cols: layout === 'grid' || layout === 'honeycomb' ? c : undefined
+		cols: layout === 'grid' || layout === 'honeycomb' ? c : undefined,
+		...(layout === 'stack' ? { spreadAngleDeg } : {})
 	});
 
 	const flippedTarget = !faceUp;
@@ -1289,6 +1415,15 @@ export function applyPlacementArrangementToSelection(
 			const finish = pendingArrangeResolve;
 			pendingArrangeResolve = null;
 			if (myGen !== arrangementAnimGeneration) {
+				if (perfT0 > 0) {
+					ingestBoardOp('apply_arrangement', performance.now() - perfT0, {
+						layout,
+						spacingMode,
+						count: pieces.length,
+						ok: false,
+						cancelledGen: true
+					});
+				}
 				finish?.(false);
 				return;
 			}
@@ -1301,45 +1436,81 @@ export function applyPlacementArrangementToSelection(
 					emitGame?.('piece_flip', { id: p.id, isFlipped: np.flipped });
 				}
 			}
+			if (perfT0 > 0) {
+				ingestBoardOp('apply_arrangement', performance.now() - perfT0, {
+					layout,
+					spacingMode,
+					count: pieces.length,
+					ok: true,
+					preservePieceFaces
+				});
+			}
 			finish?.(true);
 		}, finalDelay);
 	});
 }
 
 export function runSpreadHorizontal() {
-	game.update((s) => {
-		const u = spreadHorizontal(s.pieces, s.selectedIds);
-		const pieces = s.pieces.map((p) => {
-			const upd = u.get(p.id);
-			return upd ? { ...p, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
-		});
-		return { ...s, pieces };
-	});
-	emitMovesForSelected();
+	trackSyncOp(
+		'spread_horizontal',
+		() => {
+			const s = get(game);
+			return { selected: s.selectedIds.size, pieces: s.pieces.length };
+		},
+		() => {
+			game.update((s) => {
+				const u = spreadHorizontal(s.pieces, s.selectedIds);
+				const pieces = s.pieces.map((p) => {
+					const upd = u.get(p.id);
+					return upd ? { ...p, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
+				});
+				return { ...s, pieces };
+			});
+			emitMovesForSelected();
+		}
+	);
 }
 
 export function runSpreadVertical() {
-	game.update((s) => {
-		const u = spreadVertical(s.pieces, s.selectedIds);
-		const pieces = s.pieces.map((p) => {
-			const upd = u.get(p.id);
-			return upd ? { ...p, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
-		});
-		return { ...s, pieces };
-	});
-	emitMovesForSelected();
+	trackSyncOp(
+		'spread_vertical',
+		() => {
+			const s = get(game);
+			return { selected: s.selectedIds.size, pieces: s.pieces.length };
+		},
+		() => {
+			game.update((s) => {
+				const u = spreadVertical(s.pieces, s.selectedIds);
+				const pieces = s.pieces.map((p) => {
+					const upd = u.get(p.id);
+					return upd ? { ...p, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
+				});
+				return { ...s, pieces };
+			});
+			emitMovesForSelected();
+		}
+	);
 }
 
 export function runSpreadCustom(gap: number, angleDeg: number) {
-	game.update((s) => {
-		const u = spreadCustom(s.pieces, s.selectedIds, gap, angleDeg);
-		const pieces = s.pieces.map((p) => {
-			const upd = u.get(p.id);
-			return upd ? { ...p, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
-		});
-		return { ...s, pieces };
-	});
-	emitMovesForSelected();
+	trackSyncOp(
+		'spread_custom',
+		() => {
+			const s = get(game);
+			return { selected: s.selectedIds.size, pieces: s.pieces.length, gap, angleDeg };
+		},
+		() => {
+			game.update((s) => {
+				const u = spreadCustom(s.pieces, s.selectedIds, gap, angleDeg);
+				const pieces = s.pieces.map((p) => {
+					const upd = u.get(p.id);
+					return upd ? { ...p, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
+				});
+				return { ...s, pieces };
+			});
+			emitMovesForSelected();
+		}
+	);
 }
 
 /**
@@ -1355,44 +1526,53 @@ export function runArrangeSmart() {
 }
 
 export function runShuffleStackToolbar() {
-	game.update((s) => {
-		let pieces = [...s.pieces];
-		const u = shuffleSelectedPieces(
-			pieces,
-			s.selectedIds
-		);
-		pieces = pieces.map((p) => {
-			const upd = u.get(p.id);
-			return upd ? { ...p, zIndex: upd.z, x: upd.x, y: upd.y } : p;
-		});
-		pieces = pieces.map((p) => {
-			if (!s.selectedIds.has(p.id) || !pieceSupportsFlip(p)) return p;
-			if (!p.flipped) return { ...p, flipped: true };
-			return p;
-		});
-		const u2 = arrangeStacked(pieces, s.selectedIds);
-		pieces = pieces.map((p) => {
-			const upd = u2.get(p.id);
-			return upd ? { ...p, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
-		});
-		return { ...s, pieces };
-	});
-	const st = get(game);
-	const moveBatch: Array<{ id: number; x: number; y: number; rotation: number }> = [];
-	for (const id of st.selectedIds) {
-		const p = st.pieces.find((x) => x.id === id);
-		if (!p) continue;
-		emitGame?.('piece_flip', { id: p.id, isFlipped: p.flipped });
-		emitGame?.('piece_shuffle', {
-			id: p.id,
-			zindex: p.zIndex,
-			x: p.x,
-			y: p.y,
-			rotation: p.rotation ?? 0
-		});
-		moveBatch.push({ id: p.id, x: p.x, y: p.y, rotation: p.rotation ?? 0 });
-	}
-	emitPieceMovesBatch(moveBatch);
+	trackSyncOp(
+		'shuffle_stack_toolbar',
+		() => {
+			const s = get(game);
+			return { selected: s.selectedIds.size, pieces: s.pieces.length };
+		},
+		() => {
+			game.update((s) => {
+				let pieces = [...s.pieces];
+				const u = shuffleSelectedPieces(
+					pieces,
+					s.selectedIds
+				);
+				pieces = pieces.map((p) => {
+					const upd = u.get(p.id);
+					return upd ? { ...p, zIndex: upd.z, x: upd.x, y: upd.y } : p;
+				});
+				pieces = pieces.map((p) => {
+					if (!s.selectedIds.has(p.id) || !pieceSupportsFlip(p)) return p;
+					if (!p.flipped) return { ...p, flipped: true };
+					return p;
+				});
+				const u2 = arrangeStacked(pieces, s.selectedIds);
+				pieces = pieces.map((p) => {
+					const upd = u2.get(p.id);
+					return upd ? { ...p, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
+				});
+				return { ...s, pieces };
+			});
+			const st = get(game);
+			const moveBatch: Array<{ id: number; x: number; y: number; rotation: number }> = [];
+			for (const id of st.selectedIds) {
+				const p = st.pieces.find((x) => x.id === id);
+				if (!p) continue;
+				emitGame?.('piece_flip', { id: p.id, isFlipped: p.flipped });
+				emitGame?.('piece_shuffle', {
+					id: p.id,
+					zindex: p.zIndex,
+					x: p.x,
+					y: p.y,
+					rotation: p.rotation ?? 0
+				});
+				moveBatch.push({ id: p.id, x: p.x, y: p.y, rotation: p.rotation ?? 0 });
+			}
+			emitPieceMovesBatch(moveBatch);
+		}
+	);
 }
 
 export function setEditorBoardSnap(enabled: boolean) {
@@ -1448,6 +1628,7 @@ export function beginMoveDrag(clientX: number, clientY: number, panX: number, pa
 			handscroll: false
 		};
 	});
+	if (get(game).moveDrag) dragPerfOnDragBegin();
 }
 
 export function startMoveDrag(_pieceId: number, clientX: number, clientY: number, panX: number, panY: number) {
@@ -1459,6 +1640,7 @@ export function startMoveDrag(_pieceId: number, clientX: number, clientY: number
  * so dragging stays correct when the view is panned away from the origin (and if pan shifts mid-drag).
  */
 export function moveDragTo(clientX: number, clientY: number) {
+	const t0 = isDragPerfEnabled() ? performance.now() : 0;
 	const zUpdatesRef: { map: Map<number, number> | null } = { map: null };
 	game.update((s) => {
 		if (!s.moveDrag) return s;
@@ -1551,10 +1733,23 @@ export function moveDragTo(clientX: number, clientY: number) {
 			emitGame?.('piece_zindexchange', { id, zindex });
 		}
 	}
+	if (isDragPerfEnabled()) {
+		const st = get(game);
+		let selectedMoving = 0;
+		for (const p of st.pieces) {
+			if (st.selectedIds.has(p.id) && hasAttr(p, 'move')) selectedMoving++;
+		}
+		dragPerfRecordMove(performance.now() - t0, {
+			pieceCount: st.pieces.length,
+			selectedMoving,
+			editorSnap: st.editorSnapEnabled
+		});
+	}
 }
 
 export function endMoveDrag() {
 	game.update((s) => ({ ...s, moveDrag: null, zSorted: false, editorSnapGuides: null }));
+	dragPerfOnDragEnd();
 }
 
 export function cancelMoveDrag() {
@@ -1573,6 +1768,7 @@ export function cancelMoveDrag() {
 		});
 		return { ...s, pieces, widgets, moveDrag: null, zSorted: false, editorSnapGuides: null };
 	});
+	dragPerfOnDragEnd();
 }
 
 export function startSelectionBox(x: number, y: number) {
@@ -2483,72 +2679,82 @@ export async function runDealCardsToRoster(
 		.slice(0, Math.max(0, Math.floor(cardCount)));
 	if (piecesOrdered.length === 0) return;
 
-	const playerSlots = s0.playerSlots;
+	return trackAsyncOp(
+		'deal_to_roster',
+		() => ({
+			cards: piecesOrdered.length,
+			rosterTargets: uniq.length,
+			delayMs
+		}),
+		async () => {
+			const playerSlots = s0.playerSlots;
 
-	const assignments: Array<{ piece: PieceInstance; ri: number }> = [];
-	for (let step = 0; step < piecesOrdered.length; step++) {
-		assignments.push({ piece: piecesOrdered[step], ri: uniq[step % uniq.length] });
-	}
+			const assignments: Array<{ piece: PieceInstance; ri: number }> = [];
+			for (let step = 0; step < piecesOrdered.length; step++) {
+				assignments.push({ piece: piecesOrdered[step], ri: uniq[step % uniq.length] });
+			}
 
-	const byRi = new Map<number, PieceInstance[]>();
-	for (const a of assignments) {
-		const list = byRi.get(a.ri) ?? [];
-		list.push(a.piece);
-		byRi.set(a.ri, list);
-	}
+			const byRi = new Map<number, PieceInstance[]>();
+			for (const a of assignments) {
+				const list = byRi.get(a.ri) ?? [];
+				list.push(a.piece);
+				byRi.set(a.ri, list);
+			}
 
-	const layoutByRi = new Map<number, Array<{ x: number; y: number }>>();
-	const maxSizeByRi = new Map<number, { maxW: number; maxH: number }>();
-	for (const [ri, group] of byRi) {
-		const rect = dealRectForRosterIndex(ri, playerSlots);
-		const maxW = Math.max(...group.map((q) => q.initial_size.w), 1);
-		const maxH = Math.max(...group.map((q) => q.initial_size.h), 1);
-		maxSizeByRi.set(ri, { maxW, maxH });
-		layoutByRi.set(ri, computeFanDealPositionsInRect(rect, group.length, maxW, maxH));
-	}
+			const layoutByRi = new Map<number, Array<{ x: number; y: number }>>();
+			const maxSizeByRi = new Map<number, { maxW: number; maxH: number }>();
+			for (const [ri, group] of byRi) {
+				const rect = dealRectForRosterIndex(ri, playerSlots);
+				const maxW = Math.max(...group.map((q) => q.initial_size.w), 1);
+				const maxH = Math.max(...group.map((q) => q.initial_size.h), 1);
+				maxSizeByRi.set(ri, { maxW, maxH });
+				layoutByRi.set(ri, computeFanDealPositionsInRect(rect, group.length, maxW, maxH));
+			}
 
-	const indexInGroup = new Map<number, number>();
-	let zNext = maxZIndex(s0.pieces) + 1;
-	const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+			const indexInGroup = new Map<number, number>();
+			let zNext = maxZIndex(s0.pieces) + 1;
+			const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-	const dealMoveBatch: Array<{ id: number; x: number; y: number; rotation: number }> = [];
-	for (let step = 0; step < assignments.length; step++) {
-		const { piece: p, ri } = assignments[step];
-		const groupLayouts = layoutByRi.get(ri);
-		if (!groupLayouts) continue;
-		const idx = indexInGroup.get(ri) ?? 0;
-		indexInGroup.set(ri, idx + 1);
-		const layout = groupLayouts[idx];
-		if (!layout) continue;
+			const dealMoveBatch: Array<{ id: number; x: number; y: number; rotation: number }> = [];
+			for (let step = 0; step < assignments.length; step++) {
+				const { piece: p, ri } = assignments[step];
+				const groupLayouts = layoutByRi.get(ri);
+				if (!groupLayouts) continue;
+				const idx = indexInGroup.get(ri) ?? 0;
+				indexInGroup.set(ri, idx + 1);
+				const layout = groupLayouts[idx];
+				if (!layout) continue;
 
-		const { maxW, maxH } = maxSizeByRi.get(ri) ?? { maxW: 1, maxH: 1 };
-		const dx = (maxW - p.initial_size.w) / 2;
-		const dy = (maxH - p.initial_size.h) / 2;
+				const { maxW, maxH } = maxSizeByRi.get(ri) ?? { maxW: 1, maxH: 1 };
+				const dx = (maxW - p.initial_size.w) / 2;
+				const dy = (maxH - p.initial_size.h) / 2;
 
-		const np = {
-			...p,
-			x: layout.x + dx,
-			y: layout.y + dy,
-			zIndex: zNext++,
-			rotation: arrangeSnapRotationDeg()
-		};
-		replacePieceInstance(np);
-		emitGame?.('piece_zindexchange', { id: np.id, zindex: np.zIndex });
-		if (delayMs === 0) {
-			dealMoveBatch.push({
-				id: np.id,
-				x: np.x,
-				y: np.y,
-				rotation: np.rotation ?? 0
-			});
-		} else {
-			emitPieceMovesBatch([
-				{ id: np.id, x: np.x, y: np.y, rotation: np.rotation ?? 0 }
-			]);
+				const np = {
+					...p,
+					x: layout.x + dx,
+					y: layout.y + dy,
+					zIndex: zNext++,
+					rotation: arrangeSnapRotationDeg()
+				};
+				replacePieceInstance(np);
+				emitGame?.('piece_zindexchange', { id: np.id, zindex: np.zIndex });
+				if (delayMs === 0) {
+					dealMoveBatch.push({
+						id: np.id,
+						x: np.x,
+						y: np.y,
+						rotation: np.rotation ?? 0
+					});
+				} else {
+					emitPieceMovesBatch([
+						{ id: np.id, x: np.x, y: np.y, rotation: np.rotation ?? 0 }
+					]);
+				}
+				if (delayMs > 0 && step < assignments.length - 1) await wait(delayMs);
+			}
+			if (delayMs === 0 && dealMoveBatch.length > 0) emitPieceMovesBatch(dealMoveBatch);
 		}
-		if (delayMs > 0 && step < assignments.length - 1) await wait(delayMs);
-	}
-	if (delayMs === 0 && dealMoveBatch.length > 0) emitPieceMovesBatch(dealMoveBatch);
+	);
 }
 
 /**

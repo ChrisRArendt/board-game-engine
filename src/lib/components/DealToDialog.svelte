@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { onDestroy, tick } from 'svelte';
 	import type { StashRosterEntry } from '$lib/engine/stash';
 
 	export let open = false;
@@ -10,20 +11,46 @@
 	export let onConfirm: (cardCount: number, rosterIndices: number[]) => void;
 	export let onClose: () => void;
 
+	let dialogEl: HTMLDialogElement | undefined;
+
 	let countStr = '1';
 	/** Roster indices selected as deal targets. */
 	let selectedIndices = new Set<number>();
+	let lastDealOpen = false;
 
-	$: if (open && browser) {
+	/** Reset form only when the dialog opens, not when `roster` identity churns while open. */
+	$: if (open && browser && open !== lastDealOpen) {
+		lastDealOpen = open;
 		countStr = '1';
 		selectedIndices = new Set(roster.map((_, i) => i));
 	}
+	$: if (!open && browser) lastDealOpen = false;
 
 	$: mc = Math.max(0, maxCards);
 	$: perPlayer = Math.max(1, parseInt(countStr, 10) || 1);
 	$: targetCount = selectedIndices.size;
-	/** Total cards that will be moved (capped by selection size). */
 	$: totalToDeal = mc < 1 || targetCount < 1 ? 0 : Math.min(mc, perPlayer * targetCount);
+
+	/** Native `<dialog>.showModal()` uses the top layer — wins z-index without portals. */
+	$: if (browser && dialogEl && open) {
+		void tick().then(() => {
+			if (!dialogEl || !open) return;
+			if (!dialogEl.open) {
+				try {
+					dialogEl.showModal();
+				} catch {
+					/* ignore duplicate showModal */
+				}
+			}
+		});
+	}
+	$: if (browser && dialogEl && !open && dialogEl.open) {
+		dialogEl.close();
+	}
+
+	onDestroy(() => {
+		if (browser && dialogEl?.open) dialogEl.close();
+	});
 
 	function toggleRoster(i: number) {
 		const next = new Set(selectedIndices);
@@ -42,54 +69,90 @@
 		onClose();
 	}
 
-	function onWinKeydown(e: KeyboardEvent) {
-		if (!open) return;
-		if (e.key === 'Escape') {
-			e.preventDefault();
-			onClose();
-		}
+	let shellEl: HTMLDivElement | undefined;
+	let panelEl: HTMLDivElement | undefined;
+
+	/** True while the primary button is down after pointerdown inside `.panel`. */
+	let pointerDownInsidePanel = false;
+	/** After selecting text / dragging from inside the panel, `mouseup` outside can synthesize a backdrop `click` — skip one dismiss. */
+	let suppressNextOutsideDismiss = false;
+
+	function onDialogPointerDown(e: PointerEvent) {
+		if (!panelEl) return;
+		const t = e.target;
+		pointerDownInsidePanel = t instanceof Node && panelEl.contains(t);
+	}
+
+	function onDialogPointerUp(e: PointerEvent) {
+		if (!panelEl) return;
+		const t = e.target;
+		const endOutsidePanel = t instanceof Node && !panelEl.contains(t);
+		if (pointerDownInsidePanel && endOutsidePanel) suppressNextOutsideDismiss = true;
+		pointerDownInsidePanel = false;
+	}
+
+	function consumeSuppressOutsideDismiss(): boolean {
+		if (!suppressNextOutsideDismiss) return false;
+		suppressNextOutsideDismiss = false;
+		return true;
+	}
+
+	/** Clicks on ::backdrop often use the <dialog> node as target (MDN pattern). */
+	function onDialogClick(e: MouseEvent) {
+		if (e.target !== dialogEl) return;
+		if (consumeSuppressOutsideDismiss()) return;
+		onClose();
+	}
+
+	/** Flex padding around the centered panel (not the panel itself). */
+	function onShellClick(e: MouseEvent) {
+		if (e.target !== shellEl) return;
+		if (consumeSuppressOutsideDismiss()) return;
+		onClose();
+	}
+
+	/** Top-layer dialog must live under `body`, not inside `main`, or hit-testing can fail on /play. */
+	$: if (browser && dialogEl && dialogEl.parentNode && dialogEl.parentNode !== document.body) {
+		document.body.appendChild(dialogEl);
 	}
 </script>
 
-<svelte:window onkeydown={onWinKeydown} />
-
-{#if open && browser}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="backdrop" onclick={onClose} role="presentation">
-		<!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus a11y_click_events_have_key_events -->
-		<div
-			class="panel"
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby="deal-to-title"
-			tabindex="-1"
-			onclick={(e) => e.stopPropagation()}
-		>
-			<h2 id="deal-to-title" class="title">Deal to…</h2>
-			<p class="hint">
-				Top-of-stack cards are dealt first (highest z-order). The number below is <strong>per selected
-				player</strong>; cards go round-robin in the order listed.
-			</p>
+{#if browser}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+	<dialog
+		bind:this={dialogEl}
+		class="deal-root"
+		data-bge-deal-dialog
+		aria-labelledby="deal-to-title"
+		onclose={() => onClose()}
+		onpointerdown={onDialogPointerDown}
+		onpointerup={onDialogPointerUp}
+		onclick={onDialogClick}
+	>
+		<!-- Full-viewport shell: clicks on padding around panel close the dialog. -->
+		<div bind:this={shellEl} class="deal-shell" role="presentation" onclick={onShellClick}>
+			<div bind:this={panelEl} class="panel" role="document">
+			<h2 id="deal-to-title" class="title">Deal cards</h2>
+			<p class="hint">Highest stack first. Per-player count; round-robin to checked players.</p>
 			{#if maxCards < 1}
-				<p class="warn">No movable cards selected.</p>
+				<p class="warn">No movable cards selected. Close and select cards on the table.</p>
 			{:else}
 				<label class="field">
-					<span>Cards per player</span>
+					<span>Per player</span>
 					<input type="number" bind:value={countStr} min="1" max={maxCards} step="1" />
 				</label>
-				<p class="sub">
-					{#if targetCount === 0}
-						Pick at least one player below.
-					{:else}
-						{maxCards} in selection — dealing <strong>{totalToDeal}</strong> total
-						({perPlayer} each × {targetCount} player{targetCount === 1 ? '' : 's'}{totalToDeal <
-						perPlayer * targetCount
-							? ', capped by selection'
-							: ''}).
-					{/if}
-				</p>
+				{#if targetCount > 0}
+					<p class="sub">
+						Up to <strong>{totalToDeal}</strong> of {maxCards} selected
+						{#if totalToDeal < perPlayer * targetCount}
+							(capped)
+						{/if}
+					</p>
+				{:else}
+					<p class="sub warn-inline">Choose at least one player.</p>
+				{/if}
 				<div class="targets">
-					<span class="targets-label">Players</span>
+					<span class="targets-label">To</span>
 					{#each roster as p, i (p.id)}
 						<label class="check">
 							<input
@@ -103,7 +166,7 @@
 					{/each}
 				</div>
 				{#if reducedMotion}
-					<p class="sub muted">Reduced motion: cards move instantly.</p>
+					<p class="sub muted">Instant move (reduced motion).</p>
 				{/if}
 			{/if}
 			<div class="actions">
@@ -118,19 +181,46 @@
 				</button>
 			</div>
 		</div>
-	</div>
+		</div>
+	</dialog>
 {/if}
 
 <style>
-	.backdrop {
-		position: fixed;
-		inset: 0;
-		z-index: 2000000005;
+	.deal-root {
+		margin: 0;
+		border: none;
+		padding: 0;
+		max-width: none;
+		width: 100vw;
+		height: 100vh;
+		max-height: 100vh;
+		background: transparent;
+		overflow: visible;
+	}
+	/* Global `*` sets user-select:none — restore interaction for modal controls. */
+	.deal-root :global(button),
+	.deal-root :global(input),
+	.deal-root :global(label) {
+		user-select: auto;
+		-webkit-user-select: auto;
+		cursor: auto;
+	}
+	.deal-root :global(.check),
+	.deal-root :global(.btn) {
+		cursor: pointer;
+	}
+	.deal-root::backdrop {
 		background: rgba(0, 0, 0, 0.45);
+	}
+	.deal-shell {
+		box-sizing: border-box;
+		min-height: 100%;
+		min-width: 100%;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		padding: 16px;
+		background: transparent;
 	}
 	.panel {
 		background: var(--color-context-bg);
@@ -155,6 +245,11 @@
 		color: #f87171;
 		margin: 0 0 12px;
 		font-size: 14px;
+	}
+	.warn-inline {
+		color: #fbbf24;
+		margin: 0 0 8px;
+		font-size: 12px;
 	}
 	.field {
 		display: flex;

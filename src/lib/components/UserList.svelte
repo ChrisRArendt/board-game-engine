@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount, tick } from 'svelte';
 	import { users } from '$lib/stores/users';
 	import {
 		activeUserId,
@@ -18,14 +19,16 @@
 	export let selfAvatarUrl: string | null | undefined = undefined;
 
 	const MENU_PAD = 8;
-	const MENU_EST_W = 220;
-	const MENU_EST_H = 200;
 
 	let orderMenuOpen = false;
 	/** Left edge of the menu (fixed), chosen so the menu stays on-screen (extends left from the click). */
 	let orderMenuLeft = 0;
 	let orderMenuTop = 0;
 	let orderMenuPlayerId: string | null = null;
+	/** Pointer position when opening — used to clamp after real menu size is known. */
+	let orderMenuAnchorX = 0;
+	let orderMenuAnchorY = 0;
+	let orderMenuEl: HTMLUListElement | undefined;
 
 	function closeOrderMenu() {
 		if (!orderMenuOpen) return;
@@ -56,23 +59,54 @@
 		closeOrderMenu();
 	}
 
+	function fitOrderMenuToViewport() {
+		if (typeof window === 'undefined' || !orderMenuEl) return;
+		const pad = MENU_PAD;
+		const vw = window.innerWidth;
+		const vh = window.innerHeight;
+		const w = orderMenuEl.offsetWidth;
+		const h = orderMenuEl.offsetHeight;
+		// Anchor menu so it grows left from the cursor (right edge near avatars on the right dock)
+		let rightEdge = orderMenuAnchorX;
+		rightEdge = Math.min(rightEdge, vw - pad);
+		rightEdge = Math.max(rightEdge, pad + w);
+		orderMenuLeft = rightEdge - w;
+		const maxT = Math.max(pad, vh - h - pad);
+		orderMenuTop = Math.min(Math.max(pad, orderMenuAnchorY), maxT);
+	}
+
 	function onPortraitContextMenu(e: MouseEvent, playerId: string) {
 		e.preventDefault();
 		e.stopPropagation();
 		orderMenuPlayerId = playerId;
+		orderMenuAnchorX = e.clientX;
+		orderMenuAnchorY = e.clientY;
 		const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
 		const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
-		// Anchor menu so it grows left from the cursor (right edge near avatars on the right dock)
+		const estW = 220;
+		const estH = 200;
 		let rightEdge = e.clientX;
 		rightEdge = Math.min(rightEdge, vw - MENU_PAD);
-		rightEdge = Math.max(rightEdge, MENU_PAD + MENU_EST_W);
-		orderMenuLeft = rightEdge - MENU_EST_W;
-		let top = e.clientY;
-		top = Math.min(top, vh - MENU_EST_H - MENU_PAD);
-		top = Math.max(top, MENU_PAD);
-		orderMenuTop = top;
+		rightEdge = Math.max(rightEdge, MENU_PAD + estW);
+		orderMenuLeft = rightEdge - estW;
+		orderMenuTop = Math.min(Math.max(MENU_PAD, e.clientY), vh - estH - MENU_PAD);
 		orderMenuOpen = true;
+		void tick().then(() =>
+			requestAnimationFrame(() => {
+				fitOrderMenuToViewport();
+				requestAnimationFrame(fitOrderMenuToViewport);
+			})
+		);
 	}
+
+	onMount(() => {
+		if (typeof window === 'undefined') return;
+		const onResize = () => {
+			if (orderMenuOpen) requestAnimationFrame(fitOrderMenuToViewport);
+		};
+		window.addEventListener('resize', onResize);
+		return () => window.removeEventListener('resize', onResize);
+	});
 
 	type RosterRow = {
 		id: string;
@@ -189,6 +223,7 @@
 {#if orderMenuOpen && orderMenuPlayerId}
 	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 	<ul
+		bind:this={orderMenuEl}
 		class="order-ctx"
 		style:top="{orderMenuTop}px"
 		style:left="{orderMenuLeft}px"
@@ -325,6 +360,10 @@
 		margin: 0;
 		padding: 4px 0;
 		min-width: 200px;
+		max-width: min(280px, calc(100vw - 16px));
+		max-height: min(90vh, calc(100vh - 16px));
+		overflow-x: hidden;
+		overflow-y: auto;
 		background: var(--color-context-bg);
 		border: 1px solid var(--color-border-strong);
 		border-radius: 4px;

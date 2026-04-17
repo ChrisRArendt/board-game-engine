@@ -16,6 +16,8 @@
 	import PlayControlsHelp from '$lib/components/PlayControlsHelp.svelte';
 	import PlayAssistBar from '$lib/components/PlayAssistBar.svelte';
 	import PiecePeekOverlay from '$lib/components/PiecePeekOverlay.svelte';
+	import DealToDialog from '$lib/components/DealToDialog.svelte';
+	import { closeDealDialog, dealDialog } from '$lib/stores/dealDialog';
 	import type { GameDataJson } from '$lib/engine/types';
 	import { hasAttr, pieceSupportsFlip } from '$lib/engine/pieces';
 	import * as g from '$lib/stores/game';
@@ -314,6 +316,7 @@
 			raw instanceof Element ? raw : raw instanceof Node ? raw.parentElement : null;
 		if (el?.closest?.('[data-toolbar]')) return;
 		if (el?.closest?.('[data-bge-context-menu]')) return;
+		if (el?.closest?.('[data-bge-deal-dialog]')) return;
 		if (el?.closest?.('[data-play-assist-bar]')) return;
 		ctxOpen = false;
 	}
@@ -523,6 +526,7 @@
 	});
 
 	onDestroy(() => {
+		closeDealDialog();
 		disconnectGame();
 	});
 </script>
@@ -757,6 +761,21 @@
 		</div>
 	{/if}
 </div>
+
+{#if $dealDialog.open}
+	<DealToDialog
+		open={$dealDialog.open}
+		roster={$dealDialog.roster}
+		maxCards={$dealDialog.maxCards}
+		reducedMotion={$dealDialog.reducedMotion}
+		onConfirm={(cardCount, rosterIndices) => {
+			void g.runDealCardsToRoster(rosterIndices, cardCount, {
+				reducedMotion: $dealDialog.reducedMotion
+			});
+		}}
+		onClose={closeDealDialog}
+	/>
+{/if}
 
 <style>
 	.play-topbar {
