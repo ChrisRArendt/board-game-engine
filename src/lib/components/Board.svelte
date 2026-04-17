@@ -42,10 +42,10 @@
 	}
 
 	/** Topmost element at (x,y); works even if pointer-events / store state disagree. */
-	function isPointerOverDealUi(clientX: number, clientY: number): boolean {
+	function isPointerOverPlayDialog(clientX: number, clientY: number): boolean {
 		if (!browser || typeof document === 'undefined') return false;
 		const el = document.elementFromPoint(clientX, clientY);
-		return Boolean(el?.closest?.('[data-bge-deal-dialog]'));
+		return Boolean(el?.closest?.('[data-bge-deal-dialog], [data-bge-pile-select-dialog]'));
 	}
 
 	/** When true, wheel pans; when false (default), wheel zooms. */
@@ -363,7 +363,7 @@
 			},
 			onMouseTableDown: (direct, clientX, clientY, shift) => {
 				if (!direct) return;
-				if (isPointerOverDealUi(clientX, clientY)) return;
+				if (isPointerOverPlayDialog(clientX, clientY)) return;
 				const st = get(game);
 				if (st.spacePanHeld) {
 					g.startPanPointer(clientX, clientY);
@@ -446,10 +446,10 @@
 
 	function onViewportPointerDown(e: PointerEvent) {
 		if (replayMode) return;
-		if (isPointerOverDealUi(e.clientX, e.clientY)) return;
+		if (isPointerOverPlayDialog(e.clientX, e.clientY)) return;
 		const blocked = boardInputBlocked();
 		const target = e.target as HTMLElement;
-		const dealHit = !!target.closest?.('[data-bge-deal-dialog]');
+		const dealHit = !!target.closest?.('[data-bge-deal-dialog], [data-bge-pile-select-dialog]');
 		if (blocked) return;
 		if (dealHit) return;
 		if (target.closest('.table')) return;
@@ -473,16 +473,16 @@
 
 	function onTablePointerDown(e: PointerEvent) {
 		if (replayMode) return;
-		if (isPointerOverDealUi(e.clientX, e.clientY)) return;
+		if (isPointerOverPlayDialog(e.clientX, e.clientY)) return;
 		if (boardInputBlocked()) return;
-		if ((e.target as HTMLElement).closest?.('[data-bge-deal-dialog]')) return;
+		if ((e.target as HTMLElement).closest?.('[data-bge-deal-dialog], [data-bge-pile-select-dialog]')) return;
 		const direct = e.target === e.currentTarget;
 		pointerEngine?.handlePointerDown(e, { kind: 'table', direct });
 	}
 
 	function onWheel(e: WheelEvent) {
 		if (replayMode) return;
-		if (isPointerOverDealUi(e.clientX, e.clientY)) return;
+		if (isPointerOverPlayDialog(e.clientX, e.clientY)) return;
 		if (boardInputBlocked()) return;
 		e.preventDefault();
 		const st = get(game);
@@ -502,7 +502,7 @@
 
 	async function onPiecePointerDown(piece: PieceInstance, e: PointerEvent) {
 		if (replayMode) return;
-		if (isPointerOverDealUi(e.clientX, e.clientY)) return;
+		if (isPointerOverPlayDialog(e.clientX, e.clientY)) return;
 		if (boardInputBlocked()) return;
 		e.stopPropagation();
 		if (e.pointerType === 'touch') {

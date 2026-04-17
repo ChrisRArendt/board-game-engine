@@ -872,6 +872,28 @@ export function clickSelect(id: number, shift: boolean) {
 	});
 }
 
+/** Replace play selection with these piece ids (order preserved; deduped). */
+export function replaceSelectionWithPieceIds(ids: number[]) {
+	game.update((s) => {
+		const next = new Set<number>();
+		const seen = new Set<number>();
+		for (const id of ids) {
+			const p = s.pieces.find((x) => x.id === id);
+			if (!p || !hasAttr(p, 'select') || p.hidden) continue;
+			if (seen.has(id)) continue;
+			seen.add(id);
+			next.add(id);
+		}
+		for (const oid of s.selectedIds) {
+			if (!next.has(oid)) emitGame?.('piece_deselect', { id: oid });
+		}
+		for (const id of next) {
+			if (!s.selectedIds.has(id)) emitGame?.('piece_select', { id });
+		}
+		return { ...s, selectedIds: next, selectedWidgetIds: new Set() };
+	});
+}
+
 export function flipPiece(id: number) {
 	game.update((s) => ({
 		...s,

@@ -96,6 +96,12 @@
 	<section>
 		<h3>Context menu</h3>
 		<div class="item-grid">
+			<div class="label">Pick from stack</div>
+			<div class="desc">
+				When at least two pieces overlap under the cursor, use the top section to choose how many to select from
+				the <strong>top</strong> or <strong>bottom</strong> of that stack (uses what you right-clicked on).
+			</div>
+
 			<div class="label">Deal to…</div>
 			<div class="desc">Deal selected cards to players’ deal zones.</div>
 
