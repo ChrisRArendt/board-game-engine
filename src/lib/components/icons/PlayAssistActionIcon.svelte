@@ -13,7 +13,8 @@
 		| 'deal'
 		| 'sort'
 		| 'duplicate'
-		| 'trash';
+		| 'trash'
+		| 'preview';
 	/** Pixel size (width/height). */
 	export let size = 18;
 </script>
@@ -98,30 +99,30 @@
 			transform="rotate(28 17.5 16.5)"
 		/>
 	{:else if kind === 'pile'}
-		<!-- Same as ArrangementControls layout "pile" -->
+		<!-- Single origin: same x/w (unlike stepped “stack”); reads as one deck / pile. -->
 		<rect
-			x="4"
-			y="10"
-			width="10"
-			height="8"
+			x="6"
+			y="13"
+			width="12"
+			height="7"
 			rx="1"
 			stroke="currentColor"
 			stroke-width="1.5"
 		/>
 		<rect
 			x="6"
-			y="7"
-			width="10"
-			height="8"
+			y="9"
+			width="12"
+			height="7"
 			rx="1"
 			stroke="currentColor"
 			stroke-width="1.5"
 		/>
 		<rect
-			x="8"
-			y="4"
-			width="10"
-			height="8"
+			x="6"
+			y="5"
+			width="12"
+			height="7"
 			rx="1"
 			stroke="currentColor"
 			stroke-width="1.5"
@@ -168,6 +169,10 @@
 			stroke-linecap="round"
 			stroke-linejoin="round"
 		/>
+	{:else if kind === 'preview'}
+		<rect x="4" y="5" width="10" height="13" rx="1.5" stroke="currentColor" stroke-width="1.5" />
+		<circle cx="10.5" cy="10" r="3" stroke="currentColor" stroke-width="1.5" />
+		<path d="M15 15l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
 	{/if}
 </svg>
 

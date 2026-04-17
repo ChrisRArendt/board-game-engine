@@ -231,13 +231,13 @@
 							/>
 						</svg>
 					{:else}
-						<!-- pile -->
+						<!-- pile: aligned edges (single origin), vs stepped stack icon -->
 						<svg class="layout-icon" viewBox="0 0 24 24" aria-hidden="true">
 							<rect
-								x="4"
-								y="10"
-								width="10"
-								height="8"
+								x="6"
+								y="13"
+								width="12"
+								height="7"
 								rx="1"
 								fill="none"
 								stroke="currentColor"
@@ -245,19 +245,19 @@
 							/>
 							<rect
 								x="6"
-								y="7"
-								width="10"
-								height="8"
+								y="9"
+								width="12"
+								height="7"
 								rx="1"
 								fill="none"
 								stroke="currentColor"
 								stroke-width="1.5"
 							/>
 							<rect
-								x="8"
-								y="4"
-								width="10"
-								height="8"
+								x="6"
+								y="5"
+								width="12"
+								height="7"
 								rx="1"
 								fill="none"
 								stroke="currentColor"

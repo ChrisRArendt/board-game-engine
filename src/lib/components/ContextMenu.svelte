@@ -120,7 +120,7 @@
 		{#if showFlip}
 			<li
 				onpointerdown={() => {
-					sel.forEach((p) => pieceSupportsFlip(p) && g.flipPiece(p.id));
+					g.flipSelectedPiecesSync();
 					open = false;
 				}}
 			>

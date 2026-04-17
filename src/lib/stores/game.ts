@@ -134,6 +134,8 @@ export interface GameState {
 	initialPlayView: InitialPlayViewState | null;
 	/** True while staggered “apply arrangement” animation is running (smooth motion + flip transition). */
 	arrangementAnimationActive: boolean;
+	/** Play: brief “lift” highlight before shuffle / sort-by-type apply (matches drag affordance). */
+	shuffleLiftIds: Set<number> | null;
 }
 
 function initialState(): GameState {
@@ -181,7 +183,8 @@ function initialState(): GameState {
 		playerSlotScores: Array.from({ length: PLAYER_SLOT_MAX }, () => 0),
 		boardViewportForCapture: null,
 		initialPlayView: null,
-		arrangementAnimationActive: false
+		arrangementAnimationActive: false,
+		shuffleLiftIds: null
 	};
 }
 
@@ -200,6 +203,75 @@ const ARRANGE_ROTATION_JITTER_DEG = 2;
 function arrangeSnapRotationDeg(): number {
 	if (ARRANGE_ROTATION_JITTER_DEG <= 0) return 0;
 	return (Math.random() - 0.5) * 2 * ARRANGE_ROTATION_JITTER_DEG;
+}
+
+/** Brief lift before shuffle permute — mirrors drag affordance; then positions tween. */
+const SHUFFLE_LIFT_MS = 180;
+let shuffleLiftGen = 0;
+let shuffleLiftTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearShuffleLiftTimers() {
+	if (shuffleLiftTimer) {
+		clearTimeout(shuffleLiftTimer);
+		shuffleLiftTimer = null;
+	}
+	shuffleLiftGen++;
+}
+
+function shuffleLiftReducedMotion(): boolean {
+	return (
+		typeof window !== 'undefined' &&
+		typeof matchMedia === 'function' &&
+		matchMedia('(prefers-reduced-motion: reduce)').matches
+	);
+}
+
+function applyShuffleMapToPieces(
+	pieces: PieceInstance[],
+	u: Map<number, { z: number; x: number; y: number }>
+): PieceInstance[] {
+	return pieces.map((p) => {
+		const upd = u.get(p.id);
+		return upd
+			? { ...p, zIndex: upd.z, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() }
+			: p;
+	});
+}
+
+/**
+ * Lift selected pieces, then apply shuffle map and run `emitAfter`.
+ * Map must be computed once so random permutations stay stable.
+ */
+function scheduleShuffleLiftApply(
+	movedIds: number[],
+	u: Map<number, { z: number; x: number; y: number }>,
+	emitAfter: () => void
+) {
+	if (movedIds.length === 0) return;
+
+	if (shuffleLiftReducedMotion()) {
+		game.update((s) => ({
+			...s,
+			pieces: applyShuffleMapToPieces(s.pieces, u),
+			shuffleLiftIds: null
+		}));
+		emitAfter();
+		return;
+	}
+
+	clearShuffleLiftTimers();
+	const gen = shuffleLiftGen;
+	game.update((s) => ({ ...s, shuffleLiftIds: new Set(movedIds) }));
+	shuffleLiftTimer = setTimeout(() => {
+		shuffleLiftTimer = null;
+		if (gen !== shuffleLiftGen) return;
+		game.update((s) => ({
+			...s,
+			pieces: applyShuffleMapToPieces(s.pieces, u),
+			shuffleLiftIds: null
+		}));
+		emitAfter();
+	}, SHUFFLE_LIFT_MS);
 }
 
 let arrangementAnimGeneration = 0;
@@ -738,6 +810,35 @@ export function flipPiece(id: number) {
 	}
 }
 
+/**
+ * Multi-select flip: if any selected flip-capable piece is face-up, set all of them face-down
+ * together; if they are already all face-down, flip all face-up. Single selection behaves like a normal toggle.
+ */
+export function flipSelectedPiecesSync() {
+	const s0 = get(game);
+	const targets = s0.pieces.filter((p) => s0.selectedIds.has(p.id) && pieceSupportsFlip(p));
+	if (targets.length === 0) return;
+
+	const anyFaceUp = targets.some((p) => !p.flipped);
+	const nextFlipped = anyFaceUp;
+
+	const changingIds = targets.filter((p) => p.flipped !== nextFlipped).map((p) => p.id);
+	if (changingIds.length === 0) return;
+
+	game.update((s) => ({
+		...s,
+		pieces: s.pieces.map((p) =>
+			changingIds.includes(p.id) ? { ...p, flipped: nextFlipped } : p
+		)
+	}));
+
+	const s1 = get(game);
+	for (const id of changingIds) {
+		const p = s1.pieces.find((x) => x.id === id);
+		if (p) emitGame?.('piece_flip', { id, isFlipped: p.flipped });
+	}
+}
+
 export function setPieceFlipped(id: number, flipped: boolean) {
 	game.update((s) => ({
 		...s,
@@ -979,52 +1080,48 @@ export function destroyPiece(id: number) {
 }
 
 export function runShuffleSelected() {
-	game.update((s) => {
-		const u = shuffleSelectedPieces(s.pieces, s.selectedIds);
-		let pieces = s.pieces.map((p) => {
-			const upd = u.get(p.id);
-			return upd ? { ...p, zIndex: upd.z, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
-		});
-		return { ...s, pieces };
+	const st = get(game);
+	const u = shuffleSelectedPieces(st.pieces, st.selectedIds);
+	const movedIds = [...u.keys()];
+	if (movedIds.length === 0) return;
+
+	scheduleShuffleLiftApply(movedIds, u, () => {
+		const s = get(game);
+		for (const id of s.selectedIds) {
+			const p = s.pieces.find((x) => x.id === id);
+			if (p)
+				emitGame?.('piece_shuffle', {
+					id: p.id,
+					zindex: p.zIndex,
+					x: p.x,
+					y: p.y,
+					rotation: p.rotation ?? 0
+				});
+		}
 	});
-	const s = get(game);
-	for (const id of s.selectedIds) {
-		const p = s.pieces.find((x) => x.id === id);
-		if (p)
-			emitGame?.('piece_shuffle', {
-				id: p.id,
-				zindex: p.zIndex,
-				x: p.x,
-				y: p.y,
-				rotation: p.rotation ?? 0
-			});
-	}
 }
 
 /** Context menu: permute positions among movable unlocked selection (2+). */
 export function runShuffleMovableSelection() {
-	let movedIds: number[] = [];
-	game.update((s) => {
-		const u = shuffleMovableSelectedPieces(s.pieces, s.selectedIds);
-		movedIds = [...u.keys()];
-		const pieces = s.pieces.map((p) => {
-			const upd = u.get(p.id);
-			return upd ? { ...p, zIndex: upd.z, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
-		});
-		return { ...s, pieces };
+	const st = get(game);
+	const u = shuffleMovableSelectedPieces(st.pieces, st.selectedIds);
+	const movedIds = [...u.keys()];
+	if (movedIds.length === 0) return;
+
+	scheduleShuffleLiftApply(movedIds, u, () => {
+		const s = get(game);
+		for (const id of movedIds) {
+			const p = s.pieces.find((x) => x.id === id);
+			if (p)
+				emitGame?.('piece_shuffle', {
+					id: p.id,
+					zindex: p.zIndex,
+					x: p.x,
+					y: p.y,
+					rotation: p.rotation ?? 0
+				});
+		}
 	});
-	const s = get(game);
-	for (const id of movedIds) {
-		const p = s.pieces.find((x) => x.id === id);
-		if (p)
-			emitGame?.('piece_shuffle', {
-				id: p.id,
-				zindex: p.zIndex,
-				x: p.x,
-				y: p.y,
-				rotation: p.rotation ?? 0
-			});
-	}
 }
 
 /**
@@ -1032,28 +1129,25 @@ export function runShuffleMovableSelection() {
  * (template) into spatially ordered slots — same positions overall, types sorted along the spread.
  */
 export function runArrangeGroupByPieceType() {
-	let movedIds: number[] = [];
-	game.update((s) => {
-		const u = sortMovableSelectedByTemplateSlots(s.pieces, s.selectedIds);
-		movedIds = [...u.keys()];
-		const pieces = s.pieces.map((p) => {
-			const upd = u.get(p.id);
-			return upd ? { ...p, zIndex: upd.z, x: upd.x, y: upd.y, rotation: arrangeSnapRotationDeg() } : p;
-		});
-		return { ...s, pieces };
-	});
 	const st = get(game);
-	for (const id of movedIds) {
-		const p = st.pieces.find((x) => x.id === id);
-		if (p)
-			emitGame?.('piece_shuffle', {
-				id: p.id,
-				zindex: p.zIndex,
-				x: p.x,
-				y: p.y,
-				rotation: p.rotation ?? 0
-			});
-	}
+	const u = sortMovableSelectedByTemplateSlots(st.pieces, st.selectedIds);
+	const movedIds = [...u.keys()];
+	if (movedIds.length === 0) return;
+
+	scheduleShuffleLiftApply(movedIds, u, () => {
+		const g = get(game);
+		for (const id of movedIds) {
+			const p = g.pieces.find((x) => x.id === id);
+			if (p)
+				emitGame?.('piece_shuffle', {
+					id: p.id,
+					zindex: p.zIndex,
+					x: p.x,
+					y: p.y,
+					rotation: p.rotation ?? 0
+				});
+		}
+	});
 }
 
 /**
@@ -2277,6 +2371,7 @@ export function applyStoredGameSnapshot(
 	opts?: { skipCenter?: boolean }
 ) {
 	clearArrangementAnimationTimeouts();
+	clearShuffleLiftTimers();
 	arrangementAnimGeneration++;
 	game.update((s) => {
 		const playerSlots =
@@ -2345,7 +2440,8 @@ export function applyStoredGameSnapshot(
 			editorSnapToGrid: false,
 			editorGridSize: 20,
 			playerSlotScores: normalizePlayerSlotScores(snapshot.playerSlotScores),
-			arrangementAnimationActive: false
+			arrangementAnimationActive: false,
+			shuffleLiftIds: null
 		};
 	});
 	if (!opts?.skipCenter) centerCamToVP();

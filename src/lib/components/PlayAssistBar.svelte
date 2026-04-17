@@ -23,6 +23,8 @@
 	export let scrollWheelPans = false;
 	export let replayMode = false;
 	export let selfDisplayName = 'You';
+	/** Single selection: toggles the same large preview as hold-<kbd>P</kbd> (parent owns overlay state). */
+	export let onTogglePiecePeek: ((pieceId: number) => void) | undefined = undefined;
 
 	let dealOpen = false;
 	let offsetX = 0;
@@ -106,11 +108,13 @@
 	$: showSingleDup = singlePiece != null && hasAttr(singlePiece, 'duplicate');
 	$: showSingleDest = singlePiece != null && hasAttr(singlePiece, 'destroy');
 	$: showSingleFlip = singlePiece != null && pieceSupportsFlip(singlePiece);
-	$: singleHasAnyAction = showSingleFlip || showSingleDup || showSingleDest;
+	$: showSinglePreview = singlePiece != null && typeof onTogglePiecePeek === 'function';
+	$: singleHasAnyAction = showSinglePreview || showSingleFlip || showSingleDup || showSingleDest;
 
 	/** First selected piece in board order — same rule as keyboard A / runArrangeSmart. */
 	$: smartFirstForArrange = $game.pieces.find((p) => $game.selectedIds.has(p.id));
-	$: smartArrangeShowsStack = smartFirstForArrange != null && smartFirstForArrange.flipped;
+	/** Keyboard A: face-down selection → pile at average position (same-origin, like Arrange → Pile). */
+	$: smartArrangeShowsPile = smartFirstForArrange != null && smartFirstForArrange.flipped;
 
 	function onDragHandleDown(e: PointerEvent) {
 		if (e.button !== 0) return;
@@ -151,7 +155,7 @@
 	}
 
 	function doFlipSelection() {
-		sel.forEach((p) => pieceSupportsFlip(p) && g.flipPiece(p.id));
+		g.flipSelectedPiecesSync();
 	}
 
 	function doStack() {
@@ -268,8 +272,22 @@
 					</div>
 				{:else if singlePiece}
 					<div class="row actions">
+						{#if showSinglePreview}
+							<button
+								type="button"
+								class="act-btn"
+								title="Large preview on your screen only (same as hold P)"
+								onclick={() => onTogglePiecePeek?.(singlePiece.id)}
+							>
+								<PlayAssistActionIcon kind="preview" />
+								<span class="act-btn-caption">
+									<span class="act-label">Preview</span>
+									<kbd class="kbd sm">P</kbd>
+								</span>
+							</button>
+						{/if}
 						{#if showSingleFlip}
-							<button type="button" class="act-btn" onclick={() => g.flipPiece(singlePiece.id)}>
+							<button type="button" class="act-btn" onclick={() => g.flipSelectedPiecesSync()}>
 								<PlayAssistActionIcon kind="flip" />
 								<span class="act-btn-caption">
 									<span class="act-label">Flip</span>
@@ -342,11 +360,11 @@
 								type="button"
 								class="act-btn"
 								onclick={doSmartArrange}
-								title="Uses the first selected piece: face-down → stack; face-up → arc fan. Keyboard A."
+								title="Uses the first selected piece: face-down → pile; face-up → arc fan. Keyboard A."
 							>
-								<PlayAssistActionIcon kind={smartArrangeShowsStack ? 'stack' : 'fan'} />
+								<PlayAssistActionIcon kind={smartArrangeShowsPile ? 'pile' : 'fan'} />
 								<span class="act-btn-caption">
-									<span class="act-label">{smartArrangeShowsStack ? 'Stack' : 'Fan'}</span>
+									<span class="act-label">{smartArrangeShowsPile ? 'Pile' : 'Fan'}</span>
 									<kbd class="kbd sm">A</kbd>
 								</span>
 							</button>

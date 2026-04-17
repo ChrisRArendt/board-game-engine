@@ -11,6 +11,8 @@
 	/** Piece to show enlarged while a hotkey is held; `null` hides the overlay. */
 	export let pieceId: number | null = null;
 	export let selfDisplayName = 'You';
+	/** When set, replaces the default “Release P” line (e.g. assist bar toggle). */
+	export let dismissHint: string | null = null;
 
 	$: piece =
 		pieceId === null ? null : ($game.pieces.find((p) => p.id === pieceId) ?? null);
@@ -84,7 +86,13 @@
 					style:background-repeat="no-repeat"
 				></div>
 			{/if}
-			<p class="hint">Release <kbd>P</kbd> to close</p>
+			<p class="hint">
+				{#if dismissHint}
+					{dismissHint}
+				{:else}
+					Release <kbd>P</kbd> to close
+				{/if}
+			</p>
 		</div>
 	</div>
 {/if}

@@ -752,6 +752,7 @@
 									)}
 							selected={$game.selectedIds.has(piece.id)}
 							dragging={$game.moveDrag != null && $game.selectedIds.has(piece.id) && piece.attributes.includes('move')}
+							shuffleLifting={$game.shuffleLiftIds?.has(piece.id) ?? false}
 							pressing={pressingPieceId === piece.id}
 							remoteColor={$game.remoteSelection[piece.id]}
 							onpointerdown={(e) => onPiecePointerDown(piece, e)}

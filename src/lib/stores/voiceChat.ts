@@ -756,7 +756,9 @@ export async function joinVoiceRoom(lobbyId: string, presence: VoicePresencePayl
 				// #region agent log
 				bgeVoiceDbg('E', 'voiceChat:joined', 'turn_relay_status', {
 					relay: turnRelayConfigured(),
-					prod: import.meta.env.PROD
+					prod: import.meta.env.PROD,
+					/** 2 = STUN only; 3+ means at least one TURN URL made it into the client bundle */
+					iceServerCount: buildIceServers().length
 				});
 				// #endregion
 				try {

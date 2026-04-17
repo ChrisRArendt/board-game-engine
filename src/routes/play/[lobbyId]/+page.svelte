@@ -100,6 +100,8 @@
 	let winControlsHelp = false;
 	/** Hold physical <kbd>P</kbd> for a large preview of the top-most selected piece. */
 	let peekPieceId: number | null = null;
+	/** When set, {@link PiecePeekOverlay} shows this line instead of “Release P…”. */
+	let peekDismissHint: string | null = null;
 	let useMobileSheets = false;
 	let removeMobileMq: (() => void) | undefined;
 	let viewerPieceId: number | null = null;
@@ -116,6 +118,16 @@
 		: `/data/${$game.curGame}/rules.pdf`;
 
 	/** Local enlarged piece preview only — never broadcast (unlike Dice Roller). */
+	function togglePiecePeekFromAssist(pieceId: number) {
+		if (peekPieceId === pieceId) {
+			peekPieceId = null;
+			peekDismissHint = null;
+		} else {
+			peekPieceId = pieceId;
+			peekDismissHint = 'Press Esc or tap Preview again to close';
+		}
+	}
+
 	function openLocalViewerFromSelection() {
 		const sel = get(game).pieces.filter((p) => get(game).selectedIds.has(p.id));
 		viewerPieceId = sel.length ? sel[0].id : null;
@@ -190,6 +202,7 @@
 	function onKeyDown(e: KeyboardEvent) {
 		if (!get(isHistoryReplayActive) && peekPieceId !== null && e.key === 'Escape') {
 			peekPieceId = null;
+			peekDismissHint = null;
 			e.preventDefault();
 			return;
 		}
@@ -232,8 +245,11 @@
 			const sel = get(game).pieces.filter((p) => get(game).selectedIds.has(p.id));
 			if (sel.every((p) => p.attributes.includes('duplicate'))) sel.forEach((p) => g.duplicatePiece(p.id));
 		} else if (e.key === 'f' || e.key === 'F') {
-			const sel = get(game).pieces.filter((p) => get(game).selectedIds.has(p.id));
-			if (sel.every((p) => pieceSupportsFlip(p))) sel.forEach((p) => g.flipPiece(p.id));
+			const st = get(game);
+			const flipCapable = st.pieces.filter(
+				(p) => st.selectedIds.has(p.id) && pieceSupportsFlip(p)
+			);
+			if (flipCapable.length > 0) g.flipSelectedPiecesSync();
 		} else if (e.key === 's' || e.key === 'S') {
 			if (isTypingInField(e.target)) return;
 			const st = get(game);
@@ -260,6 +276,7 @@
 			if (sel.size === 0) return;
 			const pieces = get(game).pieces.filter((p) => sel.has(p.id));
 			const top = [...pieces].sort((a, b) => b.zIndex - a.zIndex || b.id - a.id)[0];
+			peekDismissHint = null;
 			peekPieceId = top.id;
 			return;
 		} else if (e.key === 'Backspace') {
@@ -271,6 +288,7 @@
 	function onKeyUp(e: KeyboardEvent) {
 		if (e.code === 'KeyP') {
 			peekPieceId = null;
+			peekDismissHint = null;
 		}
 		if (e.key === 'Shift') g.setShiftDown(false);
 		else if (e.key === ' ' || e.code === 'Space') {
@@ -303,6 +321,7 @@
 	onMount(() => {
 		const onWinBlur = () => {
 			peekPieceId = null;
+			peekDismissHint = null;
 		};
 		if (browser) {
 			window.addEventListener('blur', onWinBlur);
@@ -712,12 +731,17 @@
 				/>
 		</WindowFrame>
 	{/if}
-	<PiecePeekOverlay pieceId={peekPieceId} selfDisplayName={data.profile?.display_name ?? 'You'} />
+	<PiecePeekOverlay
+		pieceId={peekPieceId}
+		dismissHint={peekDismissHint}
+		selfDisplayName={data.profile?.display_name ?? 'You'}
+	/>
 
 	<PlayAssistBar
 		scrollWheelPans={$settings.scrollWheelPans}
 		replayMode={$isHistoryReplayActive}
 		selfDisplayName={data.profile?.display_name ?? 'You'}
+		onTogglePiecePeek={togglePiecePeekFromAssist}
 	/>
 
 	{#if $voiceChatState.joined}

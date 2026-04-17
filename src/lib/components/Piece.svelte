@@ -14,6 +14,8 @@
 	export let faceHidden = false;
 	export let selected = false;
 	export let dragging = false;
+	/** Play: brief lift before shuffle (same visual stack as drag). */
+	export let shuffleLifting = false;
 	export let pressing = false;
 	export let remoteColor: string | undefined = undefined;
 	export let onpointerdown: ((e: PointerEvent) => void) | undefined = undefined;
@@ -39,7 +41,7 @@
 
 	let lastPieceId = -1;
 	let liftJitterDeg = 0;
-	let prevDragging = false;
+	let prevLiftVisual = false;
 
 	function settleDropDurationMs(): number {
 		if (!browser) return 380;
@@ -72,8 +74,9 @@
 		posY.set(piece.y, { duration: dur, easing });
 	}
 
-	$: if (dragging !== prevDragging) {
-		if (dragging) {
+	$: liftVisual = dragging || shuffleLifting;
+	$: if (liftVisual !== prevLiftVisual) {
+		if (liftVisual) {
 			settleDragRot.set(0, { duration: 0 });
 			liftJitterDeg = (Math.random() - 0.5) * 5;
 		} else {
@@ -82,7 +85,7 @@
 			settleDragRot.set(kick, { duration: 0 });
 			settleDragRot.set(0, { duration: settleDropDurationMs(), easing: cubicOut });
 		}
-		prevDragging = dragging;
+		prevLiftVisual = liftVisual;
 	}
 
 	$: {
@@ -101,7 +104,7 @@
 	$: bgUrl = canFlip && piece.flipped ? bgUrlBack : bgUrlFront;
 	$: showFace = !faceHidden;
 	$: rot = piece.rotation ?? 0;
-	$: dragInteractRot = rot + (dragging ? liftJitterDeg : $settleDragRot);
+	$: dragInteractRot = rot + (liftVisual ? liftJitterDeg : $settleDragRot);
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -109,6 +112,7 @@
 	class="piece"
 	class:selected
 	class:dragging
+	class:shuffle-lift={shuffleLifting}
 	class:pressing
 	class:replay={replayMode}
 	class:face-hidden={faceHidden}
@@ -123,7 +127,7 @@
 	style:height="{piece.initial_size.h}px"
 	style:transform-origin="center center"
 	style:--board-zoom={boardZoom}
-	style:transform={dragging
+	style:transform={liftVisual
 		? `translate3d(${piece.x}px, ${piece.y}px, 0) rotate(${dragInteractRot}deg) scale(1.05)`
 		: `translate3d(${Math.round($posX)}px, ${Math.round($posY)}px, 0) rotate(${dragInteractRot}deg)`}
 	style:background-color={showFace && piece.bg_color ? piece.bg_color : undefined}
@@ -190,7 +194,8 @@
 			box-shadow 150ms ease,
 			filter 150ms ease;
 	}
-	.piece.dragging {
+	.piece.dragging,
+	.piece.shuffle-lift {
 		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 		filter: brightness(1.05);
 		z-index: 999999 !important;
@@ -219,7 +224,8 @@
 			filter 150ms ease,
 			outline-width 120ms ease;
 	}
-	.piece.selected.dragging {
+	.piece.selected.dragging,
+	.piece.selected.shuffle-lift {
 		box-shadow:
 			0 8px 24px rgba(0, 0, 0, 0.38),
 			0 0 0 1px rgba(0, 30, 60, 0.45),

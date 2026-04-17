@@ -299,7 +299,7 @@
 			{/if}
 			{#if showFlip}
 				<li class="flip">
-					<button type="button" class="tb-btn" onclick={() => sel.forEach((p) => g.flipPiece(p.id))}
+					<button type="button" class="tb-btn" onclick={() => g.flipSelectedPiecesSync()}
 						>Flip</button
 					>
 				</li>
@@ -336,7 +336,7 @@
 			{/if}
 			{#if showFlip}
 				<li class="flip">
-					<button type="button" class="tb-btn" onclick={() => sel.forEach((p) => g.flipPiece(p.id))}
+					<button type="button" class="tb-btn" onclick={() => g.flipSelectedPiecesSync()}
 						>Flip</button
 					>
 				</li>
