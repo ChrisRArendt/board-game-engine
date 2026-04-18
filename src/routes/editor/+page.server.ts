@@ -5,5 +5,5 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ parent }) => {
 	const { session } = await parent();
 	if (!session) throw redirect(303, '/login');
-	return { title: pageTitle('Board editor') };
+	return { title: pageTitle('Editor - Open Project') };
 };

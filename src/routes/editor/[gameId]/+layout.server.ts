@@ -14,6 +14,7 @@ export const load: LayoutServerLoad = async ({ params, locals: { supabase, safeG
 
 	if (qErr) throw error(500, qErr.message);
 	if (!game) throw error(404, 'Game not found');
+	/* Games are publicly playable (see RLS) but the editor is creator-only. */
 	if (game.creator_id !== session.user.id) throw error(403, 'Only the creator can edit');
 
 	return {

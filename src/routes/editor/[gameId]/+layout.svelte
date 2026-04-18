@@ -15,7 +15,7 @@
 		<a href="/editor/{gid}/templates" class:active={path.includes('/templates')}>Templates</a>
 		<a href="/editor/{gid}/pieces" class:active={path.includes('/pieces')}>Pieces</a>
 		<a href="/editor/{gid}/media" class:active={path.includes('/media')}>Media</a>
-		<a class="back" href="/editor">All games</a>
+		<a class="back" href="/editor">Open project</a>
 	</nav>
 	<div class="content">
 		<slot />

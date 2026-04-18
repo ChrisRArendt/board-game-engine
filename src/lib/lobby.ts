@@ -3,6 +3,7 @@ import type { Database } from '$lib/supabase/database.types';
 import { isSortOrderMissingError } from '$lib/lobby/sortOrderFallback';
 
 export type LobbyRow = Database['public']['Tables']['lobbies']['Row'];
+export type LobbyVisibility = LobbyRow['visibility'];
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -16,7 +17,14 @@ function randomInviteCode(): string {
 
 export async function createLobby(
 	supabase: SupabaseClient<Database>,
-	opts: { hostId: string; name: string; gameKey: string; maxPlayers: number }
+	opts: {
+		hostId: string;
+		name: string;
+		gameKey: string;
+		maxPlayers: number;
+		description?: string;
+		visibility?: LobbyVisibility;
+	}
 ): Promise<LobbyRow> {
 	for (let attempt = 0; attempt < 8; attempt++) {
 		const invite_code = randomInviteCode();
@@ -27,6 +35,8 @@ export async function createLobby(
 				name: opts.name,
 				game_key: opts.gameKey,
 				max_players: opts.maxPlayers,
+				description: opts.description ?? '',
+				visibility: opts.visibility ?? 'private',
 				invite_code,
 				status: 'waiting'
 			})
@@ -154,16 +164,128 @@ export async function joinLobbyByCode(
 	return lobby;
 }
 
-export async function listOpenLobbies(supabase: SupabaseClient<Database>) {
-	const { data, error } = await supabase
+/** Waiting lobbies you host or are a member of (hub “My lobbies”). */
+export async function listMyWaitingLobbies(supabase: SupabaseClient<Database>, userId: string) {
+	const { data: hosted, error: e1 } = await supabase
+		.from('lobbies')
+		.select('*')
+		.eq('host_id', userId)
+		.eq('status', 'waiting')
+		.order('created_at', { ascending: false });
+	if (e1) throw e1;
+
+	const { data: mrows, error: e2 } = await supabase
+		.from('lobby_members')
+		.select('lobby_id')
+		.eq('user_id', userId);
+	if (e2) throw e2;
+
+	const mids = [...new Set((mrows ?? []).map((r) => r.lobby_id))];
+	let memberLobbies: LobbyRow[] = [];
+	if (mids.length) {
+		const { data: ml, error: e3 } = await supabase
+			.from('lobbies')
+			.select('*')
+			.in('id', mids)
+			.eq('status', 'waiting')
+			.order('created_at', { ascending: false });
+		if (e3) throw e3;
+		memberLobbies = ml ?? [];
+	}
+
+	const byId = new Map<string, LobbyRow>();
+	for (const L of [...(hosted ?? []), ...memberLobbies]) {
+		byId.set(L.id, L);
+	}
+	return [...byId.values()].sort(
+		(a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+	);
+}
+
+/** Discoverable public waiting lobbies (hub “Public” tab). */
+export async function listPublicLobbies(
+	supabase: SupabaseClient<Database>,
+	opts?: { gameKey?: string; q?: string }
+) {
+	let q = supabase
 		.from('lobbies')
 		.select('*')
 		.eq('status', 'waiting')
+		.eq('visibility', 'public')
 		.order('created_at', { ascending: false })
-		.limit(50);
+		.limit(80);
 
+	if (opts?.gameKey) {
+		q = q.eq('game_key', opts.gameKey);
+	}
+
+	const needle = opts?.q?.trim();
+	if (needle) {
+		const esc = needle.replace(/%/g, '\\%').replace(/_/g, '\\_');
+		q = q.or(`name.ilike.%${esc}%,description.ilike.%${esc}%`);
+	}
+
+	const { data, error } = await q;
 	if (error) throw error;
 	return data ?? [];
+}
+
+/** @deprecated Prefer listMyWaitingLobbies or listPublicLobbies */
+export async function listOpenLobbies(supabase: SupabaseClient<Database>) {
+	return listPublicLobbies(supabase);
+}
+
+export async function updateLobby(
+	supabase: SupabaseClient<Database>,
+	lobbyId: string,
+	hostId: string,
+	patch: {
+		name?: string;
+		description?: string;
+		max_players?: number;
+		visibility?: LobbyVisibility;
+	}
+) {
+	const { error } = await supabase
+		.from('lobbies')
+		.update(patch)
+		.eq('id', lobbyId)
+		.eq('host_id', hostId);
+	if (error) throw error;
+}
+
+export type PublicLobbyDetail = {
+	lobby: LobbyRow;
+	host: Database['public']['Tables']['profiles']['Row'];
+	memberCount: number;
+};
+
+export async function getPublicLobbyDetail(
+	supabase: SupabaseClient<Database>,
+	lobbyId: string
+): Promise<PublicLobbyDetail | null> {
+	const { data: lobby, error: lErr } = await supabase
+		.from('lobbies')
+		.select('*')
+		.eq('id', lobbyId)
+		.maybeSingle();
+	if (lErr) throw lErr;
+	if (!lobby || lobby.visibility !== 'public' || lobby.status !== 'waiting') return null;
+
+	const { data: host, error: hErr } = await supabase
+		.from('profiles')
+		.select('*')
+		.eq('id', lobby.host_id)
+		.single();
+	if (hErr) throw hErr;
+
+	const { count, error: cErr } = await supabase
+		.from('lobby_members')
+		.select('*', { count: 'exact', head: true })
+		.eq('lobby_id', lobbyId);
+	if (cErr) throw cErr;
+
+	return { lobby, host, memberCount: count ?? 0 };
 }
 
 /** Lobbies the user is in that are currently in `playing` status (resume from hub). */

@@ -78,7 +78,7 @@ export const load: PageServerLoad = async ({ params, locals: { supabase, safeGet
 			throw error(500, messageFromUnknown(cgErr));
 		}
 		if (!cg) {
-			throw error(404, 'Custom board game not found or not visible');
+			throw error(404, 'Custom board game not found');
 		}
 		const assetBaseUrl = customGameAssetBaseUrl(PUBLIC_SUPABASE_URL, cg.creator_id, cg.id);
 		const rulesUrl = cg.rules_pdf_path

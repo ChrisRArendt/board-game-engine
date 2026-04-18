@@ -63,6 +63,8 @@ export interface Database {
 					host_id: string;
 					game_key: string;
 					name: string;
+					description: string;
+					visibility: 'private' | 'friends' | 'public';
 					status: 'waiting' | 'playing' | 'finished';
 					max_players: number;
 					invite_code: string;
@@ -73,6 +75,8 @@ export interface Database {
 					host_id: string;
 					game_key: string;
 					name: string;
+					description?: string;
+					visibility?: 'private' | 'friends' | 'public';
 					status?: 'waiting' | 'playing' | 'finished';
 					max_players?: number;
 					invite_code: string;
@@ -83,6 +87,8 @@ export interface Database {
 					host_id?: string;
 					game_key?: string;
 					name?: string;
+					description?: string;
+					visibility?: 'private' | 'friends' | 'public';
 					status?: 'waiting' | 'playing' | 'finished';
 					max_players?: number;
 					invite_code?: string;
@@ -186,6 +192,7 @@ export interface Database {
 					game_key: string;
 					game_data: Json;
 					rules_pdf_path: string | null;
+					cover_image_path: string | null;
 					created_at: string;
 					updated_at: string;
 				};
@@ -196,6 +203,7 @@ export interface Database {
 					description?: string;
 					game_data: Json;
 					rules_pdf_path?: string | null;
+					cover_image_path?: string | null;
 					created_at?: string;
 					updated_at?: string;
 				};
@@ -206,6 +214,7 @@ export interface Database {
 					description?: string;
 					game_data?: Json;
 					rules_pdf_path?: string | null;
+					cover_image_path?: string | null;
 					created_at?: string;
 					updated_at?: string;
 				};

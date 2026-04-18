@@ -4,7 +4,15 @@
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { connectLobbyChannel, disconnectLobby, emitLobby } from '$lib/stores/network';
 	import { users } from '$lib/stores/users';
-	import { startGame, deleteLobby, leaveLobby, persistLobbyMemberOrderWithoutRpc } from '$lib/lobby';
+	import {
+		getLobby,
+		startGame,
+		deleteLobby,
+		leaveLobby,
+		persistLobbyMemberOrderWithoutRpc,
+		updateLobby,
+		type LobbyRow
+	} from '$lib/lobby';
 	import {
 		fetchLobbyMembersOrdered,
 		isRpcMissingFromCacheError,
@@ -27,6 +35,7 @@
 	let lobbyDeleteCh: RealtimeChannel | null = null;
 	/** DB lobby_members changes — keep player list in sync when others join/leave (SSR snapshot is stale). */
 	let lobbyMembersCh: RealtimeChannel | null = null;
+	let lobbyRowCh: RealtimeChannel | null = null;
 
 	type MemberRow = {
 		user_id: string;
@@ -37,6 +46,42 @@
 
 	const supabase = createSupabaseBrowserClient();
 	const isHost = data.lobby.host_id === data.session.user.id;
+
+	let room: LobbyRow = data.lobby;
+	let editName = data.lobby.name;
+	let editDescription = data.lobby.description ?? '';
+	let editMax = data.lobby.max_players;
+	let editVisibility: LobbyRow['visibility'] = data.lobby.visibility ?? 'private';
+	let savingSettings = false;
+
+	function applyLobbyRow(row: LobbyRow) {
+		room = row;
+		editName = row.name;
+		editDescription = row.description ?? '';
+		editMax = row.max_players;
+		editVisibility = row.visibility ?? 'private';
+	}
+
+	async function saveLobbySettings() {
+		if (!isHost) return;
+		savingSettings = true;
+		errMsg = '';
+		try {
+			const nextName = editName.trim() || 'Lobby';
+			const nextMax = Math.min(20, Math.max(2, Math.floor(Number(editMax))));
+			await updateLobby(supabase, data.lobby.id, data.session.user.id, {
+				name: nextName,
+				description: editDescription.trim(),
+				max_players: nextMax,
+				visibility: editVisibility
+			});
+			const row = await getLobby(supabase, data.lobby.id);
+			if (row) applyLobbyRow(row);
+		} catch (e) {
+			errMsg = e instanceof Error ? e.message : 'Could not save settings';
+		}
+		savingSettings = false;
+	}
 
 	let errMsg = '';
 	/** True when order was synced over the socket but DB writes failed (PostgREST schema cache). */
@@ -266,6 +311,23 @@
 			);
 		void lobbyMembersCh.subscribe();
 
+		lobbyRowCh = supabase
+			.channel(`lobby_row_watch:${data.lobby.id}`)
+			.on(
+				'postgres_changes',
+				{
+					event: 'UPDATE',
+					schema: 'public',
+					table: 'lobbies',
+					filter: `id=eq.${data.lobby.id}`
+				},
+				(payload) => {
+					const n = payload.new as LobbyRow | undefined;
+					if (n) applyLobbyRow(n);
+				}
+			);
+		void lobbyRowCh.subscribe();
+
 		void (async () => {
 			if (!data.profile) return;
 			try {
@@ -314,6 +376,10 @@
 				void supabase.removeChannel(lobbyMembersCh);
 				lobbyMembersCh = null;
 			}
+			if (lobbyRowCh) {
+				void supabase.removeChannel(lobbyRowCh);
+				lobbyRowCh = null;
+			}
 			disconnectLobby();
 			/* Do not leave voice here — user may navigate to /play for the same lobby. */
 		};
@@ -332,15 +398,60 @@
 	</main>
 
 	<aside class="side">
-		<h1 class="side-title">{data.lobby.name}</h1>
+		<h1 class="side-title">{room.name}</h1>
 		<p class="meta">
-			Game: {data.lobby.game_key} · Code:
-			<CopyInviteCode code={data.lobby.invite_code} />·
-			{membersOrdered.length} / {data.lobby.max_players} players
+			Game: {room.game_key} · Code:
+			<CopyInviteCode code={room.invite_code} />·
+			{membersOrdered.length} / {room.max_players} players
+			· <span class="vis-pill" title="Who can discover this lobby">{room.visibility}</span>
 		</p>
 		{#if errMsg}
 			<p class="err">{errMsg}</p>
 		{/if}
+
+		<section class="card lobby-settings">
+			<h2>Lobby details</h2>
+			{#if isHost}
+				<label class="field">
+					<span class="lbl">Name</span>
+					<input type="text" bind:value={editName} maxlength="120" />
+				</label>
+				<label class="field">
+					<span class="lbl">Description</span>
+					<textarea bind:value={editDescription} rows="3" maxlength="2000" placeholder="Tell players what to expect…"></textarea>
+				</label>
+				<label class="field">
+					<span class="lbl">Max players</span>
+					<input type="number" min="2" max="20" bind:value={editMax} />
+				</label>
+				<div class="field">
+					<span class="lbl" id="vis-label">Visibility</span>
+					<div class="vis-seg" role="group" aria-labelledby="vis-label">
+						{#each ['private', 'friends', 'public'] as vis (vis)}
+							<button
+								type="button"
+								class="vis-btn"
+								class:active={editVisibility === vis}
+								onclick={() => (editVisibility = vis as LobbyRow['visibility'])}
+							>
+								{vis}
+							</button>
+						{/each}
+					</div>
+					<p class="hint">Private: invite only. Friends: your friends can see it in listings. Public: everyone.</p>
+				</div>
+				<button
+					type="button"
+					class="btn primary full"
+					disabled={savingSettings}
+					onclick={saveLobbySettings}
+				>
+					{savingSettings ? 'Saving…' : 'Save changes'}
+				</button>
+			{:else}
+				<p class="desc-readonly">{room.description?.trim() || 'No description yet.'}</p>
+			{/if}
+		</section>
 
 		<section class="card in-room">
 			<h2>Players</h2>
@@ -471,6 +582,83 @@
 	.meta {
 		color: var(--color-text-muted);
 		line-height: 1.6;
+	}
+	.vis-pill {
+		display: inline-block;
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: 0.1rem 0.35rem;
+		border-radius: 4px;
+		background: color-mix(in oklab, var(--color-text) 12%, transparent);
+		color: var(--color-text);
+	}
+	.lobby-settings {
+		margin-bottom: 0.75rem;
+	}
+	.lobby-settings h2 {
+		margin-top: 0;
+		font-size: 1rem;
+	}
+	.field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		margin-bottom: 0.75rem;
+	}
+	.field .lbl {
+		font-size: 0.78rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		color: var(--color-text-muted);
+	}
+	.field input,
+	.field textarea {
+		padding: 0.45rem 0.55rem;
+		border-radius: 6px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font: inherit;
+	}
+	.field textarea {
+		resize: vertical;
+		min-height: 4rem;
+	}
+	.vis-seg {
+		display: flex;
+		gap: 0.35rem;
+		flex-wrap: wrap;
+	}
+	.vis-btn {
+		flex: 1;
+		min-width: 4.5rem;
+		padding: 0.4rem 0.5rem;
+		border-radius: 8px;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface-muted);
+		color: var(--color-text);
+		font: inherit;
+		font-size: 0.82rem;
+		text-transform: capitalize;
+		cursor: pointer;
+	}
+	.vis-btn.active {
+		border-color: var(--color-accent);
+		background: color-mix(in oklab, var(--color-accent) 22%, var(--color-surface));
+		color: var(--color-text);
+	}
+	.vis-btn:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: 2px;
+	}
+	.desc-readonly {
+		margin: 0;
+		font-size: 0.92rem;
+		line-height: 1.45;
+		white-space: pre-wrap;
+		color: var(--color-text);
 	}
 	.admin-hint {
 		margin: 0.35rem 0 0.75rem;

@@ -17,20 +17,33 @@
 	import {
 		createLobby,
 		joinLobbyByCode,
-		listOpenLobbies,
+		listMyWaitingLobbies,
 		listMyActiveGames,
+		listPublicLobbies,
 		deleteLobby,
 		endGame,
-		type LobbyRow
+		getPublicLobbyDetail,
+		type LobbyRow,
+		type PublicLobbyDetail
 	} from '$lib/lobby';
 	import type { Database } from '$lib/supabase/database.types';
 	import { goto } from '$app/navigation';
 	import { onlineUserIds } from '$lib/stores/onlinePresence';
 	import type { RealtimeChannel } from '@supabase/supabase-js';
-	import UserIdentity from '$lib/components/UserIdentity.svelte';
 	import CopyInviteCode from '$lib/components/CopyInviteCode.svelte';
-	import { loadPlayableGameOptions, BUILTIN_GAME_OPTIONS } from '$lib/customGames';
+	import {
+		coverUrlForGameKey,
+		loadPlayableGameOptions,
+		type PlayableGameOption
+	} from '$lib/customGames';
 	import type { PageData } from './$types';
+	import { PUBLIC_SUPABASE_URL } from '$env/static/public';
+	import LobbyHubTabs from '$lib/components/lobby/LobbyHubTabs.svelte';
+	import InProgressGames from '$lib/components/lobby/InProgressGames.svelte';
+	import GameCatalogGrid from '$lib/components/lobby/GameCatalogGrid.svelte';
+	import JoinByCode from '$lib/components/lobby/JoinByCode.svelte';
+	import PublicLobbyBrowser from '$lib/components/lobby/PublicLobbyBrowser.svelte';
+	import FriendsRail from '$lib/components/lobby/FriendsRail.svelte';
 
 	export let data: PageData;
 
@@ -46,28 +59,37 @@
 	let friends: FriendWithProfile[] = [];
 	let pending: PendingRequest[] = [];
 	let outgoing: PendingOutgoing[] = [];
-	let lobbies: Database['public']['Tables']['lobbies']['Row'][] = [];
+	let myWaitingLobbies: LobbyRow[] = [];
 	let myGames: LobbyRow[] = [];
+	let gameOptions: PlayableGameOption[] = [];
 	let searchQ = '';
 	let searchResults: Database['public']['Tables']['profiles']['Row'][] = [];
 	let loading = false;
 	let errMsg = '';
 
-	let newLobbyName = 'Game night';
-	let newLobbyGame = 'bsg_1';
-	let newLobbyMax = 6;
-	let gameOptions = BUILTIN_GAME_OPTIONS;
+	let hubTab: 'my' | 'public' = 'my';
 	let joinCode = '';
+	let creatingGameKey: string | null = null;
+
+	let publicRows: LobbyRow[] = [];
+	let publicLoading = false;
+	/** After first successful fetch, list updates use quiet mode (no skeleton) to avoid flashing on Realtime. */
+	let publicListHasLoadedOnce = false;
+	let publicSearchQ = '';
+	let publicGameFilter = '';
+	let selectedPublicId: string | null = null;
+	let publicDetail: PublicLobbyDetail | null = null;
+	let loadingPublicDetail = false;
+	let busyJoinId: string | null = null;
+	let publicListTimer: ReturnType<typeof setTimeout> | null = null;
 
 	let friendshipsCh: RealtimeChannel | null = null;
 	let friendPingCh: RealtimeChannel | null = null;
-	/** Open lobbies + my active games — kept in sync via Realtime on `lobbies`. */
 	let lobbiesCh: RealtimeChannel | null = null;
 	let customGamesCh: RealtimeChannel | null = null;
 
 	const FRIEND_LIST_BROADCAST = 'friend_lists_refresh';
 
-	/** Notify the other participant after a DELETE — postgres_changes filters skip DELETEs; broadcast is reliable. */
 	async function notifyPeerFriendshipRefresh(peerId: string) {
 		const ch = supabase.channel(`friendship_ping:${peerId}`, {
 			config: { broadcast: { ack: true } }
@@ -91,7 +113,6 @@
 		});
 	}
 
-	/** Friends / pending only — no full-page loading (used by Realtime). */
 	async function refreshFriendLists() {
 		try {
 			const id = currentUserId();
@@ -103,14 +124,55 @@
 		}
 	}
 
-	/** Refetch hub lobby lists only (no loading spinner — used by Realtime). */
 	async function refreshLobbyLists() {
 		try {
 			const id = currentUserId();
 			myGames = await listMyActiveGames(supabase, id);
-			lobbies = await listOpenLobbies(supabase);
+			myWaitingLobbies = await listMyWaitingLobbies(supabase, id);
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Error';
+		}
+	}
+
+	async function loadPublicList(opts?: { quiet?: boolean }) {
+		const quiet = opts?.quiet === true;
+		if (!quiet) publicLoading = true;
+		try {
+			publicRows = await listPublicLobbies(supabase, {
+				q: publicSearchQ || undefined,
+				gameKey: publicGameFilter || undefined
+			});
+			if (selectedPublicId && !publicRows.some((r) => r.id === selectedPublicId)) {
+				selectedPublicId = null;
+				publicDetail = null;
+			}
+			publicListHasLoadedOnce = true;
+		} catch (e) {
+			errMsg = e instanceof Error ? e.message : 'Error';
+		} finally {
+			if (!quiet) publicLoading = false;
+		}
+	}
+
+	function schedulePublicList() {
+		if (hubTab !== 'public') return;
+		if (publicListTimer) clearTimeout(publicListTimer);
+		publicListTimer = setTimeout(() => {
+			/* Quiet after first paint so search debounce + Realtime do not toggle the skeleton. */
+			void loadPublicList({ quiet: publicListHasLoadedOnce });
+			publicListTimer = null;
+		}, 320);
+	}
+
+	$: {
+		hubTab;
+		publicSearchQ;
+		publicGameFilter;
+		if (hubTab !== 'public') {
+			if (publicListTimer) clearTimeout(publicListTimer);
+			publicListTimer = null;
+		} else {
+			schedulePublicList();
 		}
 	}
 
@@ -122,7 +184,10 @@
 			profile = p;
 			await refreshFriendLists();
 			await refreshLobbyLists();
-			gameOptions = await loadPlayableGameOptions(supabase);
+			gameOptions = await loadPlayableGameOptions(supabase, PUBLIC_SUPABASE_URL);
+			if (hubTab === 'public') {
+				await loadPublicList({ quiet: false });
+			}
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Error';
 		}
@@ -171,27 +236,36 @@
 		await refresh();
 	}
 
-	async function create() {
+	function defaultLobbyNameForGame(gameKey: string): string {
+		const g = gameOptions.find((x) => x.key === gameKey);
+		return g ? `${g.label} — Game night` : 'Game night';
+	}
+
+	async function pickGame(gameKey: string) {
 		if (!profile) return;
-		loading = true;
+		creatingGameKey = gameKey;
+		errMsg = '';
 		try {
-			const lobby: LobbyRow = await createLobby(supabase, {
+			const lobby = await createLobby(supabase, {
 				hostId: currentUserId(),
-				name: newLobbyName,
-				gameKey: newLobbyGame,
-				maxPlayers: newLobbyMax
+				name: defaultLobbyNameForGame(gameKey),
+				gameKey,
+				maxPlayers: 6,
+				description: '',
+				visibility: 'private'
 			});
 			await goto(`/lobby/${lobby.id}`);
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Could not create lobby';
 		}
-		loading = false;
+		creatingGameKey = null;
 	}
 
 	async function join() {
 		loading = true;
+		errMsg = '';
 		try {
-			const lobby: LobbyRow = await joinLobbyByCode(supabase, joinCode, currentUserId());
+			const lobby = await joinLobbyByCode(supabase, joinCode, currentUserId());
 			await goto(`/lobby/${lobby.id}`);
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Could not join';
@@ -219,12 +293,34 @@
 		}
 	}
 
+	async function onPublicSelectRow(id: string) {
+		selectedPublicId = id;
+		loadingPublicDetail = true;
+		publicDetail = null;
+		try {
+			publicDetail = await getPublicLobbyDetail(supabase, id);
+		} catch (e) {
+			errMsg = e instanceof Error ? e.message : 'Could not load lobby';
+		}
+		loadingPublicDetail = false;
+	}
+
+	async function joinPublicLobby(id: string) {
+		busyJoinId = id;
+		errMsg = '';
+		try {
+			await goto(`/lobby/${id}`);
+		} catch (e) {
+			errMsg = e instanceof Error ? e.message : 'Could not open lobby';
+		} finally {
+			busyJoinId = null;
+		}
+	}
+
 	onMount(async () => {
 		await refresh();
 
 		const myId = currentUserId();
-		// Supabase: column filters do NOT apply to DELETE events — filtered listeners never
-		// see declines/cancels. One unfiltered subscription; RLS still scopes which rows you get.
 		friendshipsCh = supabase
 			.channel(`friendships:${myId}`)
 			.on(
@@ -248,7 +344,6 @@
 		});
 		void friendPingCh.subscribe();
 
-		/* Hub list was only loaded on mount — friends never saw new/deleted lobbies until refresh. */
 		lobbiesCh = supabase
 			.channel(`lobbies_hub:${myId}`)
 			.on(
@@ -256,6 +351,8 @@
 				{ event: '*', schema: 'public', table: 'lobbies' },
 				() => {
 					void refreshLobbyLists();
+					/* Quiet: full-screen skeleton on every row change caused visible flashing. */
+					if (hubTab === 'public') void loadPublicList({ quiet: true });
 				}
 			);
 		void lobbiesCh.subscribe();
@@ -266,7 +363,7 @@
 				'postgres_changes',
 				{ event: '*', schema: 'public', table: 'custom_board_games' },
 				() => {
-					void loadPlayableGameOptions(supabase).then((o) => {
+					void loadPlayableGameOptions(supabase, PUBLIC_SUPABASE_URL).then((o) => {
 						gameOptions = o;
 					});
 				}
@@ -275,6 +372,7 @@
 	});
 
 	onDestroy(() => {
+		if (publicListTimer) clearTimeout(publicListTimer);
 		if (friendshipsCh) {
 			void supabase.removeChannel(friendshipsCh);
 			friendshipsCh = null;
@@ -295,305 +393,186 @@
 </script>
 
 <div class="hub">
-	<h1>Lobbies</h1>
-	<p class="subnav">
-		<a href="/editor">Board editor</a>
-		<span class="muted">— create games your friends can pick when hosting.</span>
-	</p>
+	<header class="hub-header">
+		<h1>Lobbies</h1>
+		<p class="subnav">
+			<a href="/editor">Board editor</a>
+			<span class="muted">— create games your friends can pick when hosting.</span>
+		</p>
+	</header>
+
 	{#if errMsg}
 		<p class="err">{errMsg}</p>
 	{/if}
 
-	<div class="grid">
-		<section class="card">
-			<h2>Friends</h2>
-			<div class="search">
-				<input
-					type="search"
-					placeholder="Search by username or name"
-					bind:value={searchQ}
-					on:keydown={(e) => e.key === 'Enter' && doSearch()}
+	<LobbyHubTabs bind:active={hubTab} />
+
+	<div id="hub-tab-panel" class="hub-body" role="tabpanel" aria-labelledby="hub-tab-{hubTab}">
+		<div class="hub-main">
+			{#if hubTab === 'my'}
+				<InProgressGames
+					games={myGames}
+					loading={loading}
+					coverUrlForGame={(gk) => coverUrlForGameKey(gk, gameOptions)}
+					currentUserId={currentUserId()}
+					onEnd={endMyGame}
 				/>
-				<button type="button" class="btn" on:click={doSearch}>Search</button>
-			</div>
-			{#if searchResults.length}
-				<ul class="results">
-					{#each searchResults as u}
-						<li class="friend-row">
-							<UserIdentity
-								variant="row"
-								displayName={u.display_name}
-								avatarUrl={u.avatar_url}
-								subtitle={`@${u.username}`}
-							/>
-							<button type="button" class="btn small" on:click={() => addFriend(u.id)}>Add</button>
-						</li>
-					{/each}
-				</ul>
+
+				<hr class="divider" />
+
+				<section class="section my-open" aria-labelledby="my-open-h">
+					<h2 id="my-open-h" class="section-title">Your open lobbies</h2>
+					{#if loading}
+						<p class="muted skeleton-line">Loading…</p>
+					{:else if myWaitingLobbies.length === 0}
+						<p class="empty">None yet — pick a game below to host.</p>
+					{:else}
+						<ul class="slim-lobby-list">
+							{#each myWaitingLobbies as L (L.id)}
+								<li class="slim-row">
+									<a class="slim-link" href="/lobby/{L.id}">{L.name}</a>
+									<span class="vis-badge" title="Visibility">{L.visibility}</span>
+									<span class="code-wrap"><CopyInviteCode code={L.invite_code} /></span>
+									{#if L.host_id === currentUserId()}
+										<button
+											type="button"
+											class="trash-btn"
+											title="Delete this lobby"
+											on:click={() => deleteMyLobby(L)}
+										>🗑</button>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</section>
+
+				<hr class="divider" />
+
+				<GameCatalogGrid
+					games={gameOptions}
+					loading={loading}
+					disabled={loading}
+					creatingKey={creatingGameKey}
+					onPick={pickGame}
+				/>
+
+				<JoinByCode bind:joinCode loading={loading} onJoin={join} />
+			{:else}
+				<PublicLobbyBrowser
+					rows={publicRows}
+					loading={publicLoading}
+					bind:searchQ={publicSearchQ}
+					bind:gameKeyFilter={publicGameFilter}
+					gameKeys={gameOptions.map((g) => ({ key: g.key, label: g.label }))}
+					selectedId={selectedPublicId}
+					detail={publicDetail}
+					loadingDetail={loadingPublicDetail}
+					{busyJoinId}
+					onSelectRow={onPublicSelectRow}
+					onJoin={joinPublicLobby}
+				/>
 			{/if}
+		</div>
 
-			{#if outgoing.length}
-				<h3>Outgoing requests</h3>
-				<p class="hint">Waiting for them to accept before they appear under “Friends”.</p>
-				<ul>
-					{#each outgoing as o}
-						<li class="friend-row">
-							<UserIdentity
-								variant="row"
-								displayName={o.addressee.display_name}
-								avatarUrl={o.addressee.avatar_url}
-								subtitle="Pending"
-							/>
-							<button type="button" class="btn small" on:click={() => cancelOutgoing(o.id)}>Cancel</button>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-
-			{#if pending.length}
-				<h3>Incoming requests</h3>
-				<ul>
-					{#each pending as r}
-						<li class="friend-row">
-							<UserIdentity
-								variant="row"
-								displayName={r.requester.display_name}
-								avatarUrl={r.requester.avatar_url}
-								subtitle="Wants to be friends"
-							/>
-							<div class="row-actions">
-								<button type="button" class="btn small" on:click={() => accept(r.id)}>Accept</button>
-								<button type="button" class="btn small" on:click={() => decline(r.id)}>Decline</button>
-							</div>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-
-			<h3>Friends</h3>
-			<p class="hint">Only people who accepted a request (or you accepted theirs).</p>
-			<ul class="friends">
-				{#each friends as f}
-					<li class="friend-row">
-						<span class="dot" class:online={$onlineUserIds.has(f.profile.id)} title="Online"></span>
-						<UserIdentity
-							variant="compact"
-							displayName={f.profile.display_name}
-							avatarUrl={f.profile.avatar_url}
-							subtitle={`@${f.profile.username}`}
-						/>
-					</li>
-				{:else}
-					<li class="muted">No accepted friends yet — add someone above, then they must accept.</li>
-				{/each}
-			</ul>
-		</section>
-
-		<section class="card">
-			<h2>My games in progress</h2>
-			<p class="hint">Resume a game you left — board state is saved automatically.</p>
-			<ul class="lobbies">
-				{#each myGames as G}
-					<li>
-						<a href="/play/{G.id}">{G.name}</a>
-						<span class="muted">({G.game_key})</span>
-						{#if G.host_id === currentUserId()}
-							<button
-								type="button"
-								class="trash-btn"
-								title="End this game"
-								on:click={() => endMyGame(G)}
-							>🗑</button>
-						{/if}
-					</li>
-				{:else}
-					<li class="muted">None yet — start a lobby and press Start game.</li>
-				{/each}
-			</ul>
-		</section>
-
-		<section class="card">
-			<h2>Open lobbies</h2>
-			<div class="create">
-				<input bind:value={newLobbyName} placeholder="Lobby name" />
-				<select bind:value={newLobbyGame}>
-					{#each gameOptions as g}
-						<option value={g.key}>{g.label} ({g.key})</option>
-					{/each}
-				</select>
-				<label>
-					Max players
-					<input type="number" min="2" max="12" bind:value={newLobbyMax} />
-				</label>
-				<button type="button" class="btn primary" disabled={loading} on:click={create}>Create lobby</button>
-			</div>
-
-			<div class="join">
-				<input bind:value={joinCode} placeholder="Invite code" />
-				<button type="button" class="btn" disabled={loading} on:click={join}>Join by code</button>
-			</div>
-
-			<ul class="lobbies">
-				{#each lobbies as L}
-					<li>
-						<a href="/lobby/{L.id}">{L.name}</a>
-						<span class="code-wrap"><CopyInviteCode code={L.invite_code} /></span>
-						{#if L.host_id === currentUserId()}
-							<button
-								type="button"
-								class="trash-btn"
-								title="Delete this lobby"
-								on:click={() => deleteMyLobby(L)}
-							>🗑</button>
-						{/if}
-					</li>
-				{:else}
-					<li class="muted">No open lobbies — create one.</li>
-				{/each}
-			</ul>
-		</section>
+		<FriendsRail
+			bind:searchQ
+			{searchResults}
+			{friends}
+			{pending}
+			{outgoing}
+			onSearch={doSearch}
+			onAddFriend={addFriend}
+			onAccept={accept}
+			onDecline={decline}
+			onCancelOutgoing={cancelOutgoing}
+		/>
 	</div>
 </div>
 
 <style>
 	.hub {
-		max-width: 960px;
+		max-width: 1120px;
 		margin: 0 auto;
-		padding: 1.5rem;
+		padding: 1.25rem 1.5rem 2rem;
 		font-family: Roboto, system-ui, sans-serif;
 		color: var(--color-text);
 	}
-	h1 {
+	.hub-header h1 {
 		margin-top: 0;
+		margin-bottom: 0.25rem;
 		color: var(--color-text);
+		font-size: 1.75rem;
 	}
 	.subnav {
-		margin: -0.35rem 0 1rem;
+		margin: 0 0 1rem;
 		font-size: 0.95rem;
 	}
 	.subnav a {
 		color: var(--color-accent, #3b82f6);
 	}
-	h2 {
-		margin-top: 0;
-		font-size: 1.15rem;
-	}
-	h3 {
-		font-size: 1rem;
-		margin: 1rem 0 0.5rem;
-	}
-	.grid {
+	.hub-body {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 1.5rem;
+		grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+		gap: 1.75rem;
+		align-items: start;
 	}
-	@media (max-width: 800px) {
-		.grid {
+	@media (max-width: 900px) {
+		.hub-body {
 			grid-template-columns: 1fr;
 		}
 	}
-	.card {
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		padding: 1rem 1.25rem;
-		background: var(--color-surface);
-	}
-	.search {
-		display: flex;
-		gap: 0.5rem;
-		margin-bottom: 0.75rem;
-	}
-	.search input {
-		flex: 1;
-		padding: 0.4rem 0.5rem;
-	}
-	.create,
-	.join {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		margin-bottom: 1rem;
-	}
-	.create input,
-	.join input,
-	.create select {
-		padding: 0.4rem 0.5rem;
-	}
-	.btn {
-		padding: 0.45rem 0.75rem;
-		border-radius: 6px;
-		border: 1px solid var(--color-border-strong);
-		background: var(--color-surface-muted);
-		color: var(--color-text);
-		cursor: pointer;
-	}
-	.btn.primary {
-		background: var(--color-accent);
-		color: var(--color-accent-contrast);
-		border-color: var(--color-accent-hover);
-	}
-	.btn.small {
-		padding: 0.2rem 0.5rem;
-		font-size: 0.85rem;
-	}
-	.btn:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-	.err {
-		color: var(--color-danger);
-	}
-	.hint {
-		font-size: 0.82rem;
-		color: var(--color-text-muted);
-		margin: 0 0 0.5rem;
-		line-height: 1.35;
-	}
-	.muted {
-		color: var(--color-text-muted);
-		font-size: 0.9rem;
-	}
-	.friend-row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
-		margin: 0.45rem 0;
-		flex-wrap: wrap;
-	}
-	.friend-row :global(.identity) {
-		flex: 1;
+	.hub-main {
 		min-width: 0;
 	}
-	.row-actions {
-		display: flex;
-		gap: 0.35rem;
-		flex-shrink: 0;
+	.divider {
+		border: none;
+		border-top: 1px solid color-mix(in oklab, var(--color-text) 8%, transparent);
+		margin: 1.25rem 0;
 	}
-	.lobbies li {
+	.section-title {
+		margin: 0 0 0.65rem;
+		font-size: 1.05rem;
+		font-weight: 600;
+	}
+	.empty {
+		margin: 0;
+		font-size: 0.92rem;
+		color: var(--color-text-muted);
+	}
+	.slim-lobby-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.slim-row {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		margin: 0.35rem 0;
 		flex-wrap: wrap;
+		margin: 0.4rem 0;
+		font-size: 0.92rem;
+	}
+	.slim-link {
+		color: var(--color-link);
+		font-weight: 500;
+		text-decoration: none;
+	}
+	.slim-link:hover {
+		text-decoration: underline;
+	}
+	.vis-badge {
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: 0.12rem 0.35rem;
+		border-radius: 4px;
+		background: color-mix(in oklab, var(--color-text) 10%, transparent);
+		color: var(--color-text-muted);
 	}
 	.code-wrap {
 		display: inline-flex;
 		align-items: center;
-	}
-	.dot {
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		background: var(--color-text-muted);
-		display: inline-block;
-	}
-	.dot.online {
-		background: #22c55e;
-	}
-	.lobbies a {
-		color: var(--color-link);
-		font-weight: 500;
 	}
 	.trash-btn {
 		background: none;
@@ -603,9 +582,40 @@
 		padding: 0 0.25rem;
 		opacity: 0.5;
 		transition: opacity 0.15s;
-		flex-shrink: 0;
 	}
 	.trash-btn:hover {
 		opacity: 1;
+	}
+	.err {
+		color: var(--color-danger);
+	}
+	.muted {
+		color: var(--color-text-muted);
+	}
+	.skeleton-line {
+		height: 1rem;
+		max-width: 180px;
+		border-radius: 4px;
+		background: linear-gradient(
+			110deg,
+			var(--color-surface-muted) 0%,
+			color-mix(in oklab, var(--color-text) 8%, var(--color-surface-muted)) 45%,
+			var(--color-surface-muted) 90%
+		);
+		background-size: 200% 100%;
+		animation: shimmer 1.2s ease-in-out infinite;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.skeleton-line {
+			animation: none;
+		}
+	}
+	@keyframes shimmer {
+		0% {
+			background-position: 100% 0;
+		}
+		100% {
+			background-position: -100% 0;
+		}
 	}
 </style>
