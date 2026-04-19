@@ -7,6 +7,7 @@
 	import {
 		buildCardFieldValuesPayload,
 		collectFieldBindings,
+		groupBindingsForPieceEditor,
 		type PieceFieldStyle,
 		mergeFieldValuesForBindings,
 		splitFieldValuesPayload
@@ -18,6 +19,7 @@
 		parseOptionalLayersOrNull,
 		defaultBackBackground,
 		templateHasBack,
+		type FieldBinding,
 		type TextLayer
 	} from '$lib/editor/types';
 	import { rasterizeElementToPng } from '$lib/editor/rasterize';
@@ -49,6 +51,7 @@
 		parseOptionalBackgroundOrNull(data.template.back_background as Json) ?? defaultBackBackground()
 	);
 	const bindings = $derived(collectFieldBindings(parsedLayers, parsedBackLayers));
+	const bindingSections = $derived(groupBindingsForPieceEditor(bindings));
 
 	function allLayersFlat(): ReturnType<typeof parseLayers> {
 		return [...parseLayers(data.template.layers as Json), ...parsedBackLayers];
@@ -115,12 +118,14 @@
 		return b.fieldType === 'image' || bindingIsImageLayer(b.fieldName);
 	}
 
-	function showsTextColor(b: { fieldType: string; fieldName: string }): boolean {
+	function showsTextColor(b: FieldBinding): boolean {
+		if (b.shapeGradientGroup) return false;
 		if (bindingIsImageLayer(b.fieldName)) return false;
 		return b.fieldType === 'text' || b.fieldType === 'textarea' || b.fieldType === 'number' || b.fieldType === 'color';
 	}
 
-	function showsLayerBackground(b: { fieldType: string; fieldName: string }): boolean {
+	function showsLayerBackground(b: FieldBinding): boolean {
+		if (b.shapeGradientGroup) return false;
 		if (bindingIsImageLayer(b.fieldName)) return true;
 		return (
 			b.fieldType === 'text' ||
@@ -131,7 +136,8 @@
 		);
 	}
 
-	function showsFontSize(b: { fieldType: string; fieldName: string }): boolean {
+	function showsFontSize(b: FieldBinding): boolean {
+		if (b.shapeGradientGroup) return false;
 		if (bindingIsImageLayer(b.fieldName)) return false;
 		return (
 			b.fieldType === 'text' ||
@@ -439,139 +445,168 @@
 				<input type="text" bind:value={name} />
 			</label>
 
-			{#each bindings as b}
-				<section class="field-bucket" aria-labelledby="field-{b.fieldName}">
-					<h3 class="field-bucket-title" id="field-{b.fieldName}">{b.fieldLabel}</h3>
-					<div
-						class="field-inline-row"
-						class:with-textarea={b.fieldType === 'textarea'}
-						class:is-image={isImageField(b)}
+			{#each bindingSections as section}
+				{#if section.kind === 'shapeGradient'}
+					<section
+						class="field-bucket field-bucket-shape-gradient"
+						aria-labelledby="field-{section.groupId}"
 					>
-						<div class="field-inline-main">
-							{#if isImageField(b)}
-								<GameMediaImageTools
-									gameId={data.game.id}
-									mediaId={fieldValues[b.fieldName]?.trim() || null}
-									{mediaUrls}
-									onMediaIdChange={(id) => {
-										fieldValues = { ...fieldValues, [b.fieldName]: id ?? '' };
-									}}
-									onMergeUrls={(u) => {
-										mediaUrls = { ...mediaUrls, ...u };
-									}}
-									onAfterPick={() => {
-										void loadMedia();
-									}}
-								/>
-							{:else if b.fieldType === 'textarea'}
-								<textarea
-									class="piece-field-textarea"
-									value={fieldValues[b.fieldName]}
-									rows="5"
-									spellcheck="true"
-									oninput={(e) => {
-										fieldValues = {
-											...fieldValues,
-											[b.fieldName]: (e.currentTarget as HTMLTextAreaElement).value
-										};
-									}}
-								></textarea>
-							{:else}
-								<input
-									class="piece-field-input"
-									type={bindingInputType(b.fieldType)}
-									value={fieldValues[b.fieldName]}
-									oninput={(e) => {
-										fieldValues = {
-											...fieldValues,
-											[b.fieldName]: (e.currentTarget as HTMLInputElement).value
-										};
-									}}
-								/>
-							{/if}
-						</div>
-						{#if showsFontSize(b)}
-							<div class="field-font-size">
-								<label class="font-size-label">
-									<span>Size (px)</span>
-									<input
-										type="number"
-										min="4"
-										max="500"
-										step="0.5"
-										class="font-size-input"
-										placeholder={String(templateFontSize(b.fieldName))}
-										title="Leave empty to use the template size ({templateFontSize(b.fieldName)}px)"
-										value={pieceStyles[b.fieldName]?.fontSize != null &&
-										pieceStyles[b.fieldName]!.fontSize! > 0
-											? String(pieceStyles[b.fieldName]!.fontSize)
-											: ''}
-										oninput={(e) => {
-											const raw = (e.currentTarget as HTMLInputElement).value;
-											const n = parseFloat(raw);
-											pieceStyles = {
-												...pieceStyles,
-												[b.fieldName]: {
-													...pieceStyles[b.fieldName],
-													fontSize:
-														raw === '' || !Number.isFinite(n) || n <= 0 ? undefined : n
-												}
-											};
-										}}
-									/>
-								</label>
-							</div>
-						{/if}
-						{#if showsLayerBackground(b) || showsTextColor(b)}
-							<div class="field-swatches">
-								{#if showsLayerBackground(b)}
+						<div class="field-shape-gradient-row">
+							<h3 class="field-bucket-title" id="field-{section.groupId}">{section.groupTitle}</h3>
+							<div class="field-shape-gradient-swatches">
+								{#each section.bindings as b}
 									<ColorPicker
-										ariaLabel="Background color for {b.fieldLabel}"
-										value={pieceStyles[b.fieldName]?.backgroundColor?.trim() || '#ffffff'}
+										ariaLabel={`Gradient stop ${b.shapeGradientGroup!.stopIndex + 1} (${section.groupTitle})`}
+										value={fieldValues[b.fieldName]?.trim() || b.defaultValue || '#ffffff'}
 										palette={pieceColorPalette}
 										onPaletteChange={setPieceColorPaletteLocal}
 										onValueChange={(v: string) => {
-											pieceStyles = {
-												...pieceStyles,
-												[b.fieldName]: { ...pieceStyles[b.fieldName], backgroundColor: v }
-											};
-										}}
-										resetLabel="Clear override"
-										onReset={() => {
-											pieceStyles = {
-												...pieceStyles,
-												[b.fieldName]: { ...pieceStyles[b.fieldName], backgroundColor: '' }
-											};
-										}}
-									/>
-								{/if}
-								{#if showsTextColor(b)}
-									<ColorPicker
-										ariaLabel="Text color for {b.fieldLabel}"
-										value={pieceStyles[b.fieldName]?.textColor?.trim()
-											? pieceStyles[b.fieldName].textColor
-											: templateTextColor(b.fieldName)}
-										palette={pieceColorPalette}
-										onPaletteChange={setPieceColorPaletteLocal}
-										onValueChange={(v: string) => {
-											pieceStyles = {
-												...pieceStyles,
-												[b.fieldName]: { ...pieceStyles[b.fieldName], textColor: v }
-											};
+											fieldValues = { ...fieldValues, [b.fieldName]: v };
 										}}
 										resetLabel="Use template"
 										onReset={() => {
-											pieceStyles = {
-												...pieceStyles,
-												[b.fieldName]: { ...pieceStyles[b.fieldName], textColor: '' }
+											fieldValues = { ...fieldValues, [b.fieldName]: b.defaultValue ?? '' };
+										}}
+									/>
+								{/each}
+							</div>
+						</div>
+					</section>
+				{:else}
+					{@const b = section.binding}
+					<section class="field-bucket" aria-labelledby="field-{b.fieldName}">
+						<h3 class="field-bucket-title" id="field-{b.fieldName}">{b.fieldLabel}</h3>
+						<div
+							class="field-inline-row"
+							class:with-textarea={b.fieldType === 'textarea'}
+							class:is-image={isImageField(b)}
+						>
+							<div class="field-inline-main">
+								{#if isImageField(b)}
+									<GameMediaImageTools
+										gameId={data.game.id}
+										mediaId={fieldValues[b.fieldName]?.trim() || null}
+										{mediaUrls}
+										onMediaIdChange={(id) => {
+											fieldValues = { ...fieldValues, [b.fieldName]: id ?? '' };
+										}}
+										onMergeUrls={(u) => {
+											mediaUrls = { ...mediaUrls, ...u };
+										}}
+										onAfterPick={() => {
+											void loadMedia();
+										}}
+									/>
+								{:else if b.fieldType === 'textarea'}
+									<textarea
+										class="piece-field-textarea"
+										value={fieldValues[b.fieldName]}
+										rows="5"
+										spellcheck="true"
+										oninput={(e) => {
+											fieldValues = {
+												...fieldValues,
+												[b.fieldName]: (e.currentTarget as HTMLTextAreaElement).value
+											};
+										}}
+									></textarea>
+								{:else}
+									<input
+										class="piece-field-input"
+										type={bindingInputType(b.fieldType)}
+										value={fieldValues[b.fieldName]}
+										oninput={(e) => {
+											fieldValues = {
+												...fieldValues,
+												[b.fieldName]: (e.currentTarget as HTMLInputElement).value
 											};
 										}}
 									/>
 								{/if}
 							</div>
-						{/if}
-					</div>
-				</section>
+							{#if showsFontSize(b)}
+								<div class="field-font-size">
+									<label class="font-size-label">
+										<span>Size (px)</span>
+										<input
+											type="number"
+											min="4"
+											max="500"
+											step="0.5"
+											class="font-size-input"
+											placeholder={String(templateFontSize(b.fieldName))}
+											title="Leave empty to use the template size ({templateFontSize(b.fieldName)}px)"
+											value={pieceStyles[b.fieldName]?.fontSize != null &&
+											pieceStyles[b.fieldName]!.fontSize! > 0
+												? String(pieceStyles[b.fieldName]!.fontSize)
+												: ''}
+											oninput={(e) => {
+												const raw = (e.currentTarget as HTMLInputElement).value;
+												const n = parseFloat(raw);
+												pieceStyles = {
+													...pieceStyles,
+													[b.fieldName]: {
+														...pieceStyles[b.fieldName],
+														fontSize:
+															raw === '' || !Number.isFinite(n) || n <= 0 ? undefined : n
+													}
+												};
+											}}
+										/>
+									</label>
+								</div>
+							{/if}
+							{#if showsLayerBackground(b) || showsTextColor(b)}
+								<div class="field-swatches">
+									{#if showsLayerBackground(b)}
+										<ColorPicker
+											ariaLabel="Background color for {b.fieldLabel}"
+											value={pieceStyles[b.fieldName]?.backgroundColor?.trim() || '#ffffff'}
+											palette={pieceColorPalette}
+											onPaletteChange={setPieceColorPaletteLocal}
+											onValueChange={(v: string) => {
+												pieceStyles = {
+													...pieceStyles,
+													[b.fieldName]: { ...pieceStyles[b.fieldName], backgroundColor: v }
+												};
+											}}
+											resetLabel="Clear override"
+											onReset={() => {
+												pieceStyles = {
+													...pieceStyles,
+													[b.fieldName]: { ...pieceStyles[b.fieldName], backgroundColor: '' }
+												};
+											}}
+										/>
+									{/if}
+									{#if showsTextColor(b)}
+										<ColorPicker
+											ariaLabel="Text color for {b.fieldLabel}"
+											value={pieceStyles[b.fieldName]?.textColor?.trim()
+												? pieceStyles[b.fieldName].textColor
+												: templateTextColor(b.fieldName)}
+											palette={pieceColorPalette}
+											onPaletteChange={setPieceColorPaletteLocal}
+											onValueChange={(v: string) => {
+												pieceStyles = {
+													...pieceStyles,
+													[b.fieldName]: { ...pieceStyles[b.fieldName], textColor: v }
+												};
+											}}
+											resetLabel="Use template"
+											onReset={() => {
+												pieceStyles = {
+													...pieceStyles,
+													[b.fieldName]: { ...pieceStyles[b.fieldName], textColor: '' }
+												};
+											}}
+										/>
+									{/if}
+								</div>
+							{/if}
+						</div>
+					</section>
+				{/if}
 			{/each}
 
 			{#if err}
@@ -811,6 +846,30 @@
 		letter-spacing: 0.01em;
 		color: var(--color-text);
 		line-height: 1.3;
+	}
+	.field-bucket-shape-gradient {
+		padding: 12px 16px;
+	}
+	.field-shape-gradient-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px 14px;
+		min-width: 0;
+	}
+	.field-bucket-shape-gradient .field-bucket-title {
+		flex: 1 1 140px;
+		min-width: 0;
+		margin: 0;
+	}
+	.field-shape-gradient-swatches {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+		gap: 6px;
+		flex-shrink: 0;
+		align-items: center;
 	}
 	.field-inline-row {
 		display: flex;

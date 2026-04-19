@@ -9,6 +9,16 @@ export interface FieldBinding {
 	fieldLabel: string;
 	fieldType: FieldType;
 	defaultValue?: string;
+	/**
+	 * Set only at runtime in `collectFieldBindings` for shape gradient stops — not stored in template JSON.
+	 * Piece editor groups rows with the same `groupId` into one section with `groupTitle`.
+	 */
+	shapeGradientGroup?: {
+		groupId: string;
+		stopIndex: number;
+		stopCount: number;
+		groupTitle: string;
+	};
 }
 
 export interface LayerBase {
@@ -39,10 +49,15 @@ export type ShapeFill =
 			radialRadiusPct?: number;
 	  };
 
+/** One per gradient stop — parallel to `fill.stops` when fill is gradient and per-piece colors are enabled. */
+export type ShapeGradientColorBinding = { fieldName: string; fieldLabel: string };
+
 export interface ShapeLayer extends LayerBase {
 	type: 'shape';
 	fill: ShapeFill;
 	borderRadius: number;
+	/** Per-stop `field_values` keys for piece color overrides (gradient fills only). */
+	gradientColorBindings?: ShapeGradientColorBinding[];
 }
 
 export interface TextLayer extends LayerBase {
@@ -212,8 +227,38 @@ export function defaultShapeLayer(): ShapeLayer {
 		opacity: 1,
 		fieldBinding: null,
 		fill: { type: 'solid', color: '#333333' },
-		borderRadius: 0
+		borderRadius: 0,
+		gradientColorBindings: undefined
 	};
+}
+
+/** Strip `_stop_N` suffix to get prefix used for auto-generated keys. */
+export function inferShapeGradientKeyPrefix(
+	fieldBinding: FieldBinding,
+	existing: ShapeGradientColorBinding[] | undefined
+): string {
+	const cand = existing?.[0]?.fieldName?.trim() || fieldBinding.fieldName.trim();
+	const m = /^(.+)_stop_\d+$/i.exec(cand);
+	if (m) return m[1];
+	return cand || 'field_1';
+}
+
+/** Build or resize per-stop field keys to match gradient stops (preserves existing names where possible). */
+export function syncShapeGradientColorBindings(
+	basePrefix: string,
+	stops: { offset: number; color: string }[],
+	existing: ShapeGradientColorBinding[] | undefined
+): ShapeGradientColorBinding[] {
+	const prefix = basePrefix.trim() || 'field_1';
+	const out: ShapeGradientColorBinding[] = [];
+	for (let i = 0; i < stops.length; i++) {
+		const ex = existing?.[i];
+		out.push({
+			fieldName: ex?.fieldName?.trim() || `${prefix}_stop_${i}`,
+			fieldLabel: ex?.fieldLabel?.trim() || `Color ${i + 1}`
+		});
+	}
+	return out;
 }
 
 function normalizeTextLayer(
@@ -281,6 +326,32 @@ function normalizeTextLayer(
 	};
 }
 
+function normalizeShapeLayer(S: ShapeLayer, visible: boolean, locked: boolean): ShapeLayer {
+	let L: ShapeLayer = { ...S, visible, locked };
+	if (L.fill.type !== 'gradient' || !L.fieldBinding) {
+		if (L.gradientColorBindings?.length) {
+			const { gradientColorBindings: _, ...rest } = L;
+			L = rest as ShapeLayer;
+		}
+		return L;
+	}
+	const stops = L.fill.stops;
+	const base = inferShapeGradientKeyPrefix(L.fieldBinding, L.gradientColorBindings);
+	const gcb = syncShapeGradientColorBindings(base, stops, L.gradientColorBindings);
+	const primaryKey = gcb[0]?.fieldName ?? L.fieldBinding.fieldName;
+	L = {
+		...L,
+		gradientColorBindings: gcb,
+		fieldBinding: {
+			...L.fieldBinding,
+			fieldName: primaryKey,
+			fieldType: 'color',
+			defaultValue: stops[0]?.color ?? L.fieldBinding.defaultValue
+		}
+	};
+	return L;
+}
+
 export function parseLayers(raw: unknown): CardLayer[] {
 	if (!Array.isArray(raw)) return [];
 	const out: CardLayer[] = [];
@@ -303,7 +374,7 @@ export function parseLayers(raw: unknown): CardLayer[] {
 			} else if (o.type === 'text') {
 				L = normalizeTextLayer(L as TextLayer, o, visible, locked);
 			} else {
-				L = { ...L, visible, locked };
+				L = normalizeShapeLayer(L as ShapeLayer, visible, locked);
 			}
 			out.push(L);
 		}

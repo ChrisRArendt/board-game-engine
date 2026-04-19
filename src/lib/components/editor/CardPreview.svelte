@@ -6,6 +6,7 @@
 	import {
 		cardFaceBackgroundCss,
 		resolveImageMediaId,
+		resolveShapeFill,
 		resolveTextContent,
 		shapeFillStyle,
 		sortLayers
@@ -136,7 +137,7 @@
 				<div
 					class="layer shape"
 					style={layerStyle(S)}
-					style:background={shapeFillStyle(S.fill)}
+					style:background={shapeFillStyle(resolveShapeFill(S, fieldValues))}
 					style:border-radius="{S.borderRadius}px"
 				></div>
 			{:else if L.type === 'text'}

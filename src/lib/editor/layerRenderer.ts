@@ -2,6 +2,7 @@ import type {
 	CardBackground,
 	CardLayer,
 	ImageLayer,
+	ShapeFill,
 	ShapeLayer,
 	TextLayer
 } from './types';
@@ -52,6 +53,38 @@ export function shapeFillStyle(fill: ShapeLayer['fill']): string {
 		return radialGradientCss(fill.stops, fill.radialRadiusPct ?? 100);
 	}
 	return gradientCss(fill.stops, fill.angle);
+}
+
+function isLikelyColorString(s: string): boolean {
+	const t = s.trim();
+	if (/^#[0-9a-fA-F]{3,8}$/.test(t)) return true;
+	if (/^rgba?\s*\(/i.test(t)) return true;
+	return false;
+}
+
+/** Apply per-piece `field_values` overrides to shape fill (solid color or gradient stop colors). */
+export function resolveShapeFill(layer: ShapeLayer, fieldValues: Record<string, string>): ShapeFill {
+	const fill = layer.fill;
+	if (fill.type === 'solid') {
+		const fb = layer.fieldBinding;
+		if (!fb || fb.fieldType !== 'color') return fill;
+		const v = fieldValues[fb.fieldName]?.trim();
+		if (v && isLikelyColorString(v)) return { ...fill, color: v };
+		return fill;
+	}
+	const gcb = layer.gradientColorBindings;
+	if (!gcb || gcb.length !== fill.stops.length) return fill;
+	let changed = false;
+	const stops = fill.stops.map((s, i) => {
+		const v = fieldValues[gcb[i].fieldName]?.trim();
+		if (v && isLikelyColorString(v)) {
+			changed = true;
+			return { ...s, color: v };
+		}
+		return s;
+	});
+	if (!changed) return fill;
+	return { ...fill, stops };
 }
 
 export function resolveTextContent(layer: TextLayer, fieldValues: Record<string, string>): string {

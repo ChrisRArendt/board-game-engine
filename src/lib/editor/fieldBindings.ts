@@ -1,5 +1,5 @@
 import type { Json } from '$lib/supabase/database.types';
-import type { CardLayer, FieldBinding, TextLayer } from './types';
+import type { CardLayer, FieldBinding, ShapeLayer, TextLayer } from './types';
 
 /** Per-piece overrides for a bound field (stored under `field_values.fieldStyles`). */
 export interface PieceFieldStyle {
@@ -16,10 +16,77 @@ export function collectFieldBindings(...layerGroups: CardLayer[][]): FieldBindin
 	for (const layers of layerGroups) {
 		for (const L of layers) {
 			if (!L.fieldBinding) continue;
+			if (L.type === 'shape') {
+				const S = L as ShapeLayer;
+				if (
+					S.fill.type === 'gradient' &&
+					S.gradientColorBindings &&
+					S.gradientColorBindings.length > 0 &&
+					S.gradientColorBindings.length === S.fill.stops.length
+				) {
+					const stops = S.fill.stops;
+					const gcb = S.gradientColorBindings;
+					const groupId = `shape-${L.id}-gradient`;
+					const groupTitle = L.fieldBinding.fieldLabel.trim() || 'Shape colors';
+					const n = gcb.length;
+					for (let i = 0; i < gcb.length; i++) {
+						const fn = gcb[i].fieldName;
+						if (seen.has(fn)) continue;
+						seen.add(fn);
+						out.push({
+							fieldName: fn,
+							fieldLabel: gcb[i].fieldLabel,
+							fieldType: 'color',
+							defaultValue: stops[i]?.color,
+							shapeGradientGroup: {
+								groupId,
+								stopIndex: i,
+								stopCount: n,
+								groupTitle
+							}
+						});
+					}
+					continue;
+				}
+			}
 			const fn = L.fieldBinding.fieldName;
 			if (seen.has(fn)) continue;
 			seen.add(fn);
 			out.push(L.fieldBinding);
+		}
+	}
+	return out;
+}
+
+export type PieceBindingSection =
+	| {
+			kind: 'shapeGradient';
+			groupId: string;
+			groupTitle: string;
+			bindings: FieldBinding[];
+	  }
+	| { kind: 'single'; binding: FieldBinding };
+
+/** Collapse shape gradient stop bindings into one piece-editor block (title + row of color pickers). */
+export function groupBindingsForPieceEditor(bindings: FieldBinding[]): PieceBindingSection[] {
+	const done = new Set<string>();
+	const out: PieceBindingSection[] = [];
+	for (const b of bindings) {
+		const sg = b.shapeGradientGroup;
+		if (sg) {
+			if (done.has(sg.groupId)) continue;
+			done.add(sg.groupId);
+			const members = bindings
+				.filter((x) => x.shapeGradientGroup?.groupId === sg.groupId)
+				.sort((a, c) => a.shapeGradientGroup!.stopIndex - c.shapeGradientGroup!.stopIndex);
+			out.push({
+				kind: 'shapeGradient',
+				groupId: sg.groupId,
+				groupTitle: sg.groupTitle,
+				bindings: members
+			});
+		} else {
+			out.push({ kind: 'single', binding: b });
 		}
 	}
 	return out;
@@ -106,7 +173,17 @@ export function mergeFieldValuesForBindings(
 	const out: Record<string, string> = {};
 	const layerByField = new Map<string, CardLayer>();
 	for (const L of layers) {
-		if (L.fieldBinding && !layerByField.has(L.fieldBinding.fieldName)) {
+		if (!L.fieldBinding) continue;
+		if (L.type === 'shape') {
+			const S = L as ShapeLayer;
+			if (S.fill.type === 'gradient' && S.gradientColorBindings?.length) {
+				for (const g of S.gradientColorBindings) {
+					if (!layerByField.has(g.fieldName)) layerByField.set(g.fieldName, L);
+				}
+				continue;
+			}
+		}
+		if (!layerByField.has(L.fieldBinding.fieldName)) {
 			layerByField.set(L.fieldBinding.fieldName, L);
 		}
 	}
