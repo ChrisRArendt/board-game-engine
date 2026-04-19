@@ -21,6 +21,10 @@
 	import type { PageData } from './$types';
 	import type { Json } from '$lib/supabase/database.types';
 	import { parseGameDataJson, removeBoardPiecesForCard } from '$lib/editor/gameDataJson';
+	import {
+		loadPrintPdfQuantities,
+		savePrintPdfQuantities
+	} from '$lib/editor/printPdfQuantitiesStorage';
 	import { browser } from '$app/environment';
 
 	let { data }: { data: PageData } = $props();
@@ -227,11 +231,13 @@
 	}
 
 	function openPrintPdfDialog() {
+		const stored = loadPrintPdfQuantities(data.game.id);
 		const sel: Record<string, boolean> = {};
 		const qty: Record<string, number> = {};
 		for (const c of sortedCards) {
 			sel[c.id] = true;
-			qty[c.id] = 1;
+			const s = stored[c.id];
+			qty[c.id] = s != null ? s : 1;
 		}
 		printPdfSelected = sel;
 		printPdfQty = qty;
@@ -780,10 +786,14 @@
 											oninput={(e) => {
 												const raw = (e.currentTarget as HTMLInputElement).value;
 												const n = parseInt(raw, 10);
-												printPdfQty = {
-													...printPdfQty,
-													[c.id]: Number.isFinite(n) && n >= 1 ? n : 1
-												};
+												const q = Number.isFinite(n) && n >= 1 ? Math.min(999, Math.floor(n)) : 1;
+												const nextQty = { ...printPdfQty, [c.id]: q };
+												printPdfQty = nextQty;
+												savePrintPdfQuantities(
+													data.game.id,
+													nextQty,
+													new Set(data.cards.map((x) => x.id))
+												);
 											}}
 										/>
 									</td>
