@@ -364,10 +364,16 @@ export function parseLayers(raw: unknown): CardLayer[] {
 			const locked = typeof o.locked === 'boolean' ? o.locked : false;
 			if (o.type === 'image') {
 				const img = L as ImageLayer;
-				const p = img.objectPosition;
+				const fitRaw = img.objectFit ?? o.object_fit;
+				const objectFit: ImageLayer['objectFit'] =
+					fitRaw === 'contain' || fitRaw === 'fill' || fitRaw === 'cover' ? fitRaw : 'cover';
+				const posRaw = img.objectPosition ?? o.object_position;
+				const objectPosition =
+					typeof posRaw === 'string' && posRaw.trim() !== '' ? posRaw.trim() : 'center';
 				L = {
 					...img,
-					objectPosition: typeof p === 'string' && p.trim() !== '' ? p.trim() : 'center',
+					objectFit,
+					objectPosition,
 					visible,
 					locked
 				};
@@ -391,15 +397,17 @@ export function parseBackground(raw: unknown): CardBackground {
 		return raw as CardBackground;
 	}
 	if (o.type === 'image') {
-		const fit = o.objectFit;
+		const fitRaw = o.objectFit ?? o.object_fit;
+		const fit =
+			fitRaw === 'contain' || fitRaw === 'fill' || fitRaw === 'cover' ? fitRaw : 'cover';
 		const mid = typeof o.mediaId === 'string' ? o.mediaId.trim() : '';
-		const posRaw = o.objectPosition;
+		const posRaw = o.objectPosition ?? o.object_position;
 		const objectPosition =
 			typeof posRaw === 'string' && posRaw.trim() !== '' ? posRaw.trim() : 'center';
 		return {
 			type: 'image',
 			mediaId: mid !== '' ? mid : null,
-			objectFit: fit === 'contain' || fit === 'fill' ? fit : 'cover',
+			objectFit: fit,
 			objectPosition,
 			fallbackColor: typeof o.fallbackColor === 'string' ? o.fallbackColor : '#1a1a1a'
 		};

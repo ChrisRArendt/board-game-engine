@@ -4,7 +4,7 @@
 	import type { CardBackground, CardLayer, ImageLayer, ShapeLayer, TextLayer } from '$lib/editor/types';
 	import { ensureGoogleFontsForLayers } from '$lib/editor/googleFontsLoader';
 	import {
-		cardFaceBackgroundCss,
+		cardFaceBackgroundParts,
 		resolveImageMediaId,
 		resolveShapeFill,
 		resolveTextContent,
@@ -94,6 +94,7 @@
 	}
 
 	const sorted = $derived(sortLayers(layers.filter((l) => l.visible)));
+	const bgParts = $derived(cardFaceBackgroundParts(background, mediaUrls));
 
 	/** Border is on `.card-face` (border-box); padding box is already inside the frame — do not inset again. */
 	const contentClipRadius = $derived(
@@ -115,6 +116,8 @@
 	style:height="{flattenLayout ? height : height * displayScale}px"
 	style:transform={flattenLayout ? 'none' : `scale(${displayScale})`}
 	style:transform-origin="top left"
+	style:border-radius="{borderRadius}px"
+	style:overflow="hidden"
 >
 	<div
 		class="card-face"
@@ -124,8 +127,22 @@
 		style:border={frameBorderWidth > 0
 			? `${frameBorderWidth}px solid ${frameBorderColor}`
 			: 'none'}
-		style:background={cardFaceBackgroundCss(background, mediaUrls)}
+		style:background={bgParts.kind === 'shorthand' ? bgParts.value : undefined}
+		style:background-color={bgParts.kind === 'imageStack' ? bgParts.fallbackColor : undefined}
 	>
+		{#if bgParts.kind === 'imageStack'}
+			<img
+				class="card-bg-img"
+				crossorigin="anonymous"
+				src={bgParts.url}
+				alt=""
+				draggable="false"
+				data-raster-object-fit={bgParts.objectFit}
+				data-raster-object-position={bgParts.objectPosition}
+				style:object-fit={bgParts.objectFit}
+				style:object-position={bgParts.objectPosition}
+			/>
+		{/if}
 		<div
 			class="card-content"
 			style:inset="0"
@@ -192,8 +209,13 @@
 				>
 					{#if imgUrl}
 						<img
+							crossorigin="anonymous"
 							src={imgUrl}
 							alt=""
+							data-raster-object-fit={I.objectFit}
+							data-raster-object-position={I.objectPosition?.trim()
+								? I.objectPosition
+								: 'center'}
 							style:width="100%"
 							style:height="100%"
 							style:object-fit={I.objectFit}
@@ -212,7 +234,6 @@
 <style>
 	.card-root {
 		position: relative;
-		overflow: visible;
 	}
 	.card-root--flat {
 		display: inline-block;
@@ -221,6 +242,15 @@
 	.card-face {
 		position: relative;
 		overflow: hidden;
+		box-sizing: border-box;
+	}
+	.card-bg-img {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+		z-index: 0;
 		box-sizing: border-box;
 	}
 	.card-content {

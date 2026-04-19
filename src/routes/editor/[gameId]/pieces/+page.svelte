@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, invalidate, invalidateAll } from '$app/navigation';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { publicStorageUrl } from '$lib/editor/mediaUrls';
 	import {
@@ -350,10 +350,12 @@
 				try {
 					await rerenderOneCard(c, uid);
 					tileRenderPhase = { ...tileRenderPhase, [c.id]: 'done' };
-				} catch {
+				} catch (e) {
+					if (!err) err = e instanceof Error ? e.message : 'Piece render failed';
 					tileRenderPhase = { ...tileRenderPhase, [c.id]: 'error' };
 				}
 			}
+			await invalidate('app:card-instances');
 			await invalidateAll();
 			bulkRerenderProgress = null;
 			window.setTimeout(() => {
@@ -395,10 +397,12 @@
 				try {
 					await rerenderOneCard(c, uid);
 					tileRenderPhase = { ...tileRenderPhase, [id]: 'done' };
-				} catch {
+				} catch (e) {
+					if (!err) err = e instanceof Error ? e.message : 'Piece render failed';
 					tileRenderPhase = { ...tileRenderPhase, [id]: 'error' };
 				}
 			}
+			await invalidate('app:card-instances');
 			await invalidateAll();
 			window.setTimeout(() => {
 				const next = { ...tileRenderPhase };
@@ -458,6 +462,7 @@
 
 			selectedIds = new Set();
 			selectionAnchorId = null;
+			await invalidate('app:card-instances');
 			await invalidateAll();
 		} catch (e) {
 			err = e instanceof Error ? e.message : 'Delete failed';

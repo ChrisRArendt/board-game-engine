@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, invalidate, invalidateAll } from '$app/navigation';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import CardPreview from '$lib/components/editor/CardPreview.svelte';
+	import PieceListThumb from '$lib/components/editor/PieceListThumb.svelte';
 	import ColorPicker from '$lib/components/editor/ColorPicker.svelte';
 	import GameMediaImageTools from '$lib/components/editor/GameMediaImageTools.svelte';
 	import {
@@ -182,6 +183,29 @@
 		if (cw <= 0 || maxCardW >= cw) return 1;
 		return Math.max(0.25, maxCardW / cw);
 	})());
+
+	function backPngPathFromFront(frontPath: string): string {
+		return frontPath.replace(/\.png$/i, '-back.png');
+	}
+
+	/** Same as pieces list: public URL for storage path (used with `PieceListThumb`). */
+	function thumb(path: string | null) {
+		if (!path) return '';
+		return publicStorageUrl(path);
+	}
+
+	/** Matches listing: `card.updated_at`, plus DB value right after render so thumbs refresh immediately. */
+	let renderedThumbCacheKeyOverride = $state('');
+	/** Until `invalidateAll` returns, `data.card` can still lack `rendered_image_path` — mirror list thumbs as soon as upload succeeds. */
+	let optimisticRenderedPath = $state<string | null>(null);
+	$effect(() => {
+		void data.card.id;
+		renderedThumbCacheKeyOverride = '';
+		optimisticRenderedPath = null;
+	});
+	const renderCacheKey = $derived(renderedThumbCacheKeyOverride || (data.card.updated_at ?? ''));
+	const effectiveRenderedPath = $derived(optimisticRenderedPath ?? data.card.rendered_image_path);
+
 	type ActionPhase = 'idle' | 'loading' | 'success';
 	let saveBtnState = $state<ActionPhase>('idle');
 	let renderBtnState = $state<ActionPhase>('idle');
@@ -265,6 +289,7 @@
 				})
 				.eq('id', data.game.id);
 			if (gErr) throw gErr;
+			await invalidate('app:card-instances');
 			await invalidateAll();
 			saveBtnState = 'success';
 			window.setTimeout(() => {
@@ -319,15 +344,23 @@
 				});
 				if (upErr2) throw upErr2;
 			}
-			const { error: uErr } = await supabase
+			const { data: updatedCard, error: uErr } = await supabase
 				.from('card_instances')
 				.update({
 					rendered_image_path: frontPath,
 					render_stale: false,
 					updated_at: new Date().toISOString()
 				})
-				.eq('id', data.card.id);
+				.eq('id', data.card.id)
+				.select('id, render_stale, updated_at')
+				.single();
 			if (uErr) throw uErr;
+			if (!updatedCard || updatedCard.render_stale !== false) {
+				throw new Error('Could not confirm render state was saved.');
+			}
+			optimisticRenderedPath = frontPath;
+			renderedThumbCacheKeyOverride = updatedCard.updated_at ?? '';
+			await invalidate('app:card-instances');
 			await invalidateAll();
 			renderBtnState = 'success';
 			window.setTimeout(() => {
@@ -405,7 +438,15 @@
 				downloadBlob(zip, `${base}.zip`);
 			} else {
 				if (!previewEl) return;
-				const blob = await rasterizeElementToPng(previewEl, { scale: 2, backgroundColor: null });
+				const blob = await rasterizeElementToPng(previewEl, {
+					scale: 2,
+					backgroundColor: null,
+					clipToRoundedRect: {
+						width: data.template.canvas_width,
+						height: data.template.canvas_height,
+						radius: data.template.border_radius
+					}
+				});
 				downloadBlob(blob, `${base}.png`);
 			}
 			printBtnState = 'success';
@@ -681,44 +722,104 @@
 			<div class="preview-chrome" class:two-up={hasBack}>
 				<div class="preview-face">
 					<span class="preview-face-label">Front</span>
-					<div class="preview-export-root" bind:this={previewEl}>
-						<CardPreview
-							width={data.template.canvas_width}
-							height={data.template.canvas_height}
-							borderRadius={data.template.border_radius}
-							frameBorderWidth={data.template.frame_border_width ?? 0}
-							frameBorderColor={data.template.frame_border_color ?? '#000000'}
-							frameInnerRadius={data.template.frame_inner_radius ?? null}
-							background={parseBackground(data.template.background as Json)}
-							layers={parsedLayers}
-							{fieldValues}
-							fieldStyles={pieceStyles}
-							{mediaUrls}
-							displayScale={previewScale}
-						/>
-					</div>
-				</div>
-				{#if hasBack}
-					<div class="preview-face">
-						<span class="preview-face-label">Back</span>
-						<div class="preview-export-root" aria-hidden="true">
-							<CardPreview
+					<div
+						class="preview-zoom-outer"
+						style:width="{data.template.canvas_width * previewScale}px"
+						style:height="{data.template.canvas_height * previewScale}px"
+					>
+						<div
+							class="preview-zoom-inner"
+							style:transform="scale({previewScale})"
+							style:transform-origin="top left"
+						>
+							<div class="preview-export-root" bind:this={previewEl}>
+								<CardPreview
 								width={data.template.canvas_width}
 								height={data.template.canvas_height}
 								borderRadius={data.template.border_radius}
 								frameBorderWidth={data.template.frame_border_width ?? 0}
 								frameBorderColor={data.template.frame_border_color ?? '#000000'}
 								frameInnerRadius={data.template.frame_inner_radius ?? null}
-								background={backBackground}
-								layers={parsedBackLayers}
+								background={parseBackground(data.template.background as Json)}
+								layers={parsedLayers}
 								{fieldValues}
 								fieldStyles={pieceStyles}
 								{mediaUrls}
-								displayScale={previewScale}
+								displayScale={1}
+								flattenLayout
 							/>
+							</div>
+						</div>
+					</div>
+				</div>
+				{#if hasBack}
+					<div class="preview-face">
+						<span class="preview-face-label">Back</span>
+						<div
+							class="preview-zoom-outer"
+							style:width="{data.template.canvas_width * previewScale}px"
+							style:height="{data.template.canvas_height * previewScale}px"
+						>
+							<div
+								class="preview-zoom-inner"
+								style:transform="scale({previewScale})"
+								style:transform-origin="top left"
+							>
+								<div class="preview-export-root" aria-hidden="true">
+									<CardPreview
+									width={data.template.canvas_width}
+									height={data.template.canvas_height}
+									borderRadius={data.template.border_radius}
+									frameBorderWidth={data.template.frame_border_width ?? 0}
+									frameBorderColor={data.template.frame_border_color ?? '#000000'}
+									frameInnerRadius={data.template.frame_inner_radius ?? null}
+									background={backBackground}
+									layers={parsedBackLayers}
+									{fieldValues}
+									fieldStyles={pieceStyles}
+									{mediaUrls}
+									displayScale={1}
+									flattenLayout
+								/>
+								</div>
+							</div>
 						</div>
 					</div>
 				{/if}
+			</div>
+
+			<div class="rendered-panel" aria-labelledby="rendered-heading">
+				<h3 id="rendered-heading" class="rendered-heading">Rendered for play</h3>
+				<p class="rendered-hint">
+					Stored PNGs — what the board and flip animation use after you render.
+				</p>
+				<div class="rendered-pair" class:two-up={hasBack}>
+					<figure class="rendered-fig">
+						<figcaption>Front</figcaption>
+						{#if effectiveRenderedPath}
+							<div class="rendered-frame">
+								<PieceListThumb src={thumb(effectiveRenderedPath)} cacheKey={renderCacheKey} />
+							</div>
+						{:else}
+							<p class="rendered-missing">Not rendered yet — use “Render piece image (game)”.</p>
+						{/if}
+					</figure>
+					{#if hasBack}
+						<figure class="rendered-fig">
+							<figcaption>Back</figcaption>
+							{#if effectiveRenderedPath}
+								<div class="rendered-frame">
+									<PieceListThumb
+										src={thumb(backPngPathFromFront(effectiveRenderedPath))}
+										cacheKey={renderCacheKey}
+									/>
+								</div>
+							{:else}
+								<p class="rendered-missing">Back path unavailable.</p>
+							{/if}
+						</figure>
+					{/if}
+				</div>
 			</div>
 		</div>
 	</div>
@@ -821,6 +922,66 @@
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		color: var(--color-text-muted);
+	}
+	.rendered-panel {
+		margin-top: 1.25rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+	}
+	.rendered-heading {
+		font-size: 0.95rem;
+		margin: 0 0 0.35rem;
+	}
+	.rendered-hint {
+		font-size: 12px;
+		color: var(--color-text-muted);
+		margin: 0 0 0.75rem;
+		line-height: 1.4;
+	}
+	.rendered-pair {
+		display: grid;
+		gap: 1rem;
+	}
+	.rendered-pair.two-up {
+		grid-template-columns: 1fr 1fr;
+	}
+	@media (max-width: 900px) {
+		.rendered-pair.two-up {
+			grid-template-columns: 1fr;
+		}
+	}
+	.rendered-fig {
+		margin: 0;
+		min-width: 0;
+	}
+	.rendered-fig figcaption {
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-text-muted);
+		margin-bottom: 6px;
+	}
+	.rendered-frame {
+		position: relative;
+		width: 100%;
+		aspect-ratio: 1;
+		max-height: 240px;
+		margin: 0 auto;
+		border-radius: 8px;
+		border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
+		background: #1a1a1f;
+		overflow: hidden;
+	}
+	.rendered-frame :global(.piece-list-thumb) {
+		position: absolute;
+		inset: 0;
+	}
+	.rendered-missing {
+		font-size: 13px;
+		color: var(--color-text-muted);
+		margin: 0;
+		padding: 0.75rem;
+		text-align: center;
 	}
 	.form-col {
 		min-width: 0;

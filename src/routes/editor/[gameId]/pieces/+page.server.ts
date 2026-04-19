@@ -1,6 +1,7 @@
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ parent, locals: { supabase }, params }) => {
+export const load: PageServerLoad = async ({ parent, locals: { supabase }, params, depends }) => {
+	depends('app:card-instances');
 	const p = await parent();
 	const { data: templates } = await supabase
 		.from('card_templates')

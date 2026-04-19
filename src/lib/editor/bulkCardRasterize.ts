@@ -66,6 +66,11 @@ async function rasterizeCardFaceToBlob(
 	wrap.style.left = '-9999px';
 	wrap.style.top = '0';
 	wrap.style.zIndex = '-1';
+	wrap.style.width = `${template.canvas_width}px`;
+	wrap.style.height = `${template.canvas_height}px`;
+	wrap.style.overflow = 'hidden';
+	wrap.style.borderRadius = `${template.border_radius}px`;
+	wrap.style.backgroundColor = 'transparent';
 	document.body.appendChild(wrap);
 
 	const { values: fieldValues, styles: fieldStyles } = splitFieldValuesPayload(fieldValuesRaw);
@@ -104,7 +109,12 @@ async function rasterizeCardFaceToBlob(
 	try {
 		return await rasterizeElementToPng(wrap, {
 			scale: opts?.scale ?? 2,
-			backgroundColor: null
+			backgroundColor: null,
+			clipToRoundedRect: {
+				width: template.canvas_width,
+				height: template.canvas_height,
+				radius: template.border_radius
+			}
 		});
 	} finally {
 		unmount(app);

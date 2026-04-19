@@ -26,25 +26,48 @@ export function radialGradientCss(
 	return `radial-gradient(ellipse ${r}% ${r}% at 50% 50%, ${parts})`;
 }
 
-/** CSS `background` for the card face (solid, gradient, or image via `game_media` URLs). */
-export function cardFaceBackgroundCss(bg: CardBackground, mediaUrls: Record<string, string>): string {
+/**
+ * Card face background for {@link CardPreview} / html2canvas rasterization.
+ * Image backgrounds use a real `<img>` with `object-fit` / `object-position`: html2canvas
+ * often stretches CSS `background-size` (even longhands), especially under `transform: scale`.
+ */
+export type CardFaceBackgroundParts =
+	| { kind: 'shorthand'; value: string }
+	| {
+			kind: 'imageStack';
+			fallbackColor: string;
+			objectFit: 'cover' | 'contain' | 'fill';
+			objectPosition: string;
+			url: string;
+	  };
+
+export function cardFaceBackgroundParts(
+	bg: CardBackground,
+	mediaUrls: Record<string, string>
+): CardFaceBackgroundParts {
 	if (bg.type === 'solid') {
-		return bg.color;
+		return { kind: 'shorthand', value: bg.color };
 	}
 	if (bg.type === 'gradient') {
-		return gradientCss(bg.stops, bg.angle);
+		return { kind: 'shorthand', value: gradientCss(bg.stops, bg.angle) };
 	}
 	const fb = bg.fallbackColor ?? '#1a1a1a';
 	const id = bg.mediaId;
 	const url = id ? mediaUrls[id] : '';
 	if (!url) {
-		return fb;
+		return { kind: 'shorthand', value: fb };
 	}
 	const fit = bg.objectFit ?? 'cover';
-	const size = fit === 'contain' ? 'contain' : fit === 'fill' ? '100% 100%' : 'cover';
-	const pos = (bg.objectPosition && bg.objectPosition.trim()) || 'center';
-	const safe = JSON.stringify(url);
-	return `${fb} url(${safe}) ${pos} / ${size} no-repeat`;
+	const objectFit: 'cover' | 'contain' | 'fill' =
+		fit === 'contain' || fit === 'fill' ? fit : 'cover';
+	const objectPosition = (bg.objectPosition && bg.objectPosition.trim()) || 'center';
+	return {
+		kind: 'imageStack',
+		fallbackColor: fb,
+		objectFit,
+		objectPosition,
+		url
+	};
 }
 
 export function shapeFillStyle(fill: ShapeLayer['fill']): string {
