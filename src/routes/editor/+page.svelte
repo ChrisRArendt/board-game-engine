@@ -134,7 +134,7 @@
 
 <svelte:window onpointerdown={onGlobalPointerDown} onkeydown={onGlobalKeydown} />
 
-<div class="editor-hub">
+<div class="editor-hub editor-page-scroll">
 	<header class="hub-header">
 		<h1>Editor - Open Project</h1>
 		<p class="subnav">

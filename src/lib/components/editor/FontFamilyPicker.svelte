@@ -1,10 +1,63 @@
 <script lang="ts">
 	import { GOOGLE_FONT_FAMILIES } from '$lib/editor/googleFontsCatalog';
-	import { ensureGoogleFontLoaded } from '$lib/editor/googleFontsLoader';
+	import { ensureGoogleFontLoaded, syncGoogleFontPreviewQueue } from '$lib/editor/googleFontsLoader';
 
 	let { value, onChange }: { value: string; onChange: (v: string) => void } = $props();
 
 	let query = $state('');
+
+	const intersectionState = new Map<Element, { family: string; ratio: number }>();
+
+	function flushPreviewQueue() {
+		const visible = new Map<string, number>();
+		for (const { family, ratio } of intersectionState.values()) {
+			visible.set(family, Math.max(visible.get(family) ?? 0, ratio));
+		}
+		syncGoogleFontPreviewQueue(visible);
+	}
+
+	function gfontPreviewRow(node: HTMLButtonElement, family: string) {
+		const root = node.closest('.gfont-list') as HTMLElement | null;
+		node.dataset.gfontPreview = family;
+		const io = new IntersectionObserver(
+			(entries) => {
+				for (const e of entries) {
+					const el = e.target as HTMLButtonElement;
+					const fam = el.dataset.gfontPreview ?? '';
+					if (!fam) continue;
+					if (e.isIntersecting) {
+						intersectionState.set(el, { family: fam, ratio: e.intersectionRatio });
+					} else {
+						intersectionState.delete(el);
+					}
+				}
+				flushPreviewQueue();
+			},
+			{
+				root,
+				rootMargin: '0px',
+				threshold: [0, 0.05, 0.15, 0.35, 0.55, 0.75, 1]
+			}
+		);
+		io.observe(node);
+		return {
+			update(newFamily: string) {
+				node.dataset.gfontPreview = newFamily;
+				intersectionState.delete(node);
+				flushPreviewQueue();
+			},
+			destroy() {
+				io.disconnect();
+				intersectionState.delete(node);
+				flushPreviewQueue();
+			}
+		};
+	}
+
+	function previewFontCss(family: string): string {
+		const safe = family.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+		return `'${safe}', sans-serif`;
+	}
 
 	const filtered = $derived.by(() => {
 		const q = query.trim().toLowerCase();
@@ -55,7 +108,15 @@
 	<ul class="gfont-list" aria-label="Google font matches">
 		{#each filtered as name (name)}
 			<li>
-				<button type="button" class="gfont-btn" onclick={() => pickGoogle(name)}>{name}</button>
+				<button
+					type="button"
+					class="gfont-btn"
+					style:font-family={previewFontCss(name)}
+					use:gfontPreviewRow={name}
+					onclick={() => pickGoogle(name)}
+				>
+					{name}
+				</button>
 			</li>
 		{/each}
 	</ul>
@@ -70,9 +131,11 @@
 		/>
 	</label>
 	<p class="hint">
-		Only curated Google fonts load automatically. For any family on
-		<a href="https://fonts.google.com" target="_blank" rel="noreferrer">fonts.google.com</a>, paste a CSS
-		stack — you may need to add the embed link in your export pipeline.
+		With no filter, only the first 40 families are listed — type to search the full curated set. Names preview
+		in their font as you scroll (loaded on demand). Only curated Google fonts load automatically. For any family
+		on
+		<a href="https://fonts.google.com" target="_blank" rel="noreferrer">fonts.google.com</a>, paste a CSS stack —
+		you may need to add the embed link in your export pipeline.
 	</p>
 </div>
 

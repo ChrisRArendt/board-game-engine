@@ -19,6 +19,8 @@
 	} from '$lib/editor/printSheet';
 	import PieceGridTile, { type RenderPhase } from '$lib/components/editor/PieceGridTile.svelte';
 	import type { PageData } from './$types';
+	import type { Json } from '$lib/supabase/database.types';
+	import { parseGameDataJson, removeBoardPiecesForCard } from '$lib/editor/gameDataJson';
 	import { browser } from '$app/environment';
 
 	let { data }: { data: PageData } = $props();
@@ -411,6 +413,58 @@
 		busy = false;
 	}
 
+	async function deleteSelectedPieces() {
+		if (!data.session?.user) {
+			err = 'You must be signed in to delete pieces.';
+			return;
+		}
+		const ids = [...selectedIds];
+		if (!ids.length) return;
+		if (
+			!confirm(
+				`Delete ${ids.length} selected piece(s) from the game? Any copies on the board will be removed. This cannot be undone.`
+			)
+		) {
+			return;
+		}
+		busy = true;
+		err = '';
+		try {
+			let gd = parseGameDataJson(data.game.game_data);
+			for (const id of ids) gd = removeBoardPiecesForCard(gd, id);
+			const { error: gErr } = await supabase
+				.from('custom_board_games')
+				.update({
+					game_data: gd as unknown as Json,
+					updated_at: new Date().toISOString()
+				})
+				.eq('id', data.game.id);
+			if (gErr) throw gErr;
+
+			for (const id of ids) {
+				const c = data.cards.find((x) => x.id === id);
+				const path = c?.rendered_image_path;
+				if (path) {
+					const { error: rmErr } = await supabase.storage.from('custom-game-assets').remove([path]);
+					if (rmErr) console.warn('[delete pieces] storage remove', rmErr);
+				}
+				const { error: dErr } = await supabase
+					.from('card_instances')
+					.delete()
+					.eq('id', id)
+					.eq('game_id', data.game.id);
+				if (dErr) throw dErr;
+			}
+
+			selectedIds = new Set();
+			selectionAnchorId = null;
+			await invalidateAll();
+		} catch (e) {
+			err = e instanceof Error ? e.message : 'Delete failed';
+		}
+		busy = false;
+	}
+
 	async function exportTemplateZip(templateId: string) {
 		const tmpl = data.templates.find((t) => t.id === templateId);
 		if (!tmpl) return;
@@ -604,6 +658,14 @@
 			onclick={() => void rerenderSelectedCards()}
 		>
 			{bulkRerenderProgress && busy ? `Rendering ${bulkRerenderProgress.cur}/${bulkRerenderProgress.total}…` : 'Re-render selected'}
+		</button>
+		<button
+			type="button"
+			class="btn danger"
+			disabled={busy || selectedCount === 0 || !data.session?.user}
+			onclick={() => void deleteSelectedPieces()}
+		>
+			Delete selected
 		</button>
 		{#if bulkRerenderProgress && busy}
 			<span class="bulk-hint" aria-live="polite">
@@ -1008,6 +1070,14 @@
 		background: var(--color-accent, #3b82f6);
 		color: #fff;
 		border-color: transparent;
+	}
+	.btn.danger {
+		border-color: rgba(248, 113, 113, 0.55);
+		color: #f87171;
+		background: rgba(248, 113, 113, 0.08);
+	}
+	.btn.danger:hover:not(:disabled) {
+		background: rgba(248, 113, 113, 0.16);
 	}
 	.row-btns {
 		display: flex;

@@ -776,6 +776,7 @@
 		border-right: 1px solid var(--color-border);
 		background: var(--color-surface);
 		min-width: 0;
+		min-height: 0;
 	}
 	.right {
 		border-right: none;

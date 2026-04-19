@@ -445,6 +445,7 @@
 		box-sizing: border-box;
 	}
 	:global(body.app-editor) .app-main {
+		flex: 1 1 0;
 		overflow: hidden;
 	}
 	.nav-mobile,

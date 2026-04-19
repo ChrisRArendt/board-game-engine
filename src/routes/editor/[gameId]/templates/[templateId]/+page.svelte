@@ -738,12 +738,13 @@
 	.shell {
 		display: flex;
 		flex-direction: column;
-		flex: 1 1 auto;
+		flex: 1 1 0;
 		min-height: 0;
 		width: 100%;
 		overflow: hidden;
 	}
 	.top {
+		flex-shrink: 0;
 		display: flex;
 		flex-wrap: wrap;
 		gap: 12px;
@@ -904,6 +905,7 @@
 	.main {
 		flex: 1;
 		min-height: 0;
+		overflow: hidden;
 		display: flex;
 		flex-direction: row;
 		align-items: stretch;
@@ -918,6 +920,8 @@
 		overflow: auto;
 		padding: 12px;
 		min-width: 0;
+		min-height: 0;
+		align-self: stretch;
 		box-sizing: border-box;
 		background: var(--color-surface);
 		border-right: 1px solid var(--color-border);

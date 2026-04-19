@@ -192,7 +192,7 @@ body.app-editor {
 
 /* Long editor forms: scroll inside the game content column (no document scrollbar) */
 body.app-editor .editor-page-scroll {
-	flex: 1 1 auto;
+	flex: 1 1 0;
 	min-height: 0;
 	width: 100%;
 	overflow-y: auto;
@@ -201,7 +201,7 @@ body.app-editor .editor-page-scroll {
 }
 
 body.app-editor .editor-board-fill {
-	flex: 1 1 auto;
+	flex: 1 1 0;
 	min-height: 0;
 	overflow: hidden;
 	display: flex;
