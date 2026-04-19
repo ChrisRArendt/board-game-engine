@@ -1,5 +1,5 @@
 import type { CardLayer } from './types';
-import { GOOGLE_FONT_FAMILIES, GOOGLE_FONT_FAMILY_SET } from './googleFontsCatalog';
+import { GOOGLE_FONT_FAMILIES } from './googleFontsCatalog';
 
 const loadedFamilies = new Set<string>();
 
@@ -8,6 +8,23 @@ const PREVIEW_LOAD_MIN_INTERVAL_MS = 80;
 
 let previewVisiblePriority = new Map<string, number>();
 let previewPumpTimer: ReturnType<typeof setTimeout> | null = null;
+
+const staticLcToCanonical = new Map(GOOGLE_FONT_FAMILIES.map((f) => [f.toLowerCase(), f]));
+
+/** Populated when `/api/google-fonts` loads; full catalog from Google metadata. */
+let apiLcToCanonical = new Map<string, string>();
+
+/** Known Google families (static + API) for `isGoogleFontStack` / layer preloads — not pass-through names. */
+let mergedKnownLc = new Set(staticLcToCanonical.keys());
+
+/**
+ * Register the full family list from the server (see `/api/google-fonts`).
+ * Safe to call multiple times with the same list.
+ */
+export function registerGoogleFontFamiliesFromApi(families: string[]): void {
+	apiLcToCanonical = new Map(families.map((f) => [f.toLowerCase(), f]));
+	mergedKnownLc = new Set([...staticLcToCanonical.keys(), ...apiLcToCanonical.keys()]);
+}
 
 /** First font family from a CSS `font-family` stack (e.g. `'Inter', sans-serif` → Inter). */
 export function extractPrimaryFontFamily(css: string): string | null {
@@ -19,12 +36,19 @@ export function extractPrimaryFontFamily(css: string): string | null {
 	return null;
 }
 
-/** Resolve user input → canonical catalog spelling, or null. */
+/**
+ * Resolve a name to the string we use in Google’s CSS URL (canonical casing when known).
+ * Unknown-but-safe names pass through so pasted stacks work before the index loads.
+ */
 export function canonicalGoogleFontName(name: string): string | null {
-	const t = name.trim().toLowerCase();
-	for (const f of GOOGLE_FONT_FAMILIES) {
-		if (f.toLowerCase() === t) return f;
-	}
+	const t = name.trim();
+	if (!t) return null;
+	const lc = t.toLowerCase();
+	const fromApi = apiLcToCanonical.get(lc);
+	if (fromApi) return fromApi;
+	const fromStatic = staticLcToCanonical.get(lc);
+	if (fromStatic) return fromStatic;
+	if (t.length >= 2 && t.length <= 120 && !/[<>{}]/.test(t)) return t;
 	return null;
 }
 
@@ -33,7 +57,7 @@ function linkId(canonical: string): string {
 }
 
 /**
- * Injects a single Google Fonts stylesheet for `family` if it is in our catalog and not already loaded.
+ * Injects a single Google Fonts stylesheet for `family` if resolvable and not already loaded.
  * @returns true if a new stylesheet was injected
  */
 export function ensureGoogleFontLoaded(familyName: string): boolean {
@@ -89,7 +113,7 @@ function pumpGoogleFontPreviewQueue(): void {
 export function isGoogleFontStack(css: string): boolean {
 	const primary = extractPrimaryFontFamily(css);
 	if (!primary) return false;
-	return GOOGLE_FONT_FAMILY_SET.has(primary.toLowerCase());
+	return mergedKnownLc.has(primary.toLowerCase());
 }
 
 export function ensureGoogleFontsForLayers(layers: CardLayer[]): void {
@@ -97,8 +121,6 @@ export function ensureGoogleFontsForLayers(layers: CardLayer[]): void {
 		if (L.type !== 'text') continue;
 		const primary = extractPrimaryFontFamily(L.fontFamily);
 		if (!primary) continue;
-		if (GOOGLE_FONT_FAMILY_SET.has(primary.toLowerCase())) {
-			ensureGoogleFontLoaded(primary);
-		}
+		if (canonicalGoogleFontName(primary)) ensureGoogleFontLoaded(primary);
 	}
 }

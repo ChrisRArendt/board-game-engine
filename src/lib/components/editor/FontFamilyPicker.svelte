@@ -1,10 +1,39 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { GOOGLE_FONT_FAMILIES } from '$lib/editor/googleFontsCatalog';
-	import { ensureGoogleFontLoaded, syncGoogleFontPreviewQueue } from '$lib/editor/googleFontsLoader';
+	import {
+		ensureGoogleFontLoaded,
+		registerGoogleFontFamiliesFromApi,
+		syncGoogleFontPreviewQueue
+	} from '$lib/editor/googleFontsLoader';
 
 	let { value, onChange }: { value: string; onChange: (v: string) => void } = $props();
 
 	let query = $state('');
+	let catalogFamilies = $state<string[]>([...GOOGLE_FONT_FAMILIES]);
+
+	$effect(() => {
+		if (!browser) return;
+		let cancelled = false;
+		void (async () => {
+			try {
+				const r = await fetch('/api/google-fonts');
+				if (!r.ok) throw new Error(String(r.status));
+				const data = (await r.json()) as { families?: string[] };
+				const families = data.families;
+				if (cancelled || !Array.isArray(families) || families.length === 0) return;
+				registerGoogleFontFamiliesFromApi(families);
+				catalogFamilies = families;
+			} catch {
+				if (cancelled) return;
+				registerGoogleFontFamiliesFromApi([...GOOGLE_FONT_FAMILIES]);
+				catalogFamilies = [...GOOGLE_FONT_FAMILIES];
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	});
 
 	const intersectionState = new Map<Element, { family: string; ratio: number }>();
 
@@ -61,8 +90,8 @@
 
 	const filtered = $derived.by(() => {
 		const q = query.trim().toLowerCase();
-		if (!q) return [...GOOGLE_FONT_FAMILIES].slice(0, 40);
-		return GOOGLE_FONT_FAMILIES.filter((f) => f.toLowerCase().includes(q)).slice(0, 56);
+		if (!q) return catalogFamilies.slice(0, 40);
+		return catalogFamilies.filter((f) => f.toLowerCase().includes(q)).slice(0, 100);
 	});
 
 	const systemPresets = [
@@ -102,8 +131,8 @@
 		</select>
 	</label>
 	<label class="row">
-		<span>Google (curated)</span>
-		<input type="search" placeholder="Type to filter…" bind:value={query} autocomplete="off" />
+		<span>Google Fonts</span>
+		<input type="search" placeholder="Type to search…" bind:value={query} autocomplete="off" />
 	</label>
 	<ul class="gfont-list" aria-label="Google font matches">
 		{#each filtered as name (name)}
@@ -130,12 +159,14 @@
 			placeholder="'Inter', sans-serif"
 		/>
 	</label>
+	<p class="hint hint-lead">
+		<strong>With no filter,</strong> only the first 40 families are shown (A–Z). Type to search the full Google
+		Fonts catalog — names are loaded from our server (cached for everyone, refreshed daily).
+	</p>
 	<p class="hint">
-		With no filter, only the first 40 families are listed — type to search the full curated set. Names preview
-		in their font as you scroll (loaded on demand). Only curated Google fonts load automatically. For any family
-		on
-		<a href="https://fonts.google.com" target="_blank" rel="noreferrer">fonts.google.com</a>, paste a CSS stack —
-		you may need to add the embed link in your export pipeline.
+		Previews use each font as you scroll. For exports, add the embed in your pipeline if needed. You can always
+		paste a stack from
+		<a href="https://fonts.google.com" target="_blank" rel="noreferrer">fonts.google.com</a>.
 	</p>
 </div>
 
@@ -163,7 +194,7 @@
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		max-height: 140px;
+		max-height: 200px;
 		overflow-y: auto;
 		border: 1px solid var(--color-border);
 		border-radius: 4px;
@@ -180,11 +211,12 @@
 		display: block;
 		width: 100%;
 		text-align: left;
-		padding: 5px 8px;
+		padding: 8px 10px;
 		border: none;
 		background: transparent;
 		color: inherit;
-		font-size: 12px;
+		font-size: 15px;
+		line-height: 1.25;
 		cursor: pointer;
 	}
 	.gfont-btn:hover {
@@ -193,8 +225,19 @@
 	.hint {
 		margin: 0;
 		font-size: 11px;
-		line-height: 1.4;
+		line-height: 1.45;
 		color: var(--color-text-muted);
+	}
+	.hint + .hint {
+		margin-top: 6px;
+	}
+	.hint-lead {
+		font-size: 12px;
+		color: var(--color-text-muted);
+	}
+	.hint-lead strong {
+		color: var(--color-text);
+		font-weight: 600;
 	}
 	.hint a {
 		color: var(--color-link, #2563eb);

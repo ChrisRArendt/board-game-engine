@@ -1,6 +1,6 @@
 /**
- * Curated Google Fonts (~150) for the editor picker — searchable, one CSS request per family when used.
- * Not the full Google catalog (1000+) to keep the JS bundle small; users can paste custom CSS stacks.
+ * Bootstrap list used before `/api/google-fonts` loads and as a server fallback if Google metadata fails.
+ * The live editor uses the full catalog from that endpoint (cached server-side ~24h, HTTP-cached for clients).
  */
 export const GOOGLE_FONT_FAMILIES: readonly string[] = [
 	'ABeeZee',
