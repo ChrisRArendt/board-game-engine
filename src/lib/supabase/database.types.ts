@@ -349,12 +349,139 @@ export interface Database {
 				};
 				Relationships: EmptyRel;
 			};
+			lobby_invites: {
+				Row: {
+					id: string;
+					lobby_id: string;
+					inviter_id: string;
+					invitee_id: string;
+					status: 'pending' | 'accepted' | 'declined' | 'expired' | 'cancelled';
+					created_at: string;
+					responded_at: string | null;
+					expires_at: string;
+				};
+				Insert: {
+					id?: string;
+					lobby_id: string;
+					inviter_id: string;
+					invitee_id: string;
+					status?: 'pending' | 'accepted' | 'declined' | 'expired' | 'cancelled';
+					created_at?: string;
+					responded_at?: string | null;
+					expires_at?: string;
+				};
+				Update: {
+					id?: string;
+					lobby_id?: string;
+					inviter_id?: string;
+					invitee_id?: string;
+					status?: 'pending' | 'accepted' | 'declined' | 'expired' | 'cancelled';
+					created_at?: string;
+					responded_at?: string | null;
+					expires_at?: string;
+				};
+				Relationships: EmptyRel;
+			};
+			notifications: {
+				Row: {
+					id: string;
+					user_id: string;
+					kind: 'lobby_invite' | 'friend_request' | 'friend_accept' | 'dm';
+					payload: Json;
+					read_at: string | null;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					user_id: string;
+					kind: 'lobby_invite' | 'friend_request' | 'friend_accept' | 'dm';
+					payload?: Json;
+					read_at?: string | null;
+					created_at?: string;
+				};
+				Update: {
+					id?: string;
+					user_id?: string;
+					kind?: 'lobby_invite' | 'friend_request' | 'friend_accept' | 'dm';
+					payload?: Json;
+					read_at?: string | null;
+					created_at?: string;
+				};
+				Relationships: EmptyRel;
+			};
+			conversations: {
+				Row: {
+					id: string;
+					user_a: string;
+					user_b: string;
+					last_message_at: string;
+				};
+				Insert: {
+					id?: string;
+					user_a: string;
+					user_b: string;
+					last_message_at?: string;
+				};
+				Update: {
+					id?: string;
+					user_a?: string;
+					user_b?: string;
+					last_message_at?: string;
+				};
+				Relationships: EmptyRel;
+			};
+			conversation_messages: {
+				Row: {
+					id: string;
+					conversation_id: string;
+					sender_id: string;
+					body: string;
+					created_at: string;
+				};
+				Insert: {
+					id?: string;
+					conversation_id: string;
+					sender_id: string;
+					body: string;
+					created_at?: string;
+				};
+				Update: {
+					id?: string;
+					conversation_id?: string;
+					sender_id?: string;
+					body?: string;
+					created_at?: string;
+				};
+				Relationships: EmptyRel;
+			};
+			conversation_reads: {
+				Row: {
+					conversation_id: string;
+					user_id: string;
+					last_read_at: string;
+				};
+				Insert: {
+					conversation_id: string;
+					user_id: string;
+					last_read_at?: string;
+				};
+				Update: {
+					conversation_id?: string;
+					user_id?: string;
+					last_read_at?: string;
+				};
+				Relationships: EmptyRel;
+			};
 		};
 		Views: Record<string, never>;
 		Functions: {
 			set_lobby_member_order: {
 				Args: { p_lobby_id: string; p_user_ids: string[] };
 				Returns: undefined;
+			};
+			dm_open: {
+				Args: { _other: string };
+				Returns: string;
 			};
 		};
 		Enums: Record<string, never>;

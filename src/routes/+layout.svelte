@@ -4,8 +4,25 @@
 	import { browser } from '$app/environment';
 	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { get } from 'svelte/store';
+	import { goto } from '$app/navigation';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
-	import { onlineUserIds } from '$lib/stores/onlinePresence';
+	import {
+		onlineUserIds,
+		presenceByUserId,
+		selfPresenceMeta,
+		type PresencePayload
+	} from '$lib/stores/onlinePresence';
+	import { unreadNotificationCount } from '$lib/stores/notificationInbox';
+	import {
+		getUnreadCount,
+		subscribeUserNotifications,
+		type NotificationRow
+	} from '$lib/notifications';
+	import { pushToast, dismissToast } from '$lib/stores/toast';
+	import { respondToLobbyInvite } from '$lib/invites';
+	import ToastHost from '$lib/components/ToastHost.svelte';
+	import NotificationInbox from '$lib/components/NotificationInbox.svelte';
 	import { persistSettings, settings } from '$lib/stores/settings';
 	import {
 		applyThemePreference,
@@ -25,6 +42,10 @@
 	let presenceCh: RealtimeChannel | null = null;
 	let activePresenceUserId: string | null = null;
 	let lastTrackedName: string | undefined;
+	let presenceProfile: ProfileRow | null = null;
+
+	let notifCh: RealtimeChannel | null = null;
+	const recentToastNotifIds = new Set<string>();
 	/** Only re-run global presence when session / display name actually changes (avoids reconnect storms). */
 	let presenceSyncKey = '';
 	/** Apply server-stored player color once per profile load (account source of truth). */
@@ -37,18 +58,31 @@
 		}
 		activePresenceUserId = null;
 		lastTrackedName = undefined;
+		presenceProfile = null;
 		onlineUserIds.set(new Set());
+		presenceByUserId.set(new Map());
+	}
+
+	async function applyPresenceTrack() {
+		if (!browser || !presenceCh || !activePresenceUserId) return;
+		const name = presenceProfile?.display_name ?? 'Player';
+		const meta = get(selfPresenceMeta) as Record<string, unknown>;
+		lastTrackedName = name;
+		await presenceCh.track({
+			user_id: activePresenceUserId,
+			name,
+			...meta
+		});
 	}
 
 	async function syncGlobalPresence(userId: string, profile: ProfileRow | null) {
 		if (!browser) return;
 		const name = profile?.display_name ?? 'Player';
+		presenceProfile = profile;
 
 		if (activePresenceUserId === userId && presenceCh) {
-			if (lastTrackedName !== name) {
-				lastTrackedName = name;
-				await presenceCh.track({ user_id: userId, name });
-			}
+			lastTrackedName = name;
+			await applyPresenceTrack();
 			return;
 		}
 
@@ -61,21 +95,136 @@
 		});
 		ch.on('presence', { event: 'sync' }, () => {
 			const state = ch.presenceState();
-			const next = new Set<string>();
+			const nextOnline = new Set<string>();
+			const nextPresence = new Map<string, PresencePayload>();
 			for (const k of Object.keys(state)) {
-				const arr = state[k] as { user_id?: string }[];
-				const uid = arr?.[0]?.user_id;
-				if (uid) next.add(uid);
+				const arr = state[k] as Record<string, unknown>[];
+				const raw = arr?.[0];
+				if (!raw || typeof raw !== 'object') continue;
+				const m = raw as Record<string, unknown>;
+				const uid = m.user_id as string | undefined;
+				if (!uid) continue;
+				nextOnline.add(uid);
+				const st = (m.status as PresencePayload['status']) || 'online';
+				nextPresence.set(uid, {
+					status: st,
+					name: m.name as string | undefined,
+					lobby_id: m.lobby_id as string | undefined,
+					lobby_name: m.lobby_name as string | undefined,
+					game_key: m.game_key as string | undefined
+				});
 			}
-			onlineUserIds.set(next);
+			onlineUserIds.set(nextOnline);
+			presenceByUserId.set(nextPresence);
 		});
 		presenceCh = ch;
 		ch.subscribe(async (status) => {
 			if (status === 'SUBSCRIBED' && presenceCh) {
-				await presenceCh.track({
-					user_id: userId,
-					name
-				});
+				await applyPresenceTrack();
+			}
+		});
+	}
+
+	function teardownNotifications() {
+		if (notifCh) {
+			void supabase.removeChannel(notifCh);
+			notifCh = null;
+		}
+		unreadNotificationCount.set(0);
+	}
+
+	async function setupNotifications(userId: string) {
+		if (!browser) return;
+		teardownNotifications();
+		try {
+			const n = await getUnreadCount(supabase, userId);
+			unreadNotificationCount.set(n);
+		} catch {
+			unreadNotificationCount.set(0);
+		}
+
+		notifCh = subscribeUserNotifications(supabase, userId, {
+			onInsert: async (row: NotificationRow) => {
+				if (row.read_at) return;
+				unreadNotificationCount.update((c) => c + 1);
+				if (recentToastNotifIds.has(row.id)) return;
+				recentToastNotifIds.add(row.id);
+				setTimeout(() => recentToastNotifIds.delete(row.id), 4000);
+
+				if (row.kind === 'lobby_invite') {
+					const pl = row.payload as {
+						lobby_id?: string;
+						invite_id?: string;
+						inviter_id?: string;
+					};
+					const { data: inviter } = await supabase
+						.from('profiles')
+						.select('display_name')
+						.eq('id', pl.inviter_id ?? '')
+						.maybeSingle();
+					const title = inviter?.display_name
+						? `${inviter.display_name} invited you`
+						: 'Lobby invite';
+					let toastId = '';
+					toastId = pushToast({
+						kind: 'invite',
+						title,
+						body: 'Tap View to open the lobby.',
+						ttlMs: 22000,
+						actions: [
+							{
+								label: 'View',
+								onClick: () => {
+									dismissToast(toastId);
+									if (pl.lobby_id) void goto(`/lobby/${pl.lobby_id}`);
+								}
+							},
+							{
+								label: 'Decline',
+								onClick: async () => {
+									dismissToast(toastId);
+									if (pl.invite_id) {
+										try {
+											await respondToLobbyInvite(supabase, {
+												inviteId: pl.invite_id,
+												userId,
+												decision: 'declined'
+											});
+										} catch {
+											/* ignore */
+										}
+									}
+								}
+							}
+						]
+					});
+				} else if (row.kind === 'dm') {
+					const pl = row.payload as { conversation_id?: string; preview?: string };
+					let dmToastId = '';
+					dmToastId = pushToast({
+						kind: 'dm',
+						title: 'New message',
+						body: pl.preview ? String(pl.preview) : 'Open your inbox',
+						ttlMs: 12000,
+						actions: [
+							{
+								label: 'Open',
+								onClick: () => {
+									dismissToast(dmToastId);
+									if (pl.conversation_id) void goto(`/messages/${pl.conversation_id}`);
+								}
+							}
+						]
+					});
+				}
+			},
+			onUpdate: async () => {
+				try {
+					const n = await getUnreadCount(supabase, userId);
+					unreadNotificationCount.set(n);
+				} catch {
+					/* ignore */
+				}
 			}
 		});
 	}
@@ -91,6 +240,23 @@
 			presenceSyncKey = '';
 			teardownGlobalPresence();
 		}
+	}
+
+	$: if (browser && presenceCh && activePresenceUserId) {
+		$selfPresenceMeta;
+		void applyPresenceTrack();
+	}
+
+	let lastNotifUid = '';
+	$: if (browser && data.session?.user?.id) {
+		const uid = data.session.user.id;
+		if (uid !== lastNotifUid) {
+			lastNotifUid = uid;
+			void setupNotifications(uid);
+		}
+	} else if (browser) {
+		lastNotifUid = '';
+		teardownNotifications();
 	}
 
 	$: if (browser && data.session?.user?.id && data.profile) {
@@ -124,12 +290,14 @@
 
 	onDestroy(() => {
 		teardownGlobalPresence();
+		teardownNotifications();
 		registerFriendVoiceSaver(null);
 		void leaveVoiceRoom();
 	});
 
 	async function signOut() {
 		teardownGlobalPresence();
+		teardownNotifications();
 		registerFriendVoiceSaver(null);
 		void leaveVoiceRoom();
 		await supabase.auth.signOut();
@@ -168,6 +336,8 @@
 		<nav class="nav-desktop" aria-label="Account">
 			{#if data.session}
 				<a href="/lobby">Lobbies</a>
+				<a href="/messages">Messages</a>
+				<NotificationInbox userId={data.session.user.id} />
 				<a href="/editor">Editor</a>
 				<a href="/settings">Settings</a>
 				<div class="user-wrap">
@@ -188,6 +358,7 @@
 				<summary class="nav-mobile-trigger">Menu</summary>
 				<div class="nav-mobile-panel">
 					<a href="/lobby">Lobbies</a>
+					<a href="/messages">Messages</a>
 					<a href="/editor">Editor</a>
 					<a href="/settings">Settings</a>
 					<span class="nav-mobile-name">{data.profile?.display_name ?? data.session.user.email ?? 'Player'}</span>
@@ -203,6 +374,10 @@
 <main class="app-main">
 	<slot />
 </main>
+
+{#if data.session}
+	<ToastHost />
+{/if}
 
 <style>
 	.nav {

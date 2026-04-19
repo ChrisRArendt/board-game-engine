@@ -141,11 +141,11 @@
 		);
 	}
 
-	let name = $state(data.card.name);
-	let fieldValues = $state<Record<string, string>>(mergeForCard());
-	let pieceStyles = $state<Record<string, PieceFieldStyle>>(mergePieceStyles());
+	let name = $state('');
+	let fieldValues = $state<Record<string, string>>({});
+	let pieceStyles = $state<Record<string, PieceFieldStyle>>({});
 
-	let lastCardId = $state(data.card.id);
+	let lastCardId = $state<string | null>(null);
 	$effect(() => {
 		const id = data.card.id;
 		if (lastCardId === id) return;
@@ -194,7 +194,7 @@
 
 	let mediaUrls = $state<Record<string, string>>({});
 
-	let pieceColorPalette = $state(getPieceColorPaletteFromGameData(data.game.game_data));
+	let pieceColorPalette = $state<string[]>([]);
 
 	let palettePersistTimer: ReturnType<typeof setTimeout> | null = null;
 

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { browser } from '$app/environment';
+	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { connectLobbyChannel, disconnectLobby, emitLobby } from '$lib/stores/network';
@@ -28,6 +29,11 @@
 	import { leaveVoiceRoom, tryAutoJoinVoice } from '$lib/stores/voiceChat';
 	import type { RealtimeChannel } from '@supabase/supabase-js';
 	import type { PageData } from './$types';
+	import { getFriends, type FriendWithProfile } from '$lib/friends';
+	import { listPendingInvitesForLobby, type LobbyInviteRow } from '$lib/invites';
+	import { markLobbyInviteNotificationsReadForLobby } from '$lib/notifications';
+	import { selfPresenceMeta } from '$lib/stores/onlinePresence';
+	import InviteFriendsPicker from '$lib/components/InviteFriendsPicker.svelte';
 
 	export let data: PageData;
 
@@ -36,6 +42,57 @@
 	/** DB lobby_members changes — keep player list in sync when others join/leave (SSR snapshot is stale). */
 	let lobbyMembersCh: RealtimeChannel | null = null;
 	let lobbyRowCh: RealtimeChannel | null = null;
+	let inviteCh: RealtimeChannel | null = null;
+
+	let friendsForInvite: FriendWithProfile[] = [];
+	let pendingInvites: LobbyInviteRow[] = [];
+	let invitePickerOpen = false;
+
+	$: memberIds = new Set(membersOrdered.map((m) => m.user_id));
+
+	$: if (browser) {
+		selfPresenceMeta.set({
+			status: 'in_lobby',
+			lobby_id: data.lobby.id,
+			lobby_name: room.name,
+			game_key: room.game_key
+		});
+	}
+
+	async function loadInviteContext() {
+		try {
+			friendsForInvite = await getFriends(supabase, data.session.user.id);
+			if (isHost) {
+				pendingInvites = await listPendingInvitesForLobby(supabase, data.lobby.id);
+			}
+		} catch {
+			/* ignore */
+		}
+	}
+
+	async function resolveInviteEntry() {
+		try {
+			await markLobbyInviteNotificationsReadForLobby(supabase, data.session.user.id, data.lobby.id);
+			const { data: inv } = await supabase
+				.from('lobby_invites')
+				.select('*')
+				.eq('lobby_id', data.lobby.id)
+				.eq('invitee_id', data.session.user.id)
+				.eq('status', 'pending')
+				.maybeSingle();
+			if (inv && new Date(inv.expires_at).getTime() > Date.now()) {
+				await supabase
+					.from('lobby_invites')
+					.update({
+						status: 'accepted',
+						responded_at: new Date().toISOString()
+					})
+					.eq('id', inv.id);
+			}
+		} catch {
+			/* ignore */
+		}
+	}
 
 	type MemberRow = {
 		user_id: string;
@@ -52,7 +109,10 @@
 	let editDescription = data.lobby.description ?? '';
 	let editMax = data.lobby.max_players;
 	let editVisibility: LobbyRow['visibility'] = data.lobby.visibility ?? 'private';
-	let savingSettings = false;
+
+	const LOBBY_SAVE_DEBOUNCE_MS = 1000;
+	let lobbySaveTimer: ReturnType<typeof setTimeout> | null = null;
+	let lobbySaveBusy = false;
 
 	function applyLobbyRow(row: LobbyRow) {
 		room = row;
@@ -62,9 +122,25 @@
 		editVisibility = row.visibility ?? 'private';
 	}
 
-	async function saveLobbySettings() {
+	function clearLobbySaveDebounce() {
+		if (lobbySaveTimer) {
+			clearTimeout(lobbySaveTimer);
+			lobbySaveTimer = null;
+		}
+	}
+
+	function scheduleLobbyFieldsSave() {
 		if (!isHost) return;
-		savingSettings = true;
+		clearLobbySaveDebounce();
+		lobbySaveTimer = setTimeout(() => {
+			lobbySaveTimer = null;
+			void persistLobbyFields();
+		}, LOBBY_SAVE_DEBOUNCE_MS);
+	}
+
+	async function persistLobbyFields() {
+		if (!isHost) return;
+		lobbySaveBusy = true;
 		errMsg = '';
 		try {
 			const nextName = editName.trim() || 'Lobby';
@@ -80,7 +156,13 @@
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Could not save settings';
 		}
-		savingSettings = false;
+		lobbySaveBusy = false;
+	}
+
+	function setVisibility(vis: LobbyRow['visibility']) {
+		editVisibility = vis;
+		clearLobbySaveDebounce();
+		void persistLobbyFields();
 	}
 
 	let errMsg = '';
@@ -277,6 +359,27 @@
 	}
 
 	onMount(() => {
+		void loadInviteContext();
+		void resolveInviteEntry();
+
+		if (isHost) {
+			inviteCh = supabase
+				.channel(`lobby_invites_room:${data.lobby.id}`)
+				.on(
+					'postgres_changes',
+					{
+						event: '*',
+						schema: 'public',
+						table: 'lobby_invites',
+						filter: `lobby_id=eq.${data.lobby.id}`
+					},
+					() => {
+						void loadInviteContext();
+					}
+				);
+			void inviteCh.subscribe();
+		}
+
 		lobbyDeleteCh = supabase
 			.channel(`lobby_delete_watch:${data.lobby.id}`)
 			.on(
@@ -364,6 +467,18 @@
 		window.addEventListener('bge:lobby_deleted', onLobbyDeleted);
 		window.addEventListener('bge:lobby_finished', onLobbyFinished);
 		return () => {
+			selfPresenceMeta.set({});
+			if (inviteCh) {
+				void supabase.removeChannel(inviteCh);
+				inviteCh = null;
+			}
+			if (lobbySaveTimer && isHost) {
+				clearTimeout(lobbySaveTimer);
+				lobbySaveTimer = null;
+				void persistLobbyFields();
+			} else {
+				clearLobbySaveDebounce();
+			}
 			window.removeEventListener('bge:game_start', onGameStart);
 			window.removeEventListener('bge:lobby_order', onLobbyOrderEv);
 			window.removeEventListener('bge:lobby_deleted', onLobbyDeleted);
@@ -383,6 +498,10 @@
 			disconnectLobby();
 			/* Do not leave voice here — user may navigate to /play for the same lobby. */
 		};
+	});
+
+	onDestroy(() => {
+		selfPresenceMeta.set({});
 	});
 </script>
 
@@ -414,15 +533,32 @@
 			{#if isHost}
 				<label class="field">
 					<span class="lbl">Name</span>
-					<input type="text" bind:value={editName} maxlength="120" />
+					<input
+						type="text"
+						bind:value={editName}
+						maxlength="120"
+						oninput={scheduleLobbyFieldsSave}
+					/>
 				</label>
 				<label class="field">
 					<span class="lbl">Description</span>
-					<textarea bind:value={editDescription} rows="3" maxlength="2000" placeholder="Tell players what to expect…"></textarea>
+					<textarea
+						bind:value={editDescription}
+						rows="3"
+						maxlength="2000"
+						placeholder="Tell players what to expect…"
+						oninput={scheduleLobbyFieldsSave}
+					></textarea>
 				</label>
 				<label class="field">
 					<span class="lbl">Max players</span>
-					<input type="number" min="2" max="20" bind:value={editMax} />
+					<input
+						type="number"
+						min="2"
+						max="20"
+						bind:value={editMax}
+						oninput={scheduleLobbyFieldsSave}
+					/>
 				</label>
 				<div class="field">
 					<span class="lbl" id="vis-label">Visibility</span>
@@ -432,22 +568,16 @@
 								type="button"
 								class="vis-btn"
 								class:active={editVisibility === vis}
-								onclick={() => (editVisibility = vis as LobbyRow['visibility'])}
+								onclick={() => setVisibility(vis as LobbyRow['visibility'])}
 							>
 								{vis}
 							</button>
 						{/each}
 					</div>
-					<p class="hint">Private: invite only. Friends: your friends can see it in listings. Public: everyone.</p>
 				</div>
-				<button
-					type="button"
-					class="btn primary full"
-					disabled={savingSettings}
-					onclick={saveLobbySettings}
-				>
-					{savingSettings ? 'Saving…' : 'Save changes'}
-				</button>
+				{#if lobbySaveBusy}
+					<p class="save-status" aria-live="polite">Saving…</p>
+				{/if}
 			{:else}
 				<p class="desc-readonly">{room.description?.trim() || 'No description yet.'}</p>
 			{/if}
@@ -501,6 +631,25 @@
 		</section>
 
 		{#if isHost}
+			<button
+				type="button"
+				class="btn full"
+				onclick={() => {
+					invitePickerOpen = true;
+					void loadInviteContext();
+				}}
+			>
+				Invite friends
+			</button>
+			<InviteFriendsPicker
+				bind:open={invitePickerOpen}
+				lobbyId={data.lobby.id}
+				hostId={data.session.user.id}
+				gameKey={room.game_key}
+				friends={friendsForInvite}
+				memberUserIds={memberIds}
+				pendingInvites={pendingInvites}
+			/>
 			<button type="button" class="btn primary full" disabled={starting} onclick={hostStart}>
 				Start game
 			</button>
@@ -652,6 +801,11 @@
 	.vis-btn:focus-visible {
 		outline: 2px solid var(--color-accent);
 		outline-offset: 2px;
+	}
+	.save-status {
+		margin: 0 0 0.5rem;
+		font-size: 0.82rem;
+		color: var(--color-text-muted);
 	}
 	.desc-readonly {
 		margin: 0;

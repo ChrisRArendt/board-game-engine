@@ -62,6 +62,7 @@
 	import type { Json } from '$lib/supabase/database.types';
 	import type { PageData } from './$types';
 	import { browser } from '$app/environment';
+	import { selfPresenceMeta } from '$lib/stores/onlinePresence';
 
 	export let data: PageData;
 
@@ -322,6 +323,13 @@
 	}
 
 	onMount(() => {
+		if (browser) {
+			selfPresenceMeta.set({
+				status: 'in_game',
+				lobby_id: data.lobby.id,
+				game_key: data.lobby.game_key
+			});
+		}
 		const onWinBlur = () => {
 			peekPieceId = null;
 			peekDismissHint = null;
@@ -510,6 +518,7 @@
 		})();
 
 		return () => {
+			selfPresenceMeta.set({});
 			if (browser) window.removeEventListener('blur', onWinBlur);
 			removeMobileMq?.();
 			window.removeEventListener('click', onDocClick);
@@ -526,6 +535,7 @@
 	});
 
 	onDestroy(() => {
+		selfPresenceMeta.set({});
 		closeDealDialog();
 		disconnectGame();
 	});

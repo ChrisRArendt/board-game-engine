@@ -60,27 +60,22 @@
 
 	const supabase = createSupabaseBrowserClient();
 
-	let name = $state(data.template.name);
-	let canvasW = $state(data.template.canvas_width);
-	let canvasH = $state(data.template.canvas_height);
-	let borderR = $state(data.template.border_radius);
-	let frameW = $state(data.template.frame_border_width ?? 0);
-	let frameColor = $state(data.template.frame_border_color ?? '#000000');
-	let frameInnerR = $state<number | null>(data.template.frame_inner_radius ?? null);
-	const initialFrontLayers = parseLayers(data.template.layers as Json);
-	let front_background = $state(parseBackground(data.template.background as Json));
-	let front_layers = $state(initialFrontLayers);
-	let back_background = $state<CardBackground | null>(
-		parseOptionalBackgroundOrNull(data.template.back_background as Json)
-	);
-	let back_layers = $state<CardLayer[] | null>(
-		parseOptionalLayersOrNull(data.template.back_layers as Json)
-	);
+	let name = $state('');
+	let canvasW = $state(0);
+	let canvasH = $state(0);
+	let borderR = $state(0);
+	let frameW = $state(0);
+	let frameColor = $state('#000000');
+	let frameInnerR = $state<number | null>(null);
+	let front_background = $state<CardBackground>(parseBackground(null));
+	let front_layers = $state<CardLayer[]>([]);
+	let back_background = $state<CardBackground | null>(null);
+	let back_layers = $state<CardLayer[] | null>(null);
 	let activeFace = $state<'front' | 'back'>('front');
 	/** Working copy for the active face (TemplateCanvas + left panel). */
-	let background = $state(parseBackground(data.template.background as Json));
-	let layers = $state(initialFrontLayers);
-	let selectedId = $state<string | null>(initialFrontLayers[0]?.id ?? null);
+	let background = $state<CardBackground>(parseBackground(null));
+	let layers = $state<CardLayer[]>([]);
+	let selectedId = $state<string | null>(null);
 	let saving = $state(false);
 	let err = $state('');
 
@@ -94,7 +89,7 @@
 
 	let layerCtxMenu = $state<{ id: string; x: number; y: number } | null>(null);
 
-	let pieceColorPalette = $state(getPieceColorPaletteFromGameData(data.game.game_data));
+	let pieceColorPalette = $state<string[]>([]);
 
 	let palettePersistTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -204,10 +199,10 @@
 		void loadMedia();
 	});
 
-	let lastTemplateId = $state(data.template.id);
+	let lastTemplateId = $state<string | null>(null);
 	$effect(() => {
 		const id = data.template.id;
-		if (id === lastTemplateId) return;
+		if (lastTemplateId === id) return;
 		lastTemplateId = id;
 		name = data.template.name;
 		canvasW = data.template.canvas_width;

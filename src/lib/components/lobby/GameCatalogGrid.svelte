@@ -16,7 +16,7 @@
 	{#if loading}
 		<div class="tile-grid" aria-busy="true">
 			{#each [1, 2, 3] as _}
-				<div class="tile skeleton" />
+				<div class="tile skeleton"></div>
 			{/each}
 		</div>
 	{:else}
@@ -32,11 +32,11 @@
 					<div
 						class="tile-bg"
 						style:background-image={g.coverUrl ? `url(${g.coverUrl})` : 'none'}
-					/>
-					<div class="tile-scrim" />
+					></div>
+					<div class="tile-scrim"></div>
 					<span class="tile-label">{g.label}</span>
 					{#if creatingKey === g.key}
-						<span class="spinner" aria-hidden="true" />
+						<span class="spinner" aria-hidden="true"></span>
 					{/if}
 				</button>
 			{/each}

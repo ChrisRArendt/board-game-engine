@@ -109,6 +109,37 @@ body {
 	--ctx-choice-selected-fg: var(--color-bg);
 }
 
+/* Social: toasts, inbox, DM — shared motion + glass tokens */
+[data-theme] {
+	--bg-elev-1: var(--color-surface-muted);
+	--bg-elev-2: var(--color-surface);
+	--fg: var(--color-text);
+	--accent: var(--color-accent);
+	--social-radius: 14px;
+	--social-radius-sm: 10px;
+	--social-surface: color-mix(in oklab, var(--bg-elev-1) 86%, transparent);
+	--social-surface-strong: color-mix(in oklab, var(--bg-elev-2) 94%, transparent);
+	--social-border: color-mix(in oklab, var(--fg) 10%, transparent);
+	--social-border-strong: color-mix(in oklab, var(--fg) 18%, transparent);
+	--social-shadow-1: 0 2px 6px rgba(0, 0, 0, 0.18), 0 12px 32px -12px rgba(0, 0, 0, 0.35);
+	--social-shadow-2: 0 4px 10px rgba(0, 0, 0, 0.22), 0 24px 60px -18px rgba(0, 0, 0, 0.5);
+	--social-ring: 0 0 0 2px color-mix(in oklab, var(--accent) 55%, transparent);
+	--social-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+	--social-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+	--social-dur-fast: 140ms;
+	--social-dur: 220ms;
+	--social-dur-slow: 360ms;
+	--social-blur: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	[data-theme] {
+		--social-dur-fast: 0ms;
+		--social-dur: 0ms;
+		--social-dur-slow: 0ms;
+	}
+}
+
 html {
 	height: 100%;
 	background: var(--color-bg);

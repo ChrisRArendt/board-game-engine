@@ -28,7 +28,10 @@
 	} from '$lib/lobby';
 	import type { Database } from '$lib/supabase/database.types';
 	import { goto } from '$app/navigation';
-	import { onlineUserIds } from '$lib/stores/onlinePresence';
+	import { presenceByUserId } from '$lib/stores/onlinePresence';
+	import { sendLobbyInvite } from '$lib/invites';
+	import { openConversationWith } from '$lib/dm';
+	import { pushToast } from '$lib/stores/toast';
 	import type { RealtimeChannel } from '@supabase/supabase-js';
 	import CopyInviteCode from '$lib/components/CopyInviteCode.svelte';
 	import {
@@ -90,6 +93,31 @@
 
 	const FRIEND_LIST_BROADCAST = 'friend_lists_refresh';
 
+	let friendHostLobbies = new Map<string, LobbyRow>();
+
+	async function refreshFriendHostLobbies() {
+		try {
+			const ids = friends.map((f) => f.profile.id);
+			if (!ids.length) {
+				friendHostLobbies = new Map();
+				return;
+			}
+			const { data, error } = await supabase
+				.from('lobbies')
+				.select('*')
+				.in('host_id', ids)
+				.eq('status', 'waiting');
+			if (error) throw error;
+			const m = new Map<string, LobbyRow>();
+			for (const row of data ?? []) {
+				if (row.host_id) m.set(row.host_id, row);
+			}
+			friendHostLobbies = m;
+		} catch {
+			friendHostLobbies = new Map();
+		}
+	}
+
 	async function notifyPeerFriendshipRefresh(peerId: string) {
 		const ch = supabase.channel(`friendship_ping:${peerId}`, {
 			config: { broadcast: { ack: true } }
@@ -119,6 +147,7 @@
 			friends = await getFriends(supabase, id);
 			pending = await getPendingIncoming(supabase, id);
 			outgoing = await getPendingOutgoing(supabase, id);
+			await refreshFriendHostLobbies();
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Error';
 		}
@@ -176,6 +205,9 @@
 		}
 	}
 
+	$: myHostedWaitingLobby =
+		myWaitingLobbies.find((l) => l.host_id === currentUserId()) ?? null;
+
 	async function refresh() {
 		loading = true;
 		errMsg = '';
@@ -192,6 +224,34 @@
 			errMsg = e instanceof Error ? e.message : 'Error';
 		}
 		loading = false;
+	}
+
+	async function onInviteFriendToHost(friendId: string) {
+		const host = myHostedWaitingLobby;
+		if (!host) return;
+		try {
+			await sendLobbyInvite(supabase, {
+				lobbyId: host.id,
+				inviteeId: friendId,
+				inviterId: currentUserId()
+			});
+			pushToast({ kind: 'success', title: 'Invite sent' });
+		} catch (e) {
+			errMsg = e instanceof Error ? e.message : 'Could not invite';
+		}
+	}
+
+	function onJoinFriendLobby(lobbyId: string) {
+		void goto(`/lobby/${lobbyId}`);
+	}
+
+	async function onMessageFriend(friendId: string) {
+		try {
+			const cid = await openConversationWith(supabase, friendId);
+			await goto(`/messages/${cid}`);
+		} catch (e) {
+			errMsg = e instanceof Error ? e.message : 'Could not open chat';
+		}
 	}
 
 	async function doSearch() {
@@ -351,6 +411,7 @@
 				{ event: '*', schema: 'public', table: 'lobbies' },
 				() => {
 					void refreshLobbyLists();
+					void refreshFriendHostLobbies();
 					/* Quiet: full-screen skeleton on every row change caused visible flashing. */
 					if (hubTab === 'public') void loadPublicList({ quiet: true });
 				}
@@ -481,11 +542,18 @@
 			{friends}
 			{pending}
 			{outgoing}
+			presenceMap={$presenceByUserId}
+			{friendHostLobbies}
+			myHostedLobby={myHostedWaitingLobby}
+			currentUserId={currentUserId()}
 			onSearch={doSearch}
 			onAddFriend={addFriend}
 			onAccept={accept}
 			onDecline={decline}
 			onCancelOutgoing={cancelOutgoing}
+			onInviteFriend={onInviteFriendToHost}
+			onJoinFriendLobby={onJoinFriendLobby}
+			onMessageFriend={onMessageFriend}
 		/>
 	</div>
 </div>

@@ -40,7 +40,8 @@
 	class:piece-tile--selected={selected}
 	class:piece-tile--rendering={renderPhase === 'running'}
 >
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<label
 		class="piece-tile-check"
 		title="Select — Shift+click another to select a range"

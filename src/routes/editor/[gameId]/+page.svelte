@@ -121,6 +121,7 @@
 <div class="page editor-page-scroll">
 	<h1>{data.game.title}</h1>
 	<p class="meta">Key: <code>{data.game.game_key}</code></p>
+	<p class="hint">Edit the title, description, thumbnail, and rules PDF for this game.</p>
 
 	{#if msg}
 		<p class="ok">{msg}</p>

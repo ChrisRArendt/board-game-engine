@@ -541,29 +541,50 @@
 			style:top="{sortMenuTop}px"
 			onpointerdown={(e) => e.stopPropagation()}
 		>
-			<li
-				role="menuitemradio"
-				aria-checked={sortBy === 'template'}
-				class:current={sortBy === 'template'}
-				onpointerdown={() => pickSortBy('template')}
-			>
-				Sort by type (A–Z), then name
+			<li role="none">
+				<button
+					type="button"
+					class="sort-menu-item"
+					role="menuitemradio"
+					aria-checked={sortBy === 'template'}
+					class:current={sortBy === 'template'}
+					onpointerdown={(e) => {
+						e.stopPropagation();
+						pickSortBy('template');
+					}}
+				>
+					Sort by type (A–Z), then name
+				</button>
 			</li>
-			<li
-				role="menuitemradio"
-				aria-checked={sortBy === 'name'}
-				class:current={sortBy === 'name'}
-				onpointerdown={() => pickSortBy('name')}
-			>
-				Sort by name (A–Z)
+			<li role="none">
+				<button
+					type="button"
+					class="sort-menu-item"
+					role="menuitemradio"
+					aria-checked={sortBy === 'name'}
+					class:current={sortBy === 'name'}
+					onpointerdown={(e) => {
+						e.stopPropagation();
+						pickSortBy('name');
+					}}
+				>
+					Sort by name (A–Z)
+				</button>
 			</li>
-			<li
-				role="menuitemradio"
-				aria-checked={sortBy === 'updated'}
-				class:current={sortBy === 'updated'}
-				onpointerdown={() => pickSortBy('updated')}
-			>
-				Sort by recently updated
+			<li role="none">
+				<button
+					type="button"
+					class="sort-menu-item"
+					role="menuitemradio"
+					aria-checked={sortBy === 'updated'}
+					class:current={sortBy === 'updated'}
+					onpointerdown={(e) => {
+						e.stopPropagation();
+						pickSortBy('updated');
+					}}
+				>
+					Sort by recently updated
+				</button>
 			</li>
 		</ul>
 	{/if}
@@ -876,20 +897,28 @@
 		font-size: 16px;
 		line-height: 1.25;
 	}
-	.pieces-sort-ctx li {
+	.pieces-sort-ctx .sort-menu-item {
+		display: block;
+		width: 100%;
+		box-sizing: border-box;
 		padding: 8px 12px;
 		margin: 0;
+		border: none;
+		background: transparent;
+		font: inherit;
+		line-height: inherit;
+		text-align: left;
 		cursor: pointer;
 		color: var(--color-text);
 	}
-	.pieces-sort-ctx li:hover {
+	.pieces-sort-ctx .sort-menu-item:hover {
 		background: var(--color-ctx-hover-bg, rgba(100, 120, 200, 0.25));
 		color: #fff;
 	}
-	.pieces-sort-ctx li.current {
+	.pieces-sort-ctx .sort-menu-item.current {
 		font-weight: 600;
 	}
-	.pieces-sort-ctx li.current::before {
+	.pieces-sort-ctx .sort-menu-item.current::before {
 		content: '✓ ';
 	}
 	.inline-create label {

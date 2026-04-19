@@ -32,7 +32,8 @@ const supabaseHandle: Handle = async ({ event, resolve }) => {
 
 const authGuardHandle: Handle = async ({ event, resolve }) => {
 	const path = event.url.pathname;
-	const isProtected = path.startsWith('/lobby') || path.startsWith('/play');
+	const isProtected =
+		path.startsWith('/lobby') || path.startsWith('/play') || path.startsWith('/messages');
 
 	if (isProtected) {
 		const { session } = await event.locals.safeGetSession();

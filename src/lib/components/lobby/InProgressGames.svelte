@@ -15,7 +15,7 @@
 	{#if loading}
 		<ul class="card-grid" aria-busy="true">
 			{#each [1, 2] as _}
-				<li class="game-card skeleton" />
+				<li class="game-card skeleton"></li>
 			{/each}
 		</ul>
 	{:else if games.length === 0}
@@ -30,8 +30,8 @@
 							style:background-image={coverUrlForGame(G.game_key)
 								? `url(${coverUrlForGame(G.game_key)})`
 								: 'none'}
-						/>
-						<div class="card-scrim" />
+						></div>
+						<div class="card-scrim"></div>
 						<div class="card-body">
 							<span class="card-title">{G.name}</span>
 							<span class="card-sub">{G.game_key}</span>
