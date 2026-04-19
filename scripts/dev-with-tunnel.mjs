@@ -16,6 +16,14 @@ const TUNNEL_URL_RE = /https:\/\/[a-z0-9][-a-z0-9]*\.trycloudflare\.com\/?/gi;
 
 const viteExtraArgs = process.argv.slice(2);
 
+/** Avoid 431 Request Header Fields Too Large when many/large cookies hit Node’s default header limit. */
+function envWithLargeHttpHeaders() {
+	const flag = '--max-http-header-size=98304';
+	const cur = process.env.NODE_OPTIONS ?? '';
+	if (cur.includes('max-http-header-size')) return process.env;
+	return { ...process.env, NODE_OPTIONS: cur.trim() ? `${cur} ${flag}` : flag };
+}
+
 let tunnelPrinted = false;
 let cloudflaredProc = null;
 
@@ -58,7 +66,7 @@ const vite = spawn('pnpm', ['exec', 'vite', 'dev', ...viteExtraArgs], {
 	cwd: process.cwd(),
 	stdio: 'inherit',
 	shell: process.platform === 'win32',
-	env: process.env
+	env: envWithLargeHttpHeaders()
 });
 
 vite.on('error', (err) => {

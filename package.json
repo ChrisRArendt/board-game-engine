@@ -5,12 +5,12 @@
 	"type": "module",
 	"scripts": {
 		"dev": "node scripts/dev-with-tunnel.mjs",
-		"dev:local": "vite dev",
+		"dev:local": "node --max-http-header-size=98304 ./node_modules/vite/bin/vite.js dev",
 		"dev:tunnel": "node scripts/dev-with-tunnel.mjs",
 		"dev:force": "node scripts/dev-with-tunnel.mjs --force",
-		"dev:force:local": "vite dev --force",
+		"dev:force:local": "node --max-http-header-size=98304 ./node_modules/vite/bin/vite.js dev --force",
 		"build": "vite build",
-		"preview": "vite preview",
+		"preview": "node --max-http-header-size=98304 ./node_modules/vite/bin/vite.js preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"devDependencies": {

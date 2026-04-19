@@ -110,3 +110,5 @@ export async function insertCustomBoardGame(
 	if (error) throw error;
 	return data;
 }
+
+export { duplicateCustomGame, type DuplicateGameProgress } from '$lib/editor/duplicateCustomGame';
