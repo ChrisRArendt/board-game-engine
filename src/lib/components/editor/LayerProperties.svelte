@@ -218,7 +218,19 @@
 					onchange={(e) => {
 						const t = (e.currentTarget as HTMLSelectElement).value;
 						if (t === 'solid') patch({ fill: { type: 'solid', color: '#444' } } as Partial<ShapeLayer>);
-						else patch({ fill: { type: 'gradient', stops: [{ offset: 0, color: '#333' }, { offset: 1, color: '#666' }], angle: 90 } } as Partial<ShapeLayer>);
+						else
+							patch({
+								fill: {
+									type: 'gradient',
+									stops: [
+										{ offset: 0, color: '#333' },
+										{ offset: 1, color: '#666' }
+									],
+									angle: 90,
+									gradientKind: 'linear',
+									radialRadiusPct: 100
+								}
+							} as Partial<ShapeLayer>);
 					}}
 				>
 					<option value="solid">Solid</option>
@@ -238,14 +250,23 @@
 				</label>
 			{:else}
 				<GradientEditor
+					showGradientKindControls
 					stops={S.fill.stops}
 					angle={S.fill.angle}
+					gradientKind={S.fill.gradientKind ?? 'linear'}
+					radialRadiusPct={S.fill.radialRadiusPct ?? 100}
 					palette={pieceColorPalette}
 					onPaletteChange={onPieceColorPaletteChange}
 					onChange={(next) =>
 						patch({
 							...S,
-							fill: { type: 'gradient', stops: next.stops, angle: next.angle }
+							fill: {
+								type: 'gradient',
+								stops: next.stops,
+								angle: next.angle,
+								gradientKind: next.gradientKind,
+								radialRadiusPct: next.radialRadiusPct
+							}
 						} as CardLayer)}
 				/>
 			{/if}

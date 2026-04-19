@@ -9,10 +9,28 @@
 		{ offset: 1, color: '#16213e' }
 	];
 	export let angle = 135;
-	export let onChange: ((next: { stops: typeof stops; angle: number }) => void) | undefined = undefined;
+	/** Shape fills: linear (angle) vs radial (curved). Card backgrounds ignore this. */
+	export let gradientKind: 'linear' | 'radial' = 'linear';
+	/** Radial mode: ellipse radius as % of the layer (both axes), roughly 5–200. */
+	export let radialRadiusPct = 100;
+	/** When true (shape fills), show linear vs radial and radius. Card backgrounds use linear-only UI. */
+	export let showGradientKindControls = false;
+	export let onChange:
+		| ((next: {
+				stops: typeof stops;
+				angle: number;
+				gradientKind: 'linear' | 'radial';
+				radialRadiusPct: number;
+		  }) => void)
+		| undefined = undefined;
 
 	function emit() {
-		onChange?.({ stops: [...stops], angle });
+		onChange?.({
+			stops: [...stops],
+			angle,
+			gradientKind,
+			radialRadiusPct
+		});
 	}
 
 	function addStop() {
@@ -28,15 +46,53 @@
 </script>
 
 <div class="grad">
-	<label class="row">
-		<span>Angle (°)</span>
-		<input
-			type="number"
-			bind:value={angle}
-			step="1"
-			onchange={emit}
-		/>
-	</label>
+	{#if showGradientKindControls}
+		<label class="row">
+			<span>Gradient style</span>
+			<select
+				bind:value={gradientKind}
+				onchange={emit}
+				class="kind-select"
+			>
+				<option value="linear">Linear</option>
+				<option value="radial">Radial (curved)</option>
+			</select>
+		</label>
+		{#if gradientKind === 'linear'}
+			<label class="row">
+				<span>Angle (°)</span>
+				<input
+					type="number"
+					bind:value={angle}
+					step="1"
+					onchange={emit}
+				/>
+			</label>
+		{:else}
+			<label class="row">
+				<span>Radius (%)</span>
+				<input
+					type="number"
+					min="5"
+					max="200"
+					step="1"
+					bind:value={radialRadiusPct}
+					onchange={emit}
+				/>
+			</label>
+			<p class="hint">Elliptical gradient from the center; lower values keep color change tighter in the middle.</p>
+		{/if}
+	{:else}
+		<label class="row">
+			<span>Angle (°)</span>
+			<input
+				type="number"
+				bind:value={angle}
+				step="1"
+				onchange={emit}
+			/>
+		</label>
+	{/if}
 	{#each stops as s, i}
 		<div class="stop">
 			<input
@@ -80,12 +136,20 @@
 		gap: 4px;
 		font-size: 13px;
 	}
-	.row input[type='number'] {
+	.row input[type='number'],
+	.kind-select {
 		padding: 6px 8px;
 		border-radius: 4px;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
 		color: inherit;
+		font-size: 13px;
+	}
+	.hint {
+		margin: -4px 0 0;
+		font-size: 11px;
+		line-height: 1.4;
+		color: var(--color-text-muted);
 	}
 	.stop {
 		display: grid;

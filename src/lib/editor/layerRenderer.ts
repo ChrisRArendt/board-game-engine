@@ -15,6 +15,16 @@ export function gradientCss(
 	return `linear-gradient(${angleDeg}deg, ${parts})`;
 }
 
+export function radialGradientCss(
+	stops: { offset: number; color: string }[],
+	radiusPct: number
+): string {
+	const s = [...stops].sort((a, b) => a.offset - b.offset);
+	const parts = s.map((x) => `${x.color} ${Math.round(x.offset * 100)}%`).join(', ');
+	const r = Math.min(200, Math.max(5, Math.round(radiusPct)));
+	return `radial-gradient(ellipse ${r}% ${r}% at 50% 50%, ${parts})`;
+}
+
 /** CSS `background` for the card face (solid, gradient, or image via `game_media` URLs). */
 export function cardFaceBackgroundCss(bg: CardBackground, mediaUrls: Record<string, string>): string {
 	if (bg.type === 'solid') {
@@ -38,6 +48,9 @@ export function cardFaceBackgroundCss(bg: CardBackground, mediaUrls: Record<stri
 
 export function shapeFillStyle(fill: ShapeLayer['fill']): string {
 	if (fill.type === 'solid') return fill.color;
+	if (fill.gradientKind === 'radial') {
+		return radialGradientCss(fill.stops, fill.radialRadiusPct ?? 100);
+	}
 	return gradientCss(fill.stops, fill.angle);
 }
 

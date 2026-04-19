@@ -31,7 +31,12 @@ export type ShapeFill =
 	| {
 			type: 'gradient';
 			stops: { offset: number; color: string }[];
+			/** Used when `gradientKind` is linear (default). */
 			angle: number;
+			/** `linear` = straight gradient; `radial` = curved / elliptical from center. */
+			gradientKind?: 'linear' | 'radial';
+			/** Radial mode: ellipse size as % of the shape box (both axes); default 100. */
+			radialRadiusPct?: number;
 	  };
 
 export interface ShapeLayer extends LayerBase {
