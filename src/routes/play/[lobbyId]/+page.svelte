@@ -62,6 +62,9 @@
 	import type { Json } from '$lib/supabase/database.types';
 	import type { PageData } from './$types';
 	import { browser } from '$app/environment';
+	import { appleStagingBarrier, isAppleTouchWebKit } from '$lib/browser/ios';
+	import PlayLoadProfileHud from '$lib/debug/PlayLoadProfileHud.svelte';
+	import { playLoadMark, playLoadProfileReset, playLoadProfileStart } from '$lib/debug/playLoadProfile';
 	import { selfPresenceMeta } from '$lib/stores/onlinePresence';
 
 	export let data: PageData;
@@ -113,6 +116,7 @@
 
 	let unsubAutosave: (() => void) | undefined;
 	let historyRecordInterval: ReturnType<typeof setInterval> | undefined;
+	let historyDeferTimer: number | null = null;
 	/** Used to fit `initial_play_view` in the visible area below the fixed top bar (not under it). */
 	let playTopbarMeasure = 0;
 	/**
@@ -447,8 +451,11 @@
 		window.addEventListener('bge:history_restore', onHistoryRestore);
 
 		void (async () => {
+			playLoadProfileStart();
+			await appleStagingBarrier();
+
 			registerFriendVoiceSaver(supabase);
-			await loadFriendVoicePrefsFromSupabase(supabase, data.session.user.id);
+			/** Load friend voice prefs after realtime + board (was ~500ms+ on mobile and blocked the game). */
 			if (data.profile) {
 				tryAutoJoinVoice(data.lobby.id, {
 					userId: data.session.user.id,
@@ -468,10 +475,14 @@
 						},
 						{ memberOrderIds: memberOrderForPlay(data.lobby.id, data.memberOrderIds) }
 					);
+					playLoadMark('realtime');
+					await appleStagingBarrier();
 				} catch (e) {
 					console.error('[bge] realtime', e);
 				}
 			}
+
+			playLoadMark('pre_game_data');
 
 			const snap = data.storedSnapshot;
 			if (snap && g.isStoredGameSnapshot(snap)) {
@@ -504,6 +515,12 @@
 				await persistSnapshot();
 			}
 
+			playLoadMark('game_loaded');
+
+			await loadFriendVoicePrefsFromSupabase(supabase, data.session.user.id);
+			playLoadMark('voice_prefs');
+			await appleStagingBarrier();
+
 			unsubAutosave = g.subscribeGameSnapshotAutosave(() => {
 				void persistSnapshot();
 			});
@@ -512,19 +529,35 @@
 			setTimeout(() => requestStateSyncFromPeers(), 400);
 			setTimeout(() => requestStateSyncFromPeers(), 2000);
 
-			configureHistoryRecording({
-				lobbyId: data.lobby.id,
-				userId: data.session.user.id,
-				supabase
-			});
-			initRecordingBaseline();
-			historyRecordInterval = setInterval(() => {
-				void tryRecordHistorySnapshot();
-			}, HISTORY_RECORD_INTERVAL_MS);
+			function startHistoryRecording(): void {
+				configureHistoryRecording({
+					lobbyId: data.lobby.id,
+					userId: data.session.user.id,
+					supabase
+				});
+				initRecordingBaseline();
+				historyRecordInterval = setInterval(() => {
+					void tryRecordHistorySnapshot();
+				}, HISTORY_RECORD_INTERVAL_MS);
+				playLoadMark('history_started');
+			}
+			/** Defer on iOS — snapshot DB + board init already spikes memory; history adds timers + Supabase work. */
+			if (isAppleTouchWebKit()) {
+				historyDeferTimer = window.setTimeout(() => {
+					historyDeferTimer = null;
+					startHistoryRecording();
+				}, 320) as unknown as number;
+			} else {
+				startHistoryRecording();
+			}
 		})();
 
 		return () => {
 			selfPresenceMeta.set({});
+			if (historyDeferTimer) {
+				clearTimeout(historyDeferTimer);
+				historyDeferTimer = null;
+			}
 			if (browser) window.removeEventListener('blur', onWinBlur);
 			removeMobileMq?.();
 			window.removeEventListener('click', onDocClick);
@@ -541,6 +574,7 @@
 	});
 
 	onDestroy(() => {
+		playLoadProfileReset();
 		selfPresenceMeta.set({});
 		closeDealDialog();
 		disconnectGame();
@@ -777,6 +811,8 @@
 		</div>
 	{/if}
 </div>
+
+<PlayLoadProfileHud />
 
 {#if $dealDialog.open}
 	<DealToDialog

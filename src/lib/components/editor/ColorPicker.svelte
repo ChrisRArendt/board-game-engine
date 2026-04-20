@@ -243,6 +243,8 @@
 		position: fixed;
 		z-index: 10050;
 		min-width: 220px;
+		max-width: min(320px, calc(100vw - 16px));
+		box-sizing: border-box;
 		padding: 12px;
 		border-radius: 10px;
 		border: 1px solid var(--color-border);
@@ -299,6 +301,8 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 8px;
+		/* Cap width so large palettes wrap instead of stretching the popover */
+		max-width: 272px;
 	}
 	.pal-dot {
 		width: 22px;

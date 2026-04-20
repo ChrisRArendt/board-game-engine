@@ -2,6 +2,7 @@ import { browser } from '$app/environment';
 import { get, writable } from 'svelte/store';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { createSupabaseBrowserClient } from '$lib/supabase/client';
+import { allowVoiceAutoReconnectAfterRefresh } from '$lib/browser/ios';
 import { buildIceServers, turnRelayConfigured } from '$lib/voice/iceServers';
 import { friendVoicePrefs, getEffectivePeerVolume, voiceDevicePrefs } from './voiceSettings';
 
@@ -876,6 +877,7 @@ export function isVoiceJoined(): boolean {
 /** Reconnect voice after refresh if user had joined this lobby in the session. */
 export function tryAutoJoinVoice(lobbyId: string, presence: VoicePresencePayload): void {
 	if (!browser) return;
+	if (!allowVoiceAutoReconnectAfterRefresh()) return;
 	try {
 		if (sessionStorage.getItem(`bge_voice_auto_join:${lobbyId}`) !== '1') return;
 	} catch {
