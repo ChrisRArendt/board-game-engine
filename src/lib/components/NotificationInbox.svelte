@@ -3,6 +3,7 @@
 	import { cubicOut } from 'svelte/easing';
 	import { onDestroy, tick } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { openConversationUi } from '$lib/dmNavigation';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import {
 		listNotifications,
@@ -142,7 +143,7 @@
 			if (pl.lobby_id) void goto(`/lobby/${pl.lobby_id}`);
 		} else if (n.kind === 'dm') {
 			const pl = n.payload as { conversation_id?: string };
-			if (pl.conversation_id) void goto(`/messages/${pl.conversation_id}`);
+			if (pl.conversation_id) openConversationUi(pl.conversation_id);
 		} else if (n.kind === 'friend_request') {
 			void goto('/lobby');
 		}

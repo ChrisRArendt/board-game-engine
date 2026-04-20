@@ -4,10 +4,37 @@ import { ensureLobbyMembership, getLobby } from '$lib/lobby';
 
 export type LobbyInviteRow = Database['public']['Tables']['lobby_invites']['Row'];
 
+function inviteErrorMessage(error: { code?: string; message?: string }): Error {
+	if (error.code === '23505') {
+		return new Error(
+			'An invite is already pending for this player. Wait a moment and try again, or they can open the invite from notifications.'
+		);
+	}
+	const msg = (error.message ?? '').toLowerCase();
+	if (error.code === '42501' || msg.includes('row-level security') || msg.includes('permission denied')) {
+		return new Error(
+			'Could not send invite — you can only invite accepted friends who are not already in the lobby.'
+		);
+	}
+	return new Error(error.message || 'Could not send invite');
+}
+
 export async function sendLobbyInvite(
 	supabase: SupabaseClient<Database>,
 	opts: { lobbyId: string; inviteeId: string; inviterId: string }
 ): Promise<LobbyInviteRow> {
+	/** One pending row per (lobby, invitee); replace so re-invite after expiry / notification works. */
+	const { data: pending } = await supabase
+		.from('lobby_invites')
+		.select('id')
+		.eq('lobby_id', opts.lobbyId)
+		.eq('invitee_id', opts.inviteeId)
+		.eq('status', 'pending')
+		.maybeSingle();
+	if (pending?.id) {
+		await cancelLobbyInvite(supabase, pending.id);
+	}
+
 	const { data, error } = await supabase
 		.from('lobby_invites')
 		.insert({
@@ -18,7 +45,7 @@ export async function sendLobbyInvite(
 		})
 		.select()
 		.single();
-	if (error) throw error;
+	if (error) throw inviteErrorMessage(error);
 	return data;
 }
 

@@ -31,6 +31,7 @@
 	import { presenceByUserId } from '$lib/stores/onlinePresence';
 	import { sendLobbyInvite } from '$lib/invites';
 	import { openConversationWith } from '$lib/dm';
+	import { openConversationUi } from '$lib/dmNavigation';
 	import { pushToast } from '$lib/stores/toast';
 	import type { RealtimeChannel } from '@supabase/supabase-js';
 	import CopyInviteCode from '$lib/components/CopyInviteCode.svelte';
@@ -248,7 +249,7 @@
 	async function onMessageFriend(friendId: string) {
 		try {
 			const cid = await openConversationWith(supabase, friendId);
-			await goto(`/messages/${cid}`);
+			openConversationUi(cid);
 		} catch (e) {
 			errMsg = e instanceof Error ? e.message : 'Could not open chat';
 		}

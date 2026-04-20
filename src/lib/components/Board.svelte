@@ -86,6 +86,8 @@
 	let mouseTy = 0;
 
 	let edgeTimer: ReturnType<typeof setInterval> | null = null;
+	/** Coalesce viewport size writes — iOS Safari can resize every frame when UI chrome animates. */
+	let viewportCaptureRaf: number | null = null;
 
 	let pointerEngine: PointerEngine | null = null;
 	let pressingPieceId: number | null = null;
@@ -139,7 +141,11 @@
 	}
 
 	$: if (browser && viewportW > 8 && viewportH > 8) {
-		g.setBoardViewportForCapture(viewportW, viewportH);
+		if (viewportCaptureRaf != null) cancelAnimationFrame(viewportCaptureRaf);
+		viewportCaptureRaf = requestAnimationFrame(() => {
+			viewportCaptureRaf = null;
+			g.setBoardViewportForCapture(viewportW, viewportH);
+		});
 	}
 
 	function worldFromClient(clientX: number, clientY: number) {
@@ -436,6 +442,8 @@
 
 	onDestroy(() => {
 		if (!browser) return;
+		if (viewportCaptureRaf != null) cancelAnimationFrame(viewportCaptureRaf);
+		viewportCaptureRaf = null;
 		destroyDragPerf();
 		pointerEngine?.destroy();
 		pointerEngine = null;

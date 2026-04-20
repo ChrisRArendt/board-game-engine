@@ -421,7 +421,12 @@ export function parseInitialPlayViewJson(raw: unknown): InitialPlayViewState | n
 /** Report board viewport size (editor canvas) so “Save initial play view” matches the visible frame. */
 export function setBoardViewportForCapture(w: number, h: number) {
 	if (!Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1) return;
-	game.update((s) => ({ ...s, boardViewportForCapture: { w, h } }));
+	const rw = Math.round(w);
+	const rh = Math.round(h);
+	const cur = get(game).boardViewportForCapture;
+	/** Skip sub-pixel / iOS layout oscillation churn (reduces store thrash + re-renders). */
+	if (cur && Math.abs(cur.w - rw) < 2 && Math.abs(cur.h - rh) < 2) return;
+	game.update((s) => ({ ...s, boardViewportForCapture: { w: rw, h: rh } }));
 }
 
 /** Snapshot the current visible world rectangle as the default play framing. */

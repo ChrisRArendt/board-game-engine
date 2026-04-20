@@ -21,6 +21,8 @@
 	} from '$lib/notifications';
 	import { pushToast, dismissToast } from '$lib/stores/toast';
 	import { respondToLobbyInvite } from '$lib/invites';
+	import { openConversationUi } from '$lib/dmNavigation';
+	import DmSheetHost from '$lib/components/messaging/DmSheetHost.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
 	import NotificationInbox from '$lib/components/NotificationInbox.svelte';
 	import { persistSettings, settings } from '$lib/stores/settings';
@@ -211,7 +213,7 @@
 								label: 'Open',
 								onClick: () => {
 									dismissToast(dmToastId);
-									if (pl.conversation_id) void goto(`/messages/${pl.conversation_id}`);
+									if (pl.conversation_id) openConversationUi(pl.conversation_id);
 								}
 							}
 						]
@@ -377,6 +379,7 @@
 
 {#if data.session}
 	<ToastHost />
+	<DmSheetHost userId={data.session.user.id} />
 {/if}
 
 <style>

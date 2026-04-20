@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { openConversationUi } from '$lib/dmNavigation';
 	import { createSupabaseBrowserClient } from '$lib/supabase/client';
 	import { listConversations, type ConversationWithPeer } from '$lib/dm';
 	import type { PageData } from './$types';
@@ -51,7 +51,7 @@
 						type="button"
 						class="row"
 						class:unread={r.unread}
-						on:click={() => goto(`/messages/${r.id}`)}
+						on:click={() => openConversationUi(r.id)}
 					>
 						<span class="name">{r.other_profile?.display_name ?? 'Friend'}</span>
 						<span class="preview">{r.last_preview ?? '—'}</span>
@@ -72,6 +72,8 @@
 	.h1 {
 		margin: 0 0 1rem;
 		font-size: 1.5rem;
+		font-weight: 600;
+		letter-spacing: -0.02em;
 	}
 	.err {
 		color: var(--color-danger);
@@ -93,14 +95,17 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.2rem;
-		padding: 0.65rem 0.75rem;
-		border-radius: var(--social-radius-sm);
+		padding: 0.75rem 0.85rem;
+		border-radius: 12px;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
 		color: var(--color-text);
 		cursor: pointer;
 		font: inherit;
-		transition: background var(--social-dur-fast) var(--social-ease);
+		box-shadow: var(--shadow-sm);
+		transition:
+			background var(--social-dur-fast) var(--social-ease),
+			border-color 0.15s ease;
 	}
 	.row:hover {
 		background: var(--color-surface-muted);

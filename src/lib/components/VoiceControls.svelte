@@ -9,6 +9,7 @@
 	} from '$lib/stores/voiceChat';
 	import { friendVoicePrefs, setFriendVoicePref } from '$lib/stores/voiceSettings';
 	import UserIdentity from '$lib/components/UserIdentity.svelte';
+	import { turnRelayConfigured } from '$lib/voice/iceServers';
 
 	export let lobbyId: string;
 	export let selfUserId: string;
@@ -89,6 +90,12 @@
 		</div>
 		{#if err}
 			<p class="err-msg">{err}</p>
+		{/if}
+		{#if !turnRelayConfigured()}
+			<p class="turn-hint" title="Set PUBLIC_TURN_URL (and credentials) in your deployment env for reliable voice across Wi‑Fi and cellular.">
+				Relay not configured — voice may fail between different networks (e.g. phone ↔ desktop). Add TURN in
+				<code>.env</code> for production.
+			</p>
 		{/if}
 	{:else}
 		<div class="toolbar">
@@ -234,6 +241,18 @@
 		margin: 8px 0 0;
 		font-size: 12px;
 		color: #f88;
+	}
+	.turn-hint {
+		margin: 8px 0 0;
+		font-size: 11px;
+		line-height: 1.35;
+		color: rgba(230, 230, 240, 0.72);
+	}
+	.turn-hint code {
+		font-size: 10px;
+		background: rgba(0, 0, 0, 0.25);
+		padding: 1px 4px;
+		border-radius: 4px;
 	}
 	.toolbar {
 		display: flex;

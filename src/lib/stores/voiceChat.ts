@@ -6,14 +6,13 @@ import { buildIceServers, turnRelayConfigured } from '$lib/voice/iceServers';
 import { friendVoicePrefs, getEffectivePeerVolume, voiceDevicePrefs } from './voiceSettings';
 
 // #region agent log
-const BGE_DBG_INGEST = 'http://localhost:7278/ingest/b8376de9-9c29-4e05-bd62-1d6be57bcdc1';
 function bgeVoiceDbg(
 	hypothesisId: string,
 	location: string,
 	message: string,
 	data: Record<string, unknown>
 ) {
-	if (!browser) return;
+	if (!browser || !import.meta.env.DEV) return;
 	const payload = {
 		sessionId: 'f22ac7',
 		hypothesisId,
@@ -23,11 +22,6 @@ function bgeVoiceDbg(
 		timestamp: Date.now()
 	};
 	console.info('[bge-voice]', JSON.stringify(payload));
-	void fetch(BGE_DBG_INGEST, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'f22ac7' },
-		body: JSON.stringify(payload)
-	}).catch(() => {});
 }
 // #endregion
 

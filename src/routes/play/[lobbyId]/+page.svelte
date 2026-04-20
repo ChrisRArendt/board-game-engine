@@ -114,7 +114,13 @@
 	let unsubAutosave: (() => void) | undefined;
 	let historyRecordInterval: ReturnType<typeof setInterval> | undefined;
 	/** Used to fit `initial_play_view` in the visible area below the fixed top bar (not under it). */
-	let playTopbarH = 0;
+	let playTopbarMeasure = 0;
+	/**
+	 * iOS Safari changes chrome/layout during URL bar show/hide; raw `clientHeight` can jitter and
+	 * would churn `initialPlayFitInset` + camera refits. Snap to reduce refit storms.
+	 */
+	$: playTopbarInset =
+		playTopbarMeasure <= 0 ? 0 : Math.round(playTopbarMeasure / 4) * 4;
 
 	$: rulesUrlForMenu = data.customGame
 		? data.customGame.rulesUrl
@@ -543,7 +549,7 @@
 
 <svelte:window onkeydown={onKeyDown} onkeyup={onKeyUp} oncontextmenu={onContextMenu} />
 
-<div class="play-topbar" bind:clientHeight={playTopbarH}>
+<div class="play-topbar" bind:clientHeight={playTopbarMeasure}>
 	<Toolbar
 		curGame={$game.curGame}
 		rulesUrl={data.customGame ? data.customGame.rulesUrl : undefined}
@@ -583,7 +589,7 @@
 	onOpenViewer={openLocalViewerForPiece}
 	onViewerFollowPiece={followViewerToPiece}
 	onOpenContextMenu={openContextFromLongPress}
-	initialPlayFitInset={playTopbarH > 0 ? { top: playTopbarH } : undefined}
+	initialPlayFitInset={playTopbarInset > 0 ? { top: playTopbarInset } : undefined}
 />
 
 <UserList
