@@ -3,6 +3,8 @@ import { browser } from '$app/environment';
 /**
  * iPhone / iPad / iPadOS Safari (touch). Used to avoid patterns that reliably crash or hang
  * Mobile WebKit (mic/WebRTC on load, simultaneous heavy main-thread work).
+ *
+ * Piece image decode throttling: {@link scheduleAppleTouchPieceImageWarmup} in `iosPieceImageWarmup.ts`.
  */
 export function isAppleTouchWebKit(): boolean {
 	if (!browser || typeof navigator === 'undefined') return false;

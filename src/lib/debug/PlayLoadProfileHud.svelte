@@ -6,10 +6,12 @@
 		PLAY_PROFILE_STORAGE_KEY,
 		playLoadProfileLines
 	} from '$lib/debug/playLoadProfile';
+	import { isAppleTouchWebKit } from '$lib/browser/ios';
 
 	let copyStatus = '';
 
-	$: show = browser && isPlayLoadProfilingEnabled();
+	/** On-screen HUD only — Apple touch WebKit keeps JSON in sessionStorage (fixed layer can worsen GPU pressure). */
+	$: show = browser && isPlayLoadProfilingEnabled() && !isAppleTouchWebKit();
 
 	async function copyJson() {
 		const raw = getLastPlayLoadProfileJson();
